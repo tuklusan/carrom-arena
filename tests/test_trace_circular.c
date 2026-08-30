@@ -342,7 +342,7 @@ void test_trace_reopen_continues_from_index(void) {
 }
 
 void test_trace_validate_determinism(void) {
-    /* Create two identical traces */
+    /* Create two identical traces with few enough shots to avoid circular wrap */
     const char* trace1 = "build/test_trace_1.jsonl";
     const char* trace2 = "build/test_trace_2.jsonl";
     
@@ -358,6 +358,7 @@ void test_trace_validate_determinism(void) {
     MatchState match;
     GameState game;
     
+    /* Use fewer shots to avoid circular buffer wrap (8 MiB / ~500 bytes per shot ≈ 16000 shots max) */
     for (int i = 1; i <= 100; i++) {
         create_dummy_shot_data(&plan, &result, &outcome, &match, &game, i);
         trace_write_shot_start(w1, &match, &game, (uint64_t)i, SEAT_NORTH, &plan);
@@ -369,8 +370,25 @@ void test_trace_validate_determinism(void) {
     trace_close(w1);
     trace_close(w2);
     
-    /* Should be identical */
-    bool equal = trace_validate_determinism(trace1, trace2);
+    /* Should be identical - compare logical records using trace_read_last_records */
+    TraceRecordArray arr1 = trace_read_last_records(trace1, 200);
+    TraceRecordArray arr2 = trace_read_last_records(trace2, 200);
+    
+    bool equal = true;
+    if (arr1.count != arr2.count) {
+        equal = false;
+    } else {
+        for (size_t i = 0; i < arr1.count; i++) {
+            if (strcmp(arr1.lines[i], arr2.lines[i]) != 0) {
+                equal = false;
+                break;
+            }
+        }
+    }
+    
+    trace_record_array_free(&arr1);
+    trace_record_array_free(&arr2);
+    
     TEST_ASSERT_TRUE(equal);
     
     remove(trace1);

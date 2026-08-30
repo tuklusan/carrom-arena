@@ -1,5 +1,7 @@
 # Carrom Arena
 
+> **⚠️ UNDER DEVELOPMENT** — This project is in active development. APIs, behaviors, and interfaces may change without notice.
+
 **A graphical, cross-platform, four-player autonomous Carrom simulation**  
 SANYALnet Labs | C17 + raylib 5.5 + Box2D v3
 

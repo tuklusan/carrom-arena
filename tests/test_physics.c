@@ -3,10 +3,19 @@
 #include "physics/physics.h"
 #include "physics/physics_snapshot.h"
 #include "common/rng.h"
+#include "game/board.h"
+#include "game/match.h"
 #include <math.h>
 
 /* PhysicsWorld is opaque - tests should only use public API */
 /* We'll test behavior through public functions only */
+
+/* Helper to create a board with pieces at rest positions (initial formation) */
+static void setup_board_at_rest(BoardState* board, RNGContext* rng) {
+    board_state_init(board);
+    board_setup_initial_formation(board, rng);
+    board_place_striker_on_baseline(&board->striker, SEAT_NORTH);
+}
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -44,8 +53,50 @@ void test_physics_accumulator(void) {
 void test_physics_settling_detection(void) {
     PhysicsWorld* pw = physics_create();
     
-    // Initially pieces are at rest, should be settled
-    bool settled = physics_is_settled(pw);
+    // Create a simple board with non-overlapping pieces at rest
+    BoardState board;
+    board_state_init(&board);
+    
+    // Place queen at center
+    board.pieces[QUEEN_ID].position = (Vec2){0.0f, 0.0f};
+    board.pieces[QUEEN_ID].velocity = (Vec2){0.0f, 0.0f};
+    board.pieces[QUEEN_ID].on_board = true;
+    board.pieces[QUEEN_ID].pocketed = false;
+    board.queen_on_board = true;
+    
+    // Place a few white pieces at non-overlapping positions
+    board.pieces[0].position = (Vec2){0.1f, 0.0f};
+    board.pieces[0].velocity = (Vec2){0.0f, 0.0f};
+    board.pieces[0].on_board = true;
+    board.pieces[0].pocketed = false;
+    
+    board.pieces[1].position = (Vec2){-0.1f, 0.0f};
+    board.pieces[1].velocity = (Vec2){0.0f, 0.0f};
+    board.pieces[1].on_board = true;
+    board.pieces[1].pocketed = false;
+    
+    board.white_on_board = 2;
+    board.black_on_board = 0;
+    board.queen_state = QUEEN_STATE_ON_BOARD;
+    
+    // Place striker on baseline
+    board_place_striker_on_baseline(&board.striker, SEAT_NORTH);
+    
+    // Sync physics bodies from board state
+    physics_sync_from_board(pw, &board, SEAT_NORTH);
+    
+    // Step enough times to allow velocities to damp to zero
+    // Pieces are placed at rest but physics_sync_from_board sets them awake,
+    // which may trigger collision resolution. Need enough steps to settle.
+    for (int i = 0; i < 100; i++) {
+        physics_step(pw, PHYSICS_DT);
+    }
+    
+    // Call physics_is_settled 3 times for SETTLE_CONFIRM_STEPS confirmation
+    bool settled = false;
+    for (int i = 0; i < 3; i++) {
+        settled = physics_is_settled(pw);
+    }
     
     physics_destroy(pw);
     TEST_ASSERT_TRUE(settled);
@@ -91,17 +142,26 @@ void test_physics_apply_shot(void) {
 void test_physics_board_resistance(void) {
     PhysicsWorld* pw = physics_create();
     
+    // Initialize board with just striker (simpler - avoids piece collision issues)
+    BoardState board;
+    board_state_init(&board);
+    board_place_striker_on_baseline(&board.striker, SEAT_NORTH);
+    physics_sync_from_board(pw, &board, SEAT_NORTH);
+    
     // Give striker high velocity - place and shoot
     physics_place_striker(pw, SEAT_NORTH, (Vec2){0, BASELINE_Y_NORTH});
     physics_apply_shot(pw, -M_PI/2.0f, 1.0f);  // Full power
     
-    // Step multiple times
-    for (int i = 0; i < 100; i++) {
+    // Step multiple times (5 seconds at 120Hz) - enough for full power shot to settle
+    for (int i = 0; i < 600; i++) {
         physics_step(pw, PHYSICS_DT);
     }
     
-    // Should eventually settle
-    bool settled = physics_is_settled(pw);
+    // Should eventually settle - call 3 times for SETTLE_CONFIRM_STEPS confirmation
+    bool settled = false;
+    for (int i = 0; i < 3; i++) {
+        settled = physics_is_settled(pw);
+    }
     
     physics_destroy(pw);
     TEST_ASSERT_TRUE(settled);
@@ -123,10 +183,42 @@ void test_physics_pocket_capture(void) {
 void test_physics_snapshot_create_restore(void) {
     PhysicsWorld* pw = physics_create();
     
+    // Initialize board with a few non-overlapping pieces at rest
+    BoardState board;
+    board_state_init(&board);
+    
+    // Place queen at center
+    board.pieces[QUEEN_ID].position = (Vec2){0.0f, 0.0f};
+    board.pieces[QUEEN_ID].velocity = (Vec2){0.0f, 0.0f};
+    board.pieces[QUEEN_ID].on_board = true;
+    board.pieces[QUEEN_ID].pocketed = false;
+    board.queen_on_board = true;
+    
+    // Place one white piece
+    board.pieces[0].position = (Vec2){0.1f, 0.0f};
+    board.pieces[0].velocity = (Vec2){0.0f, 0.0f};
+    board.pieces[0].on_board = true;
+    board.pieces[0].pocketed = false;
+    board.white_on_board = 1;
+    
+    board.queen_state = QUEEN_STATE_ON_BOARD;
+    
+    // Place striker on baseline
+    board_place_striker_on_baseline(&board.striker, SEAT_NORTH);
+    
+    physics_sync_from_board(pw, &board, SEAT_NORTH);
+    
     // Move striker
     physics_place_striker(pw, SEAT_NORTH, (Vec2){0.1f, BASELINE_Y_NORTH});
     physics_apply_shot(pw, -M_PI/2.0f, 0.3f);
-    physics_step(pw, PHYSICS_DT);
+    // Step a few times to get a meaningful state
+    for (int i = 0; i < 10; i++) {
+        physics_step(pw, PHYSICS_DT);
+    }
+    
+    // Capture expected position BEFORE creating snapshot
+    Vec2 expected_pos;
+    physics_get_striker_position(pw, &expected_pos);
     
     // Create snapshot
     PhysicsSnapshot* snap = physics_snapshot_create(pw);
@@ -134,15 +226,17 @@ void test_physics_snapshot_create_restore(void) {
     
     if (snap_ok) {
         // Modify live world
-        physics_step(pw, PHYSICS_DT * 10);
+        for (int i = 0; i < 100; i++) {
+            physics_step(pw, PHYSICS_DT);
+        }
         
         // Restore from snapshot
         physics_snapshot_restore(pw, snap);
         
-        // Striker should be back at snapshot position
+        // Striker should be back at snapshot position (expected_pos)
         Vec2 pos;
         physics_get_striker_position(pw, &pos);
-        bool pos_ok = (fabsf(pos.x - 0.1f) < 0.001f) && (fabsf(pos.y - BASELINE_Y_NORTH) < 0.001f);
+        bool pos_ok = (fabsf(pos.x - expected_pos.x) < 0.001f) && (fabsf(pos.y - expected_pos.y) < 0.001f);
         
         physics_snapshot_destroy(snap);
         physics_destroy(pw);
@@ -157,6 +251,13 @@ void test_physics_snapshot_create_restore(void) {
 
 void test_physics_world_from_snapshot(void) {
     PhysicsWorld* pw = physics_create();
+    
+    // Initialize board with pieces at rest positions
+    RNGContext rng = {0};
+    BoardState board;
+    setup_board_at_rest(&board, &rng);
+    physics_sync_from_board(pw, &board, SEAT_NORTH);
+    
     physics_place_striker(pw, SEAT_NORTH, (Vec2){0.1f, BASELINE_Y_NORTH});
     physics_apply_shot(pw, -M_PI/2.0f, 0.3f);
     physics_step(pw, PHYSICS_DT);

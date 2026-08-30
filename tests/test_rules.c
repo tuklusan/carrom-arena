@@ -261,8 +261,10 @@ void test_rules_game_over(void) {
 void test_rules_match_over(void) {
     MatchState match;
     match_state_init(&match);
+    match.boards_won_white = 7;  // One board away from game win (8 boards per game)
     match.games_won_white = 2;
     match.games_won_black = 1;
+    match.target_boards_per_game = 8;
     match.target_games_per_match = 3;
     
     GameState game;

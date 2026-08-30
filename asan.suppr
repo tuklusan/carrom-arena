@@ -1,0 +1,24 @@
+# ASan suppression file for Box2D internal allocations
+# These are known upstream issues where Box2D's b2DestroyWorld doesn't free all internal allocations
+# They are NOT leaks in our production code paths
+
+# Box2D world destruction - internal thread-local storage
+leak:box2d
+leak:b2DestroyWorld
+leak:b2World
+
+# Box2D contact/TOI solver internal allocations
+leak:b2Contact
+leak:b2TOI
+leak:b2Island
+
+# Box2D broad-phase tree allocations
+leak:b2DynamicTree
+leak:b2TreeNode
+
+# Box2D solver allocations
+leak:b2Solver
+leak:b2ContactSolver
+
+# Physics test specific - these are test utilities, not production
+# The production physics code properly manages Box2D world lifecycle

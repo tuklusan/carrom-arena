@@ -518,14 +518,7 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
         return arr;
     }
     
-    /* Read entire data area - check for integer overflow */
-    if (TRACE_MAX_SIZE > SIZE_MAX) {
-        fclose(f);
-        free(arr.lines);
-        arr.lines = NULL;
-        arr.capacity = 0;
-        return arr;
-    }
+    /* Read entire data area - TRACE_MAX_SIZE is compile-time constant (8 MiB), fits in size_t */
     char* data = malloc(TRACE_MAX_SIZE);
     if (!data) {
         fclose(f);
@@ -631,13 +624,16 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
         arr.lines[arr.count++] = line;
     }
     
-    /* If allocation failed partway, clean up partially allocated lines */
+    /* If allocation failed partway, clean up partially allocated lines and the lines array */
     if (allocation_failed) {
         for (size_t i = 0; i < arr.count; i++) {
             free(arr.lines[i]);
             arr.lines[i] = NULL;
         }
+        free(arr.lines);
+        arr.lines = NULL;
         arr.count = 0;
+        arr.capacity = 0;
     }
     
     free(line_starts);
