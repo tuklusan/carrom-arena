@@ -20,11 +20,11 @@ extern "C" {
 #define MAX_SUBSTEPS 4
 
 // Physics constants
-#define BOARD_COULOMB     0.12f   // Coulomb friction coefficient
-#define BOARD_VISCOUS     0.85f   // Viscous damping coefficient
-#define SETTLE_SPEED_EPS  1e-4f   // Speed threshold for settling
-#define SETTLE_ACCEL_EPS  1e-4f   // Acceleration threshold for settling
-#define SETTLE_TIMEOUT_SECONDS 30.0f  // Max simulation time before forced settle
+#define BOARD_COULOMB     0.50f    // Coulomb friction coefficient (stronger dry friction)
+#define BOARD_VISCOUS     2.00f    // Viscous damping coefficient (stronger speed-dependent drag)
+#define SETTLE_SPEED_EPS  1e-3f    // Speed threshold for settling (practical visible stop)
+#define SETTLE_ACCEL_EPS  0.60f    // Acceleration threshold for settling (must exceed COULOMB)
+#define SETTLE_TIMEOUT_SECONDS 8.0f   // Max simulation time before forced settle (reduced from 30s)
 #define SETTLE_CONFIRM_STEPS 3      // Consecutive steps below threshold
 
 // Opaque physics world
@@ -64,6 +64,13 @@ b2BodyId* physics_get_bodies(PhysicsWorld* pw, int* out_count);
 // Get current positions for rendering (read-only)
 void physics_get_positions(const PhysicsWorld* pw, Vec2* positions);
 void physics_get_striker_position(const PhysicsWorld* pw, Vec2* pos);
+
+// Get previous positions for interpolation (read-only)
+void physics_get_prev_positions(const PhysicsWorld* pw, Vec2* positions);
+void physics_get_prev_striker_position(const PhysicsWorld* pw, Vec2* pos);
+
+// Get accumulator for interpolation alpha
+float physics_get_accumulator(const PhysicsWorld* pw);
 
 // Sync physics bodies from board state (initial placement)
 void physics_sync_from_board(PhysicsWorld* pw, const BoardState* board, Seat striker_seat);

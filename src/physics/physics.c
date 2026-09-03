@@ -27,6 +27,10 @@ struct PhysicsWorld {
     uint8_t pocketed_ids[19];
     PieceColor pocketed_colors[19];
     
+    // Previous-frame positions for render interpolation
+    Vec2 prev_piece_positions[MAX_PIECES];
+    Vec2 prev_striker_position;
+    
     // Simulation time
     float sim_time;
     
@@ -208,6 +212,18 @@ void physics_step(PhysicsWorld* pw, float dt) {
     pw->substeps = 0;
     
     while (pw->accumulator >= PHYSICS_DT && pw->substeps < MAX_SUBSTEPS) {
+        // Store previous positions for render interpolation (before stepping)
+        for (int i = 0; i < MAX_PIECES; i++) {
+            if (!pw->piece_pocketed[i] && b2Body_IsValid(pw->piece_bodies[i])) {
+                b2Vec2 p = b2Body_GetPosition(pw->piece_bodies[i]);
+                pw->prev_piece_positions[i] = (Vec2){ p.x, p.y };
+            }
+        }
+        if (!pw->striker_pocketed && b2Body_IsValid(pw->striker_body)) {
+            b2Vec2 p = b2Body_GetPosition(pw->striker_body);
+            pw->prev_striker_position = (Vec2){ p.x, p.y };
+        }
+        
         b2World_Step(pw->world_id, PHYSICS_DT, 4);
         pw->accumulator -= PHYSICS_DT;
         pw->step_count++;
@@ -606,4 +622,37 @@ void physics_sync_from_board(PhysicsWorld* pw, const BoardState* board, Seat str
     pw->pocketed_count = 0;
     pw->sim_time = 0.0f;
     pw->settle_confirm_steps = 0;
+    
+    // Initialize previous positions to current positions after sync
+    for (int i = 0; i < MAX_PIECES; i++) {
+        if (!pw->piece_pocketed[i] && b2Body_IsValid(pw->piece_bodies[i])) {
+            b2Vec2 p = b2Body_GetPosition(pw->piece_bodies[i]);
+            pw->prev_piece_positions[i] = (Vec2){ p.x, p.y };
+        } else {
+            pw->prev_piece_positions[i] = (Vec2){ 0, 0 };
+        }
+    }
+    if (!pw->striker_pocketed && b2Body_IsValid(pw->striker_body)) {
+        b2Vec2 p = b2Body_GetPosition(pw->striker_body);
+        pw->prev_striker_position = (Vec2){ p.x, p.y };
+    } else {
+        pw->prev_striker_position = (Vec2){ 0, 0 };
+    }
+}
+
+/* -----------------------------------------------------------------------------
+ * Previous Position Accessors (for render interpolation)
+ * --------------------------------------------------------------------------- */
+void physics_get_prev_positions(const PhysicsWorld* pw, Vec2* positions) {
+    for (int i = 0; i < MAX_PIECES; i++) {
+        positions[i] = pw->prev_piece_positions[i];
+    }
+}
+
+void physics_get_prev_striker_position(const PhysicsWorld* pw, Vec2* pos) {
+    *pos = pw->prev_striker_position;
+}
+
+float physics_get_accumulator(const PhysicsWorld* pw) {
+    return pw->accumulator;
 }

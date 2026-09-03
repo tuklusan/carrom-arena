@@ -97,6 +97,10 @@ static void app_simulation_step(AppContext* ctx, double dt) {
     
     int substeps = 0;
     while (ctx->accumulator >= PHYSICS_DT && substeps < MAX_SUBSTEPS) {
+        // Store previous positions BEFORE stepping (for render interpolation)
+        physics_get_positions(ctx->physics, ctx->game.board.prev_piece_positions);
+        physics_get_striker_position(ctx->physics, &ctx->game.board.prev_striker_position);
+        
         physics_step(ctx->physics, PHYSICS_DT);
         ctx->accumulator -= PHYSICS_DT;
         substeps++;
@@ -295,12 +299,14 @@ int app_run_simulation(AppContext* ctx) {
                     break;
                     
                 case PHASE_SETTLING:
-                    // Double-check settling
+                    // Double-check settling with re-entry guard
                     if (app_is_shot_settled(ctx)) {
                         ctx->game.phase = PHASE_RESOLVING;
                         ShotResult result = app_collect_shot_result(ctx);
                         app_resolve_shot(ctx, &result);
-                        // app_resolve_shot now handles phase transitions
+                    } else {
+                        // Re-entered motion (rare) — go back to SHOT_EXECUTION
+                        ctx->game.phase = PHASE_SHOT_EXECUTION;
                     }
                     break;
                     
@@ -316,7 +322,9 @@ int app_run_simulation(AppContext* ctx) {
         // Render (mode-specific)
         if (ctx->renderer) {
             renderer_begin(ctx->renderer);
-            renderer_draw_board(ctx->renderer, &ctx->game.board, ctx->physics);
+            float alpha = (float)(ctx->accumulator / PHYSICS_DT);
+            if (alpha > 1.0f) alpha = 1.0f;
+            renderer_draw_board(ctx->renderer, &ctx->game.board, ctx->physics, alpha);
             renderer_draw_hud(ctx->renderer, &ctx->match, &ctx->game);
             renderer_draw_effects(ctx->renderer, &ctx->game);
             renderer_end(ctx->renderer);

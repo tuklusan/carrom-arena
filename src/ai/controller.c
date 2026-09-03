@@ -48,8 +48,11 @@ void controller_destroy(Controller* controller) {
 }
 
 ShotPlan controller_decide(Controller* self, const DecisionSnapshot* snap, PCG32* rng) {
-    // Default implementation - should be overridden by specific controllers
-    (void)self;
+    if (self && self->decide) {
+        return self->decide(self, snap, rng);
+    }
+    
+    // Default implementation - returns zeroed plan (fallback)
     (void)snap;
     (void)rng;
     

@@ -118,9 +118,29 @@ target_include_directories(test_integration PRIVATE
 
 add_test(NAME integration_test COMMAND test_integration)
 
+# Regression test (headless full match with bounded time assertions)
+# Catches: "jerky / no real game" - shots not settling, match not terminating
+add_executable(test_regression
+    test_regression.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+
+apply_test_warnings(test_regression)
+
+# Link against core + box2d (headless - no raylib)
+target_link_libraries(test_regression carrom_core box2d ${PLATFORM_LIBS})
+target_include_directories(test_regression PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+
+# Default run with fixed seed and full bounds (1200s timeout with ASAN)
+add_test(NAME regression_test COMMAND test_regression)
+
 # Set test labels
 set_tests_properties(rules_test PROPERTIES LABELS "unit")
 set_tests_properties(physics_test PROPERTIES LABELS "unit")
 set_tests_properties(ai_test PROPERTIES LABELS "unit")
 set_tests_properties(trace_circular_test PROPERTIES LABELS "unit")
 set_tests_properties(integration_test PROPERTIES LABELS "integration")
+set_tests_properties(regression_test PROPERTIES LABELS "regression" TIMEOUT 1200)

@@ -25,7 +25,7 @@ bool renderer_is_paused(Renderer* renderer);
 void renderer_begin(Renderer* renderer);
 void renderer_end(Renderer* renderer);
 
-void renderer_draw_board(Renderer* renderer, const BoardState* board, const PhysicsWorld* physics);
+void renderer_draw_board(Renderer* renderer, const BoardState* board, const PhysicsWorld* physics, float alpha);
 void renderer_draw_hud(Renderer* renderer, const MatchState* match, const GameState* game);
 void renderer_draw_effects(Renderer* renderer, const GameState* game);
 

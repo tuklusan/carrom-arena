@@ -16,18 +16,27 @@
 #define COLOR_LINE (Color){ 255, 255, 255, 100 }      // White translucent
 #define COLOR_BASELINE (Color){ 100, 255, 100, 150 }  // Green translucent
 
-void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics) {
-    // Use physics positions for smooth animation, fall back to board state
-    Vec2 physics_positions[MAX_PIECES];
-    Vec2 striker_pos;
+void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics, float alpha) {
+    // Clamp alpha to [0, 1]
+    if (alpha < 0.0f) alpha = 0.0f;
+    if (alpha > 1.0f) alpha = 1.0f;
+    
+    // Get current and previous physics positions for interpolation
+    Vec2 curr_positions[MAX_PIECES];
+    Vec2 prev_positions[MAX_PIECES];
+    Vec2 curr_striker_pos;
+    Vec2 prev_striker_pos;
     bool use_physics = false;
     
     if (physics) {
-        physics_get_positions(physics, physics_positions);
-        physics_get_striker_position(physics, &striker_pos);
+        physics_get_positions(physics, curr_positions);
+        physics_get_prev_positions(physics, prev_positions);
+        physics_get_striker_position(physics, &curr_striker_pos);
+        physics_get_prev_striker_position(physics, &prev_striker_pos);
+        
         // Check if physics has valid positions (not all zero)
         for (int i = 0; i < MAX_PIECES; i++) {
-            if (physics_positions[i].x != 0 || physics_positions[i].y != 0) {
+            if (curr_positions[i].x != 0 || curr_positions[i].y != 0) {
                 use_physics = true;
                 break;
             }
@@ -81,13 +90,15 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         DrawCircle((int)p.x, (int)p.y, pocket_r, COLOR_POCKET);
     }
     
-    // Pieces (from physics for smooth animation, fall back to board state)
+    // Pieces (interpolated from physics for smooth animation, fall back to board state)
     for (int i = 0; i < MAX_PIECES; i++) {
         if (!board->pieces[i].on_board) continue;
         
         Vec2 pos;
-        if (use_physics && (physics_positions[i].x != 0 || physics_positions[i].y != 0)) {
-            pos = physics_positions[i];
+        if (use_physics) {
+            // Interpolate between previous and current physics positions
+            Vec2 interp = vec2_lerp(prev_positions[i], curr_positions[i], alpha);
+            pos = interp;
         } else {
             pos = board->pieces[i].position;
         }
@@ -104,9 +115,16 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         DrawCircleLines((int)screen.x, (int)screen.y, piece_r, COLOR_LINE);
     }
     
-    // Striker
+    // Striker (interpolated)
     if (board->striker.on_baseline && !board->striker.pocketed) {
-        Vec2 pos = use_physics ? striker_pos : board->striker.position;
+        Vec2 pos;
+        if (use_physics) {
+            Vec2 interp = vec2_lerp(prev_striker_pos, curr_striker_pos, alpha);
+            pos = interp;
+        } else {
+            pos = board->striker.position;
+        }
+        
         Vec2 screen = math_world_to_screen(vp, pos);
         float striker_r = math_world_to_screen_dist(vp, STRIKER_RADIUS_NORM);
         DrawCircle((int)screen.x, (int)screen.y, striker_r, COLOR_STRIKER);

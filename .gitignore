@@ -31,3 +31,10 @@ yarn-debug.log*
 # Test coverage
 coverage/
 .nyc_output/
+# Operator-run artefacts (kimi + local build trees)
+build_asan/
+build_rel/
+build_release/
+.kimi_run/
+traces/
+captures/

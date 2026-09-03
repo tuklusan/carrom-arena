@@ -129,6 +129,9 @@ typedef struct {
     uint8_t white_on_board, black_on_board;
     bool queen_on_board;
     uint8_t white_dues, black_dues, queen_dues;
+    // Previous-frame positions for render interpolation
+    Vec2 prev_piece_positions[MAX_PIECES];
+    Vec2 prev_striker_position;
 } BoardState;
 
 /* -----------------------------------------------------------------------------

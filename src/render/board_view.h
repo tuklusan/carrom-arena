@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics);
+void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics, float alpha);
 
 #ifdef __cplusplus
 }

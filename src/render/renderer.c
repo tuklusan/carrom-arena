@@ -51,8 +51,6 @@ static void center_window_on_monitor(int window_width, int window_height) {
 }
 
 Renderer* renderer_create(int width, int height, const char* title, bool capture_mode) {
-    (void)width; (void)height;  // Ignored - we use fixed layout
-    
     Renderer* r = calloc(1, sizeof(Renderer));
     if (!r) return NULL;
     
@@ -63,21 +61,41 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     r->title_width = measure_text_width(TITLE_TEXT, TITLE_FONT_SIZE);
     r->copyright_width = measure_text_width(COPYRIGHT_TEXT, COPYRIGHT_FONT_SIZE);
     
-    int content_width = GAME_SURFACE_SIZE;
     int title_area_height = TITLE_FONT_SIZE + TITLE_PADDING * 2;
     int copyright_area_height = COPYRIGHT_FONT_SIZE + COPYRIGHT_PADDING * 2;
-    int total_height = title_area_height + GAME_SURFACE_SIZE + copyright_area_height;
     
-    /* Window dimensions - use max of content_width and text widths for horizontal */
-    int window_width = content_width;
-    if (r->title_width > window_width) window_width = r->title_width;
-    if (r->copyright_width > window_width) window_width = r->copyright_width;
-    window_width += 40;  // 20px padding each side
+    /* Clamp requested size to monitor bounds with margins */
+    int monitor = GetCurrentMonitor();
+    int monitor_width = GetMonitorWidth(monitor);
+    int monitor_height = GetMonitorHeight(monitor);
+    
+    // Margins: 40px horizontal, 80px vertical (taskbar + titlebar)
+    int max_width = monitor_width - 40;
+    int max_height = monitor_height - 80;
+    
+    // Minimum required: 600 game surface + 40px horizontal padding = 640
+    // Minimum height: title(24+32) + 600 + copyright(16+24) = ~696
+    int min_width = 640;
+    int min_height = 696;
+    
+    // Start with CLI values, fallback to calculated
+    int window_width = (width > 0) ? width : GAME_SURFACE_SIZE + 40;
+    int window_height = (height > 0) ? height : title_area_height + GAME_SURFACE_SIZE + copyright_area_height + 40;
+    
+    // Clamp to [min, max]
+    if (window_width < min_width) window_width = min_width;
+    if (window_width > max_width) window_width = max_width;
+    if (window_height < min_height) window_height = min_height;
+    if (window_height > max_height) window_height = max_height;
+    
+    // Ensure text fits
+    if (r->title_width + 40 > window_width) window_width = r->title_width + 40;
+    if (r->copyright_width + 40 > window_width) window_width = r->copyright_width + 40;
     
     r->width = window_width;
-    r->height = total_height;
+    r->height = window_height;
     
-    /* Game surface position within window */
+    /* Game surface position within window - centered with margins */
     r->game_surface_x = (r->width - GAME_SURFACE_SIZE) / 2;
     r->game_surface_y = title_area_height;
     
@@ -169,8 +187,8 @@ void renderer_end(Renderer* r) {
     EndDrawing();
 }
 
-void renderer_draw_board(Renderer* r, const BoardState* board, const PhysicsWorld* physics) {
-    board_view_draw(r->viewport, board, physics);
+void renderer_draw_board(Renderer* r, const BoardState* board, const PhysicsWorld* physics, float alpha) {
+    board_view_draw(r->viewport, board, physics, alpha);
 }
 
 void renderer_draw_hud(Renderer* r, const MatchState* match, const GameState* game) {
