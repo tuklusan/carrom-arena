@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# scripts/git-hooks/pre-push
+# Enforces the cross-machine cleanup gate BEFORE every git push.
+# Skip with:  git push --no-verify
+# Set STRICT_KILL=1 to fail the push if any host is unreachable.
+
+set -e
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT="$(cd "$HERE/.." && pwd)/kill-all-runs.sh"
+if [ ! -x "$SCRIPT" ]; then
+  echo "pre-push: $SCRIPT missing or not executable — refusing push" >&2
+  exit 1
+fi
+extra=()
+[ "${STRICT_KILL:-0}" = "1" ] && extra+=("--strict")
+[ "${VERBOSE_KILL:-0}" = "1" ] && extra+=("--verbose")
+echo "pre-push: cross-machine kill sweep before pushing $*" >&2
+if ! "$SCRIPT" "${extra[@]}"; then
+  echo "pre-push: kill sweep failed — refusing push (use 'git push --no-verify' to override)" >&2
+  exit 1
+fi
