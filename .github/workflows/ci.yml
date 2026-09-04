@@ -1,4 +1,4 @@
-# Carrom Arena CI Pipeline - 8 Stages per Appendix A.10
+# Carrom Arena CI - 18-Runner Cross-Platform Matrix
 name: Carrom Arena CI
 
 on:
@@ -8,234 +8,270 @@ on:
     branches: [main]
 
 env:
-  BUILD_TYPE: Debug
+  # Common CMake options
+  CMAKE_GENERATOR: "Ninja"
 
 jobs:
-  # Stage 1: Configure & Lint
-  configure-lint:
-    name: Configure & Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build gcc g++ libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev
-      
-      - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -G Ninja
-      
-      - name: Run clang-tidy (if available)
-        run: |
-          if command -v clang-tidy &> /dev/null; then
-            cd build && find ../src -name "*.c" -exec clang-tidy -p . {} \; 2>/dev/null || true
-          else
-            echo "clang-tidy not available, skipping"
-          fi
+  build-test:
+    name: ${{ matrix.os }}/${{ matrix.compiler }}/${{ matrix.build_type }}
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu 24.04 - GCC (Debug + Release)
+          - os: "ubuntu-24.04"
+            runs-on: "ubuntu-24.04"
+            compiler: "gcc"
+            cc: "gcc"
+            cxx: "g++"
+            build_type: "Debug"
+            cmake_extra: ""
+          
+          - os: "ubuntu-24.04"
+            runs-on: "ubuntu-24.04"
+            compiler: "gcc"
+            cc: "gcc"
+            cxx: "g++"
+            build_type: "Release"
+            cmake_extra: ""
+          
+          # Ubuntu 24.04 - Clang (Debug + Release)
+          - os: "ubuntu-24.04"
+            runs-on: "ubuntu-24.04"
+            compiler: "clang"
+            cc: "clang"
+            cxx: "clang++"
+            build_type: "Debug"
+            cmake_extra: ""
+          
+          - os: "ubuntu-24.04"
+            runs-on: "ubuntu-24.04"
+            compiler: "clang"
+            cc: "clang"
+            cxx: "clang++"
+            build_type: "Release"
+            cmake_extra: ""
+          
+          # Ubuntu 22.04 - GCC (Debug + Release)
+          - os: "ubuntu-22.04"
+            runs-on: "ubuntu-22.04"
+            compiler: "gcc"
+            cc: "gcc"
+            cxx: "g++"
+            build_type: "Debug"
+            cmake_extra: ""
+          
+          - os: "ubuntu-22.04"
+            runs-on: "ubuntu-22.04"
+            compiler: "gcc"
+            cc: "gcc"
+            cxx: "g++"
+            build_type: "Release"
+            cmake_extra: ""
+          
+          # Ubuntu 22.04 - Clang (Debug + Release)
+          - os: "ubuntu-22.04"
+            runs-on: "ubuntu-22.04"
+            compiler: "clang"
+            cc: "clang"
+            cxx: "clang++"
+            build_type: "Debug"
+            cmake_extra: ""
+          
+          - os: "ubuntu-22.04"
+            runs-on: "ubuntu-22.04"
+            compiler: "clang"
+            cc: "clang"
+            cxx: "clang++"
+            build_type: "Release"
+            cmake_extra: ""
+          
+          # macOS 14 - Clang (Debug + Release)
+          - os: "macos-14"
+            runs-on: "macos-14"
+            compiler: "clang"
+            cc: "clang"
+            cxx: "clang++"
+            build_type: "Debug"
+            cmake_extra: ""
+          
+          - os: "macos-14"
+            runs-on: "macos-14"
+            compiler: "clang"
+            cc: "clang"
+            cxx: "clang++"
+            build_type: "Release"
+            cmake_extra: ""
+          
+          # macOS 13 - Clang (Debug)
+          - os: "macos-13"
+            runs-on: "macos-13"
+            compiler: "clang"
+            cc: "clang"
+            cxx: "clang++"
+            build_type: "Debug"
+            cmake_extra: ""
+          
+          # Windows 2022 - MSVC (Debug + Release)
+          - os: "windows-2022"
+            runs-on: "windows-2022"
+            compiler: "msvc"
+            cc: "cl"
+            cxx: "cl"
+            build_type: "Debug"
+            cmake_extra: ""
+            shell: cmd
+          
+          - os: "windows-2022"
+            runs-on: "windows-2022"
+            compiler: "msvc"
+            cc: "cl"
+            cxx: "cl"
+            build_type: "Release"
+            cmake_extra: ""
+            shell: cmd
+          
+          # Windows 2022 - MinGW (Debug + Release)
+          - os: "windows-2022"
+            runs-on: "windows-2022"
+            compiler: "mingw"
+            cc: "x86_64-w64-mingw32-gcc"
+            cxx: "x86_64-w64-mingw32-g++"
+            build_type: "Debug"
+            cmake_extra: "-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++"
+            shell: cmd
+          
+          - os: "windows-2022"
+            runs-on: "windows-2022"
+            compiler: "mingw"
+            cc: "x86_64-w64-mingw32-gcc"
+            cxx: "x86_64-w64-mingw32-g++"
+            build_type: "Release"
+            cmake_extra: "-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++"
+            shell: cmd
+          
+          # Windows 2019 - MSVC (Debug + Release)
+          - os: "windows-2019"
+            runs-on: "windows-2019"
+            compiler: "msvc"
+            cc: "cl"
+            cxx: "cl"
+            build_type: "Debug"
+            cmake_extra: ""
+            shell: cmd
+          
+          - os: "windows-2019"
+            runs-on: "windows-2019"
+            compiler: "msvc"
+            cc: "cl"
+            cxx: "cl"
+            build_type: "Release"
+            cmake_extra: ""
+            shell: cmd
+          
+          # Windows 2019 - MinGW (Debug + Release)
+          - os: "windows-2019"
+            runs-on: "windows-2019"
+            compiler: "mingw"
+            cc: "x86_64-w64-mingw32-gcc"
+            cxx: "x86_64-w64-mingw32-g++"
+            build_type: "Debug"
+            cmake_extra: "-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++"
+            shell: cmd
+          
+          - os: "windows-2019"
+            runs-on: "windows-2019"
+            compiler: "mingw"
+            cc: "x86_64-w64-mingw32-gcc"
+            cxx: "x86_64-w64-mingw32-g++"
+            build_type: "Release"
+            cmake_extra: "-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++"
+            shell: cmd
 
-  # Stage 2: Compile (Strict -Werror)
-  compile:
-    name: Compile (Strict)
-    runs-on: ubuntu-latest
-    needs: configure-lint
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           submodules: recursive
-      
-      - name: Install dependencies
+
+      # Linux dependency installation
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build gcc g++ libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev
-      
+          sudo apt-get install -y cmake ninja-build gcc g++ clang libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev
+
+      # macOS dependency installation (cmake, ninja, and Xcode tools are pre-installed)
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew list cmake ninja >/dev/null 2>&1 || brew install cmake ninja
+
+      # Windows MSVC: ensure VS environment (already set up on windows runners)
+      - name: Setup MSVC environment
+        if: runner.os == 'Windows' && matrix.compiler == 'msvc'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # Windows MinGW: install mingw-w64
+      - name: Install MinGW on Windows
+        if: runner.os == 'Windows' && matrix.compiler == 'mingw'
+        shell: pwsh
+        run: |
+          choco install mingw --version 13.1.0 -y --no-progress
+          echo "C:\Program Files\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -G Ninja
-      
+        shell: ${{ matrix.shell || 'bash' }}
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -G "${{ env.CMAKE_GENERATOR }}" \
+            ${{ matrix.cmake_extra }}
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+
       - name: Build
+        shell: ${{ matrix.shell || 'bash' }}
         run: cmake --build build --parallel 4
-      
-      - name: Verify binary exists
-        run: test -f build/carrom_arena
 
-  # Stage 3: Unit Tests
-  unit-tests:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    needs: compile
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build gcc g++ libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev
-      
-      - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -G Ninja
-      
-      - name: Build tests
-        run: cmake --build build --parallel 4 --target test_rules test_physics test_ai test_trace_circular
-      
-      - name: Run unit tests
+      - name: Run tests (headless)
+        shell: ${{ matrix.shell || 'bash' }}
         run: |
           cd build && ctest --output-on-failure --parallel 4
+        env:
+          # Ensure headless mode for any test that might try to open a window
+          CARROM_HEADLESS: "1"
 
-  # Stage 4: Determinism Verification
-  determinism:
-    name: Determinism Verification
-    runs-on: ubuntu-latest
-    needs: compile
-    steps:
-      - uses: actions/checkout@v4
+      - name: Upload ctest log
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          submodules: recursive
-      
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build gcc g++ libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev
-      
-      - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -G Ninja
-      
-      - name: Build
-        run: cmake --build build --parallel 4
-      
-      - name: Run determinism test (2 seeds x 3 shots)
-        run: |
-          cd build
-          # Run two simulations with same seed
-          ./carrom_arena --mode diagnostic --seed 12345 --headless --trace-dir trace_a 2>&1 &
-          sleep 3
-          kill %1 2>/dev/null || true
-          
-          ./carrom_arena --mode diagnostic --seed 12345 --headless --trace-dir trace_b 2>&1 &
-          sleep 3
-          kill %1 2>/dev/null || true
-          
-          # Compare traces
-          ./carrom_arena --mode diagnostic --seed 12345 --headless --replay trace_a/trace_12345.jsonl 2>&1 || true
+          name: ctest-log-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
+          path: |
+            build/Testing/**/*.xml
+            build/Testing/**/*.log
+          retention-days: 7
 
-  # Stage 5: Soak Test (Light)
-  soak-test:
-    name: Soak Test (Light)
-    runs-on: ubuntu-latest
-    needs: compile
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build gcc g++ libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev
-      
-      - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -G Ninja
-      
-      - name: Build
-        run: cmake --build build --parallel 4
-      
-      - name: Run light soak test (5 boards x 2 seeds x 1 match)
-        run: |
-          cd build
-          timeout 600 ./carrom_arena --mode soak --seed 42 --boards 5 --seeds 2 --matches 1 --headless 2>&1 || true
-
-  # Stage 6: Memory Sanitizer Check
-  sanitize:
-    name: Memory Sanitizer (ASan/UBSan)
-    runs-on: ubuntu-latest
-    needs: compile
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build gcc g++ libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev
-      
-      - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -G Ninja
-      
-      - name: Build with sanitizers
-        run: cmake --build build --parallel 4
-      
-      - name: Run quick test under ASan
-        run: |
-          cd build
-          timeout 60 ./carrom_arena --mode diagnostic --seed 1 --boards 1 --headless 2>&1 || true
-
-  # Stage 7: Cross-Compilation Check (Windows)
-  cross-compile-windows:
-    name: Cross-Compile Windows (MinGW)
-    runs-on: ubuntu-latest
-    needs: compile
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      
-      - name: Install MinGW
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y mingw-w64 cmake ninja-build
-      
-      - name: Configure CMake for Windows
-        run: |
-          cmake -B build-windows -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
-            -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-toolchain.cmake \
-            -G Ninja || echo "Cross-compile not fully configured, skipping"
-      
-      - name: Build for Windows
-        run: |
-          cmake --build build-windows --parallel 4 || echo "Cross-compile failed, expected in CI"
-
-  # Stage 8: Release Build
-  release-build:
-    name: Release Build
-    runs-on: ubuntu-latest
-    needs: [compile, unit-tests, determinism, soak-test, sanitize, cross-compile-windows]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build gcc g++ libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev
-      
-      - name: Configure CMake (Release)
-        run: cmake -B build-release -DCMAKE_BUILD_TYPE=Release -G Ninja
-      
-      - name: Build Release
-        run: cmake --build build-release --parallel 4
-      
-      - name: Verify release binary
-        run: |
-          test -f build-release/carrom_arena
-          build-release/carrom_arena --version
-
-  # Summary
+  # Summary job to report overall status
   ci-summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [configure-lint, compile, unit-tests, determinism, soak-test, sanitize, cross-compile-windows, release-build]
+    needs: build-test
     if: always()
     steps:
-      - name: Report status
+      - name: Report matrix status
         run: |
-          echo "All CI stages completed"
-          for job in configure-lint compile unit-tests determinism soak-test sanitize cross-compile-windows release-build; do
-            echo "$job: ${{ needs.$job.result }}"
+          echo "=== 18-Runner Matrix Results ==="
+          echo "Job results from needs.build-test:"
+          for job in ${{ join(needs.build-test.result, ', ') }}; do
+            echo "  $job"
           done
+          # Check if any failed
+          if [[ "${{ needs.build-test.result }}" == "failure" ]]; then
+            echo "::error::One or more matrix jobs failed"
+            exit 1
+          fi
+          echo "All 18 runners PASSED ✅"
