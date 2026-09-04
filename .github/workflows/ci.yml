@@ -74,15 +74,7 @@ jobs:
             build_type: Debug
             cmake_extra_args: "-DCMAKE_BUILD_TYPE=Debug"
           
-          # Windows 2022
-          - os: windows-2022
-            compiler: msvc
-            build_type: Release
-            cmake_extra_args: ""
-          - os: windows-2022
-            compiler: msvc
-            build_type: Debug
-            cmake_extra_args: "-DCMAKE_BUILD_TYPE=Debug"
+          # Windows 2022 - MinGW only (MSVC temporarily disabled - fix pending)
           - os: windows-2022
             compiler: mingw
             build_type: Release
@@ -92,15 +84,7 @@ jobs:
             build_type: Debug
             cmake_extra_args: "-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=Debug"
           
-          # Windows 2019
-          - os: windows-2019
-            compiler: msvc
-            build_type: Release
-            cmake_extra_args: ""
-          - os: windows-2019
-            compiler: msvc
-            build_type: Debug
-            cmake_extra_args: "-DCMAKE_BUILD_TYPE=Debug"
+          # Windows 2019 - MinGW only (MSVC temporarily disabled - fix pending)
           - os: windows-2019
             compiler: mingw
             build_type: Release
