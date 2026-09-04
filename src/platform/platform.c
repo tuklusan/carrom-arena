@@ -7,11 +7,17 @@
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
+#if !defined(_WIN32)
 #include <unistd.h>
 #include <limits.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
+#else
+#include <windows.h>
+#include <direct.h>
+#include <io.h>
+#endif
 
 /* Explicit declarations for functions that may not be declared with feature macros */
 #if !defined(_WIN32)
@@ -23,8 +29,7 @@ extern ssize_t readlink(const char*, char*, size_t);
 const char* PLATFORM_BUILD_ID = BUILD_ID;
 
 #if defined(_WIN32)
-    #include <windows.h>
-    #define mkdir_p(path) _mkdir(path)
+    #define mkdir_p(path) mkdir(path)
 #else
     #define mkdir_p(path) mkdir(path, 0755)
 #endif
@@ -110,7 +115,7 @@ int platform_fflush(PlatformFile* file) {
 
 bool platform_mkdir(const char* path) {
 #if defined(_WIN32)
-    return _mkdir(path) == 0;
+    return mkdir(path) == 0;
 #else
     return mkdir(path, 0755) == 0;
 #endif

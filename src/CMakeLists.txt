@@ -40,8 +40,10 @@ target_include_directories(carrom_core PUBLIC
 target_link_libraries(carrom_core
     box2d
     ${PLATFORM_LIBS}
-    rt
 )
+if(UNIX)
+    target_link_libraries(carrom_core rt)
+endif()
 
 # Render library (depends on raylib)
 add_library(carrom_render
@@ -75,15 +77,15 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         -Wshadow -Wconversion -Wsign-conversion
         -Wnull-dereference
         -Wformat=2 -Wmisleading-indentation
-        -Wduplicated-cond -Wlogical-op
         -Wno-unused-parameter
         -Wno-unused-function
     )
+    # GCC-specific warnings not supported by Clang
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        list(APPEND STRICT_WARNINGS -Wduplicated-cond -Wlogical-op)
+    endif()
     target_compile_options(carrom_core PRIVATE ${STRICT_WARNINGS})
     target_compile_options(carrom_render PRIVATE ${STRICT_WARNINGS})
-    # Force include system math.h before Box2D headers to fix missing sqrtf/atan2f declarations
-    target_compile_options(carrom_core PRIVATE -include /usr/include/math.h)
-    target_compile_options(carrom_render PRIVATE -include /usr/include/math.h)
     # Suppress double-promotion warnings from Box2D headers
     target_compile_options(carrom_core PRIVATE -Wno-double-promotion)
     target_compile_options(carrom_render PRIVATE -Wno-double-promotion)
@@ -91,10 +93,19 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         target_compile_options(carrom_core PRIVATE -Werror)
         target_compile_options(carrom_render PRIVATE -Werror)
-        target_compile_options(carrom_core PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
-        target_compile_options(carrom_render PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
-        target_link_options(carrom_core PRIVATE -fsanitize=address,undefined)
-        target_link_options(carrom_render PRIVATE -fsanitize=address,undefined)
+        # On Windows/Clang, Box2D headers trigger -Wimplicit-function-declaration
+        # Disable -Werror for this specific warning on Windows
+        if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+            target_compile_options(carrom_core PRIVATE -Wno-error=implicit-function-declaration)
+            target_compile_options(carrom_render PRIVATE -Wno-error=implicit-function-declaration)
+        endif()
+        # Sanitizers only on Linux/GNU - not supported on Windows/Clang
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+            target_compile_options(carrom_core PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+            target_compile_options(carrom_render PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+            target_link_options(carrom_core PRIVATE -fsanitize=address,undefined)
+            target_link_options(carrom_render PRIVATE -fsanitize=address,undefined)
+        endif()
     endif()
 elseif(MSVC)
     target_compile_options(carrom_core PRIVATE /W4 /WX /permissive- /std:c17)
@@ -138,6 +149,18 @@ target_compile_definitions(carrom_render PRIVATE
     VARIANTS_PER_PLACEMENT=40
 )
 
+# Enable math.h float functions (sqrtf, atan2f, etc.) on MinGW
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND WIN32)
+    target_compile_definitions(carrom_core PRIVATE __USE_MINGW_ANSI_STDIO=1)
+    target_compile_definitions(carrom_render PRIVATE __USE_MINGW_ANSI_STDIO=1)
+endif()
+
+# Suppress CRT secure warnings on Windows (fopen, strcat, strncpy deprecation)
+if(WIN32)
+    target_compile_definitions(carrom_core PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(carrom_render PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # Main executable
 add_executable(carrom_arena
     app/main.c
@@ -150,10 +173,27 @@ target_link_libraries(carrom_arena
     raylib
 )
 
-# Force include math.h before Box2D headers (for sqrtf, atan2f, etc.)
+# Suppress double-promotion warnings from Box2D headers - GNU/Clang
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(carrom_arena PRIVATE -include /usr/include/math.h -Wno-double-promotion)
-    target_link_options(carrom_arena PRIVATE -fsanitize=address,undefined)
+    target_compile_options(carrom_arena PRIVATE -Wno-double-promotion)
+    # Enable math.h float functions (sqrtf, atan2f, etc.) on MinGW
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND WIN32)
+        target_compile_definitions(carrom_arena PRIVATE __USE_MINGW_ANSI_STDIO=1)
+    endif()
+    # Suppress CRT secure warnings on Windows
+    if(WIN32)
+        target_compile_definitions(carrom_arena PRIVATE _CRT_SECURE_NO_WARNINGS)
+    endif()
+    # On Windows/Clang, Box2D headers trigger -Wimplicit-function-declaration
+    # Disable -Werror for this specific warning on Windows
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(carrom_arena PRIVATE -Wno-error=implicit-function-declaration)
+        target_compile_options(carrom_arena PRIVATE -Wno-error=missing-format-attribute)
+    endif()
+    # Sanitizers only on Linux/GNU - not supported on Windows/Clang
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        target_link_options(carrom_arena PRIVATE -fsanitize=address,undefined)
+    endif()
 endif()
 
 # Set output directory

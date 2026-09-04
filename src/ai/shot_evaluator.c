@@ -1,3 +1,8 @@
+#define __USE_MINGW_ANSI_STDIO 1
+#include <math.h>
+#ifdef __MINGW32__
+extern float sqrtf(float);
+#endif
 #include "shot_evaluator.h"
 #include "types.h"
 #include "math.h"
@@ -6,7 +11,6 @@
 #include "physics/physics_snapshot.h"
 #include "board.h"
 #include "rules.h"
-#include <math.h>
 #include <stdlib.h>
 
 /* -----------------------------------------------------------------------------

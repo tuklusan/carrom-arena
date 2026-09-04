@@ -2,7 +2,12 @@
 #include "common/types.h"
 #include "common/math.h"
 #include <raylib.h>
+#define __USE_MINGW_ANSI_STDIO 1
 #include <math.h>
+#ifdef __MINGW32__
+extern float cosf(float);
+extern float sinf(float);
+#endif
 
 #define MAX_POCKET_FADE_TIME 0.2f  // 200ms fade
 
@@ -56,7 +61,7 @@ void effects_draw(Viewport vp, const GameState* game) {
                 float alpha = pocket_fades[i].timer / MAX_POCKET_FADE_TIME;
                 float r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM * 1.5f);
                 Vec2 p = math_world_to_screen(vp, POCKET_CENTERS[i]);
-                DrawCircle((int)p.x, (int)p.y, (int)r, (Color){255, 255, 0, (unsigned char)(alpha * 100)});
+                DrawCircle((int)p.x, (int)p.y, r, (Color){255, 255, 0, (unsigned char)(alpha * 100)});
             }
         }
     }

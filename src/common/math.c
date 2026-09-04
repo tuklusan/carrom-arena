@@ -1,6 +1,14 @@
 #include "types.h"
 #include "math.h"
+#define __USE_MINGW_ANSI_STDIO 1
 #include <math.h>
+#ifdef __MINGW32__
+extern float cosf(float);
+extern float sinf(float);
+extern float atan2f(float, float);
+extern float sqrtf(float);
+extern float fminf(float, float);
+#endif
 
 /* Define POCKET_CENTERS */
 const Vec2 POCKET_CENTERS[4] = {
