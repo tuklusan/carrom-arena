@@ -30,6 +30,7 @@ struct AppContext {
     Controller* controllers[4];  // One per seat
     uint64_t frame_count;
     uint64_t shot_count;
+    uint64_t capture_frame_count;  // Persists across boards in capture mode
     bool running;
     bool paused;
     double last_frame_time;
@@ -78,12 +79,12 @@ static void app_setup_renderer(AppContext* ctx) {
     if (ctx->config.mode == APP_MODE_RENDERED) {
         if (!ctx->config.headless) {
             ctx->renderer = renderer_create(ctx->config.window_width, ctx->config.window_height, 
-                                             "Carrom Arena", false);
+                                             "Carrom Arena", false, false);
         }
     } else if (ctx->config.mode == APP_MODE_CAPTURE) {
-        // Capture mode always needs a renderer (windowed)
+        // Capture mode always needs a renderer (windowed or hidden)
         ctx->renderer = renderer_create(ctx->config.window_width, ctx->config.window_height, 
-                                         "Carrom Arena", true);
+                                         "Carrom Arena", true, ctx->config.headless);
     }
 }
 
@@ -330,8 +331,9 @@ int app_run_simulation(AppContext* ctx) {
             renderer_end(ctx->renderer);
             
             // Capture frames if in capture mode
-            if (ctx->config.mode == APP_MODE_CAPTURE && ctx->frame_count < ctx->config.frames) {
-                renderer_capture_frame(ctx->renderer, ctx->config.capture_dir, ctx->frame_count);
+            if (ctx->config.mode == APP_MODE_CAPTURE && ctx->capture_frame_count < ctx->config.frames) {
+                renderer_capture_frame(ctx->renderer, ctx->config.capture_dir, ctx->capture_frame_count);
+                ctx->capture_frame_count++;
             }
             ctx->frame_count++;
         }
@@ -452,7 +454,43 @@ int app_run_soak(AppContext* ctx) {
 
 int app_run_capture(AppContext* ctx) {
     platform_mkdir(ctx->config.capture_dir);
-    return app_run_simulation(ctx);
+    
+    if (ctx->config.verbose) {
+        printf("[DEBUG] app_run_capture: target frames=%u\n", ctx->config.frames);
+        fflush(stdout);
+    }
+    
+    uint32_t target_frames = ctx->config.frames;
+    uint32_t total_frames = 0;
+    
+    // Run multiple boards until we capture enough frames
+    while (total_frames < target_frames) {
+        // Ensure running state for each board
+        ctx->running = true;
+        
+        app_init_match(ctx);
+        match_start_board(&ctx->match, &ctx->game, &ctx->rng);
+        physics_sync_from_board(ctx->physics, &ctx->game.board, ctx->game.turn_seat);
+        
+        // Run simulation for this board, but stop if we hit target frames
+        uint32_t frames_before = ctx->frame_count;
+        app_run_simulation(ctx);
+        uint32_t frames_this_board = ctx->frame_count - frames_before;
+        total_frames += frames_this_board;
+        
+        if (ctx->config.verbose) {
+            printf("[DEBUG] Board complete: captured %u frames this board, total %u/%u\n", 
+                   frames_this_board, total_frames, target_frames);
+            fflush(stdout);
+        }
+        
+        // If no frames captured, break to avoid infinite loop
+        if (frames_this_board == 0) {
+            break;
+        }
+    }
+    
+    return 0;
 }
 
 /* -----------------------------------------------------------------------------

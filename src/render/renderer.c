@@ -57,7 +57,7 @@ static void center_window_on_monitor(int window_width, int window_height) {
     SetWindowPosition(pos_x, pos_y);
 }
 
-Renderer* renderer_create(int width, int height, const char* title, bool capture_mode) {
+Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window) {
     Renderer* r = calloc(1, sizeof(Renderer));
     if (!r) return NULL;
     
@@ -119,12 +119,18 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     /* Create viewport for the fixed 600x600 game surface */
     r->viewport = math_viewport_create(GAME_SURFACE_SIZE, GAME_SURFACE_SIZE);
     
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
+    unsigned int flags = FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT;
+    if (hidden_window) {
+        flags |= FLAG_WINDOW_HIDDEN;
+    }
+    SetConfigFlags(flags);
     InitWindow(r->width, r->height, "SANYALnet Labs Carrom Arena");
     SetTargetFPS(60);
     
-    /* Center window on monitor */
-    center_window_on_monitor(r->width, r->height);
+    /* Center window on monitor (skip if hidden) */
+    if (!hidden_window) {
+        center_window_on_monitor(r->width, r->height);
+    }
     
     r->camera = (Camera2D){ 0 };
     r->camera.offset = (Vector2){ (float)GAME_SURFACE_SIZE * 0.5f, (float)GAME_SURFACE_SIZE * 0.5f };
