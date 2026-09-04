@@ -122,7 +122,6 @@ jobs:
             cxx: "cl"
             build_type: "Debug"
             cmake_extra: ""
-            shell: cmd
           
           - os: "windows-2022"
             runs-on: "windows-2022"
@@ -131,7 +130,6 @@ jobs:
             cxx: "cl"
             build_type: "Release"
             cmake_extra: ""
-            shell: cmd
           
           # Windows 2022 - MinGW (Debug + Release)
           - os: "windows-2022"
@@ -141,7 +139,6 @@ jobs:
             cxx: "x86_64-w64-mingw32-g++"
             build_type: "Debug"
             cmake_extra: "-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++"
-            shell: cmd
           
           - os: "windows-2022"
             runs-on: "windows-2022"
@@ -150,7 +147,6 @@ jobs:
             cxx: "x86_64-w64-mingw32-g++"
             build_type: "Release"
             cmake_extra: "-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++"
-            shell: cmd
           
           # Windows 2019 - MSVC (Debug + Release)
           - os: "windows-2019"
@@ -160,7 +156,6 @@ jobs:
             cxx: "cl"
             build_type: "Debug"
             cmake_extra: ""
-            shell: cmd
           
           - os: "windows-2019"
             runs-on: "windows-2019"
@@ -169,7 +164,6 @@ jobs:
             cxx: "cl"
             build_type: "Release"
             cmake_extra: ""
-            shell: cmd
           
           # Windows 2019 - MinGW (Debug + Release)
           - os: "windows-2019"
@@ -179,7 +173,6 @@ jobs:
             cxx: "x86_64-w64-mingw32-g++"
             build_type: "Debug"
             cmake_extra: "-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++"
-            shell: cmd
           
           - os: "windows-2019"
             runs-on: "windows-2019"
@@ -188,7 +181,11 @@ jobs:
             cxx: "x86_64-w64-mingw32-g++"
             build_type: "Release"
             cmake_extra: "-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++"
-            shell: cmd
+
+    # Use bash for all platforms (Git Bash available on Windows runners)
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout
@@ -217,13 +214,11 @@ jobs:
       # Windows MinGW: install mingw-w64
       - name: Install MinGW on Windows
         if: runner.os == 'Windows' && matrix.compiler == 'mingw'
-        shell: pwsh
         run: |
           choco install mingw --version 13.1.0 -y --no-progress
-          echo "C:\Program Files\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "C:\Program Files\mingw64\bin" >> $GITHUB_PATH
 
       - name: Configure CMake
-        shell: ${{ matrix.shell || 'bash' }}
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
@@ -234,11 +229,9 @@ jobs:
           CXX: ${{ matrix.cxx }}
 
       - name: Build
-        shell: ${{ matrix.shell || 'bash' }}
         run: cmake --build build --parallel 4
 
       - name: Run tests (headless)
-        shell: ${{ matrix.shell || 'bash' }}
         run: |
           cd build && ctest --output-on-failure --parallel 4
         env:
@@ -266,10 +259,7 @@ jobs:
         run: |
           echo "=== 18-Runner Matrix Results ==="
           echo "Job results from needs.build-test:"
-          for job in ${{ join(needs.build-test.result, ', ') }}; do
-            echo "  $job"
-          done
-          # Check if any failed
+          # GitHub sets needs.<job>.result for matrix jobs
           if [[ "${{ needs.build-test.result }}" == "failure" ]]; then
             echo "::error::One or more matrix jobs failed"
             exit 1
