@@ -83,6 +83,9 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     # GCC-specific warnings not supported by Clang
     if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
         list(APPEND STRICT_WARNINGS -Wduplicated-cond -Wlogical-op)
+    else()
+        # Clang-specific: disable warnings not applicable or too strict for our codebase
+        list(APPEND STRICT_WARNINGS -Wno-newline-eof)
     endif()
     target_compile_options(carrom_core PRIVATE ${STRICT_WARNINGS})
     target_compile_options(carrom_render PRIVATE ${STRICT_WARNINGS})
@@ -181,6 +184,10 @@ target_link_libraries(carrom_arena
 # Suppress double-promotion warnings from Box2D headers - GNU/Clang
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(carrom_arena PRIVATE -Wno-double-promotion)
+    # Clang-specific: disable warnings not applicable or too strict for our codebase
+    if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(carrom_arena PRIVATE -Wno-newline-eof)
+    endif()
     # Force include system math.h before Box2D headers to fix missing sqrtf/atan2f declarations (Linux only)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_compile_options(carrom_arena PRIVATE -include math.h)
