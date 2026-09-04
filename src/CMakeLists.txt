@@ -210,9 +210,15 @@ set_target_properties(carrom_arena PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
-# Disable -Werror=implicit-function-declaration and builtin-declaration-mismatch for targets including Box2D headers
+# Disable -Werror=implicit-function-declaration for targets including Box2D headers
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(carrom_core PRIVATE -Wno-error=implicit-function-declaration -Wno-error=builtin-declaration-mismatch)
-    target_compile_options(carrom_render PRIVATE -Wno-error=implicit-function-declaration -Wno-error=builtin-declaration-mismatch)
-    target_compile_options(carrom_arena PRIVATE -Wno-error=implicit-function-declaration -Wno-error=builtin-declaration-mismatch)
+    target_compile_options(carrom_core PRIVATE -Wno-error=implicit-function-declaration)
+    target_compile_options(carrom_render PRIVATE -Wno-error=implicit-function-declaration)
+    target_compile_options(carrom_arena PRIVATE -Wno-error=implicit-function-declaration)
+    # -Werror=builtin-declaration-mismatch is GNU-only
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(carrom_core PRIVATE -Wno-error=builtin-declaration-mismatch)
+        target_compile_options(carrom_render PRIVATE -Wno-error=builtin-declaration-mismatch)
+        target_compile_options(carrom_arena PRIVATE -Wno-error=builtin-declaration-mismatch)
+    endif()
 endif()
