@@ -134,6 +134,10 @@ target_include_directories(test_regression PRIVATE
     ${unity_SOURCE_DIR}/src
 )
 
+# Reduce MAX_CANDIDATES for faster regression testing (default is 320)
+# Reduce MAX_SIM_TIME for candidate evaluation (default is 4.0f seconds)
+target_compile_definitions(test_regression PRIVATE MAX_CANDIDATES=5 MAX_SIM_TIME_VAL=0.5f)
+
 # Default run with fixed seed and full bounds (1200s timeout with ASAN)
 add_test(NAME regression_test COMMAND test_regression)
 

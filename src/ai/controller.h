@@ -12,7 +12,9 @@ extern "C" {
  * AI Controller Interface
  * --------------------------------------------------------------------------- */
 
+#ifndef MAX_CANDIDATES
 #define MAX_CANDIDATES 320
+#endif
 
 typedef struct Controller Controller;
 

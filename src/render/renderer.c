@@ -45,6 +45,13 @@ static void center_window_on_monitor(int window_width, int window_height) {
     int monitor = GetCurrentMonitor();
     int monitor_width = GetMonitorWidth(monitor);
     int monitor_height = GetMonitorHeight(monitor);
+    
+    // Fallback if monitor dimensions are invalid (e.g., Xvfb)
+    if (monitor_width <= 0 || monitor_height <= 0) {
+        monitor_width = 1920;
+        monitor_height = 1080;
+    }
+    
     int pos_x = (monitor_width - window_width) / 2;
     int pos_y = (monitor_height - window_height) / 2;
     SetWindowPosition(pos_x, pos_y);
@@ -69,6 +76,12 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     int monitor_width = GetMonitorWidth(monitor);
     int monitor_height = GetMonitorHeight(monitor);
     
+    // Fallback if monitor dimensions are invalid (e.g., Xvfb/headless)
+    if (monitor_width <= 0 || monitor_height <= 0) {
+        monitor_width = 1920;
+        monitor_height = 1080;
+    }
+    
     // Margins: 40px horizontal, 80px vertical (taskbar + titlebar)
     int max_width = monitor_width - 40;
     int max_height = monitor_height - 80;
@@ -91,6 +104,10 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     // Ensure text fits
     if (r->title_width + 40 > window_width) window_width = r->title_width + 40;
     if (r->copyright_width + 40 > window_width) window_width = r->copyright_width + 40;
+    
+    // Final safety clamp - ensure dimensions are >= 200
+    if (window_width < 200) window_width = 200;
+    if (window_height < 200) window_height = 200;
     
     r->width = window_width;
     r->height = window_height;
