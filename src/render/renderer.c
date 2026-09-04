@@ -8,12 +8,17 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Layout constants for the new fixed 600x600 gameplay surface */
-#define GAME_SURFACE_SIZE 600
+/* Layout constants */
 #define TITLE_FONT_SIZE 24
 #define COPYRIGHT_FONT_SIZE 16
 #define TITLE_PADDING 16
 #define COPYRIGHT_PADDING 12
+#define WINDOW_H_MARGIN 40
+#define WINDOW_V_MARGIN 80
+#define MIN_GAME_SURFACE 480
+#define MAX_GAME_SURFACE 1200
+#define DEFAULT_FALLBACK_WIDTH 1280
+#define DEFAULT_FALLBACK_HEIGHT 720
 
 static const char* TITLE_TEXT = "SANYALnet Labs Carrom Arena";
 static const char* COPYRIGHT_TEXT = "\xC2\xA9 Supratim Sanyal";  // UTF-8 ©
@@ -31,6 +36,7 @@ struct Renderer {
     /* Layout */
     int game_surface_x;
     int game_surface_y;
+    int game_surface_size;
     int title_width;
     int copyright_width;
 };
@@ -40,20 +46,62 @@ static int measure_text_width(const char* text, int font_size) {
     return MeasureText(text, font_size);
 }
 
-/* Helper to center window on primary monitor */
-static void center_window_on_monitor(int window_width, int window_height) {
-    int monitor = GetCurrentMonitor();
-    int monitor_width = GetMonitorWidth(monitor);
-    int monitor_height = GetMonitorHeight(monitor);
+/* Select best monitor for window placement.
+ * Returns monitor index, or -1 if no monitors available (headless/Xvfb).
+ * Strategy: prefer primary monitor (0), but if it's too small, pick the largest. */
+static int select_best_monitor(int min_width, int min_height) {
+    int monitor_count = GetMonitorCount();
+    if (monitor_count <= 0) return -1;
     
-    // Fallback if monitor dimensions are invalid (e.g., Xvfb)
-    if (monitor_width <= 0 || monitor_height <= 0) {
-        monitor_width = 1920;
-        monitor_height = 1080;
+    // Check primary monitor first
+    int primary_width = GetMonitorWidth(0);
+    int primary_height = GetMonitorHeight(0);
+    if (primary_width >= min_width && primary_height >= min_height) {
+        return 0;
     }
     
-    int pos_x = (monitor_width - window_width) / 2;
-    int pos_y = (monitor_height - window_height) / 2;
+    // Primary too small - find largest monitor that meets minimum requirements
+    int best_monitor = -1;
+    int best_area = 0;
+    for (int i = 0; i < monitor_count; i++) {
+        int w = GetMonitorWidth(i);
+        int h = GetMonitorHeight(i);
+        if (w >= min_width && h >= min_height) {
+            int area = w * h;
+            if (area > best_area) {
+                best_area = area;
+                best_monitor = i;
+            }
+        }
+    }
+    return best_monitor;
+}
+
+/* Get monitor working area (approximation using monitor dimensions minus typical taskbar).
+ * Raylib doesn't expose working area directly, so we use monitor dims with margins. */
+static void get_monitor_work_area(int monitor, int* out_width, int* out_height, int* out_pos_x, int* out_pos_y) {
+    *out_width = GetMonitorWidth(monitor);
+    *out_height = GetMonitorHeight(monitor);
+    Vector2 pos = GetMonitorPosition(monitor);
+    *out_pos_x = (int)pos.x;
+    *out_pos_y = (int)pos.y;
+    
+    // Fallback if monitor dimensions are invalid (e.g., Xvfb/headless)
+    if (*out_width <= 0 || *out_height <= 0) {
+        *out_width = DEFAULT_FALLBACK_WIDTH;
+        *out_height = DEFAULT_FALLBACK_HEIGHT;
+        *out_pos_x = 0;
+        *out_pos_y = 0;
+    }
+}
+
+/* Center window on the specified monitor's working area */
+static void center_window_on_monitor(int monitor, int window_width, int window_height) {
+    int mon_w, mon_h, mon_x, mon_y;
+    get_monitor_work_area(monitor, &mon_w, &mon_h, &mon_x, &mon_y);
+    
+    int pos_x = mon_x + (mon_w - window_width) / 2;
+    int pos_y = mon_y + (mon_h - window_height) / 2;
     SetWindowPosition(pos_x, pos_y);
 }
 
@@ -70,56 +118,67 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     
     int title_area_height = TITLE_FONT_SIZE + TITLE_PADDING * 2;
     int copyright_area_height = COPYRIGHT_FONT_SIZE + COPYRIGHT_PADDING * 2;
+    int chrome_height = title_area_height + copyright_area_height;
     
-    /* Clamp requested size to monitor bounds with margins */
-    int monitor = GetCurrentMonitor();
-    int monitor_width = GetMonitorWidth(monitor);
-    int monitor_height = GetMonitorHeight(monitor);
+    /* Select best monitor BEFORE InitWindow (requires FLAG_WINDOW_HIGHDPI to be set early) */
+    int min_window_width = MIN_GAME_SURFACE + WINDOW_H_MARGIN;
+    int min_window_height = MIN_GAME_SURFACE + chrome_height + WINDOW_V_MARGIN;
+    int monitor = select_best_monitor(min_window_width, min_window_height);
     
-    // Fallback if monitor dimensions are invalid (e.g., Xvfb/headless)
-    if (monitor_width <= 0 || monitor_height <= 0) {
-        monitor_width = 1920;
-        monitor_height = 1080;
+    int mon_w, mon_h, mon_x, mon_y;
+    if (monitor >= 0) {
+        get_monitor_work_area(monitor, &mon_w, &mon_h, &mon_x, &mon_y);
+    } else {
+        // Headless/Xvfb fallback
+        mon_w = DEFAULT_FALLBACK_WIDTH;
+        mon_h = DEFAULT_FALLBACK_HEIGHT;
+        mon_x = 0;
+        mon_y = 0;
+        monitor = 0;  // Use monitor 0 for positioning calls
     }
     
-    // Margins: 40px horizontal, 80px vertical (taskbar + titlebar)
-    int max_width = monitor_width - 40;
-    int max_height = monitor_height - 80;
+    // Available space for game surface (with margins)
+    int avail_width = mon_w - WINDOW_H_MARGIN;
+    int avail_height = mon_h - WINDOW_V_MARGIN - chrome_height;
     
-    // Minimum required: 600 game surface + 40px horizontal padding = 640
-    // Minimum height: title(24+32) + 600 + copyright(16+24) = ~696
-    int min_width = 640;
-    int min_height = 696;
+    // Calculate adaptive game surface size (square, clamped to range)
+    int game_surface = avail_width < avail_height ? avail_width : avail_height;
+    if (game_surface < MIN_GAME_SURFACE) game_surface = MIN_GAME_SURFACE;
+    if (game_surface > MAX_GAME_SURFACE) game_surface = MAX_GAME_SURFACE;
+    r->game_surface_size = game_surface;
     
-    // Start with CLI values, fallback to calculated
-    int window_width = (width > 0) ? width : GAME_SURFACE_SIZE + 40;
-    int window_height = (height > 0) ? height : title_area_height + GAME_SURFACE_SIZE + copyright_area_height + 40;
+    // Window dimensions: CLI override takes precedence, otherwise auto-sized
+    int window_width = (width > 0) ? width : game_surface + WINDOW_H_MARGIN;
+    int window_height = (height > 0) ? height : game_surface + chrome_height + WINDOW_V_MARGIN;
     
-    // Clamp to [min, max]
-    if (window_width < min_width) window_width = min_width;
+    // Clamp to monitor bounds
+    int max_width = mon_w - WINDOW_H_MARGIN;
+    int max_height = mon_h - WINDOW_V_MARGIN;
+    if (window_width < min_window_width) window_width = min_window_width;
     if (window_width > max_width) window_width = max_width;
-    if (window_height < min_height) window_height = min_height;
+    if (window_height < min_window_height) window_height = min_window_height;
     if (window_height > max_height) window_height = max_height;
     
     // Ensure text fits
-    if (r->title_width + 40 > window_width) window_width = r->title_width + 40;
-    if (r->copyright_width + 40 > window_width) window_width = r->copyright_width + 40;
+    if (r->title_width + WINDOW_H_MARGIN > window_width) window_width = r->title_width + WINDOW_H_MARGIN;
+    if (r->copyright_width + WINDOW_H_MARGIN > window_width) window_width = r->copyright_width + WINDOW_H_MARGIN;
     
-    // Final safety clamp - ensure dimensions are >= 200
+    // Final safety clamp
     if (window_width < 200) window_width = 200;
     if (window_height < 200) window_height = 200;
     
     r->width = window_width;
     r->height = window_height;
     
-    /* Game surface position within window - centered with margins */
-    r->game_surface_x = (r->width - GAME_SURFACE_SIZE) / 2;
+    /* Game surface position within window - centered horizontally, below title */
+    r->game_surface_x = (r->width - r->game_surface_size) / 2;
     r->game_surface_y = title_area_height;
     
-    /* Create viewport for the fixed 600x600 game surface */
-    r->viewport = math_viewport_create(GAME_SURFACE_SIZE, GAME_SURFACE_SIZE);
+    /* Create viewport for the adaptive game surface */
+    r->viewport = math_viewport_create(r->game_surface_size, r->game_surface_size);
     
-    unsigned int flags = FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT;
+    /* Set config flags BEFORE InitWindow - HIGH DPI must be first */
+    unsigned int flags = FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT;
     if (hidden_window) {
         flags |= FLAG_WINDOW_HIDDEN;
     }
@@ -127,13 +186,13 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     InitWindow(r->width, r->height, "SANYALnet Labs Carrom Arena");
     SetTargetFPS(60);
     
-    /* Center window on monitor (skip if hidden) */
-    if (!hidden_window) {
-        center_window_on_monitor(r->width, r->height);
+    /* Center window on selected monitor (skip if hidden) */
+    if (!hidden_window && monitor >= 0) {
+        center_window_on_monitor(monitor, r->width, r->height);
     }
     
     r->camera = (Camera2D){ 0 };
-    r->camera.offset = (Vector2){ (float)GAME_SURFACE_SIZE * 0.5f, (float)GAME_SURFACE_SIZE * 0.5f };
+    r->camera.offset = (Vector2){ (float)r->game_surface_size * 0.5f, (float)r->game_surface_size * 0.5f };
     r->camera.target = (Vector2){ 0, 0 };
     r->camera.rotation = 0.0f;
     r->camera.zoom = 1.0f;
@@ -180,13 +239,13 @@ void renderer_begin(Renderer* r) {
     ClearBackground((Color){ 30, 30, 40, 255 });
     
     /* Draw title above game surface */
-    int title_x = r->game_surface_x + (GAME_SURFACE_SIZE - r->title_width) / 2;
+    int title_x = r->game_surface_x + (r->game_surface_size - r->title_width) / 2;
     int title_y = TITLE_PADDING + (TITLE_FONT_SIZE / 2);
     DrawText(TITLE_TEXT, title_x, title_y, TITLE_FONT_SIZE, WHITE);
     
     /* Draw copyright below game surface */
-    int copyright_x = r->game_surface_x + (GAME_SURFACE_SIZE - r->copyright_width) / 2;
-    int copyright_y = r->game_surface_y + GAME_SURFACE_SIZE + COPYRIGHT_PADDING + (COPYRIGHT_FONT_SIZE / 2);
+    int copyright_x = r->game_surface_x + (r->game_surface_size - r->copyright_width) / 2;
+    int copyright_y = r->game_surface_y + r->game_surface_size + COPYRIGHT_PADDING + (COPYRIGHT_FONT_SIZE / 2);
     DrawText(COPYRIGHT_TEXT, copyright_x, copyright_y, COPYRIGHT_FONT_SIZE, (Color){ 180, 180, 180, 255 });
     
     if (r->capture_mode) {
