@@ -15,7 +15,7 @@ extern "C" {
 
 typedef struct Renderer Renderer;
 
-Renderer* renderer_create(int width, int height, const char* title, bool capture_mode);
+Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window);
 void renderer_destroy(Renderer* renderer);
 
 void renderer_poll_events(Renderer* renderer);

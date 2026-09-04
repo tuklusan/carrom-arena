@@ -102,8 +102,8 @@ add_executable(test_trace_circular
 
 apply_test_warnings(test_trace_circular)
 
-# Disable format-truncation warning for this test (false positive)
-if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+# Disable format-truncation warning for this test (false positive, GNU only)
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     target_compile_options(test_trace_circular PRIVATE -Wno-format-truncation)
 endif()
 
