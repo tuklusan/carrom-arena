@@ -25,9 +25,13 @@ void shot_evaluator_evaluate(ShotCandidate* candidate, const DecisionSnapshot* s
     physics_place_striker(sim_world, snap->active_seat, candidate->plan.placement);
     physics_apply_shot(sim_world, candidate->plan.aim_angle, candidate->plan.power);
     
-    // Simulate until settled or timeout (4 sim seconds)
+    // Simulate until settled or timeout
     float sim_time = 0.0f;
+#ifndef MAX_SIM_TIME
     const float MAX_SIM_TIME = 4.0f;
+#else
+    const float MAX_SIM_TIME = MAX_SIM_TIME_VAL;
+#endif
     const float SIM_DT = PHYSICS_DT;
     
     while (sim_time < MAX_SIM_TIME) {
