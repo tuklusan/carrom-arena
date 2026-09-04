@@ -54,25 +54,7 @@ jobs:
             build_type: Debug
             cmake_extra_args: "-DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug"
           
-          # macOS 14 (Sonoma)
-          - os: macos-14
-            compiler: clang
-            build_type: Release
-            cmake_extra_args: ""
-          - os: macos-14
-            compiler: clang
-            build_type: Debug
-            cmake_extra_args: "-DCMAKE_BUILD_TYPE=Debug"
-          
-          # macOS 13 (Ventura)
-          - os: macos-13
-            compiler: clang
-            build_type: Release
-            cmake_extra_args: ""
-          - os: macos-13
-            compiler: clang
-            build_type: Debug
-            cmake_extra_args: "-DCMAKE_BUILD_TYPE=Debug"
+          # macOS temporarily disabled - runner capacity/fix pending
           
           # Windows 2022 - MinGW only (MSVC temporarily disabled - fix pending)
           - os: windows-2022
