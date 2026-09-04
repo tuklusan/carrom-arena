@@ -66,15 +66,7 @@ jobs:
             build_type: Debug
             cmake_extra_args: "-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=Debug"
           
-          # Windows 2019 - MinGW only (MSVC temporarily disabled - fix pending)
-          - os: windows-2019
-            compiler: mingw
-            build_type: Release
-            cmake_extra_args: "-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++"
-          - os: windows-2019
-            compiler: mingw
-            build_type: Debug
-            cmake_extra_args: "-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=Debug"
+          # Windows 2019 temporarily disabled - runner capacity limited on free tier
 
     steps:
       - name: Checkout
