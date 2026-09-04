@@ -6,6 +6,9 @@
 #include "game/board.h"
 #include "game/match.h"
 #include <math.h>
+#ifdef __MINGW32__
+extern float fabsf(float);
+#endif
 
 /* PhysicsWorld is opaque - tests should only use public API */
 /* We'll test behavior through public functions only */

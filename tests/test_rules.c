@@ -239,7 +239,7 @@ void test_rules_game_over(void) {
     game_state_init(&game, 12345);
     game.turn_seat = SEAT_NORTH;
     board_state_init(&game.board);
-    board_setup_initial_formation(&game.board, TEAM_WHITE);  // Properly set up board
+    board_setup_initial_formation(&game.board, NULL);  // Properly set up board
     game.board.white_on_board = 0;  // White has pocketed all pieces
     
     ShotFacts facts = {0};
@@ -271,7 +271,7 @@ void test_rules_match_over(void) {
     game_state_init(&game, 12345);
     game.turn_seat = SEAT_NORTH;
     board_state_init(&game.board);
-    board_setup_initial_formation(&game.board, TEAM_WHITE);  // Properly set up board
+    board_setup_initial_formation(&game.board, NULL);  // Properly set up board
     game.board.white_on_board = 0;  // White has pocketed all pieces
     
     ShotFacts facts = {0};

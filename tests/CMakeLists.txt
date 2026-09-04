@@ -11,17 +11,32 @@ function(apply_test_warnings target)
             -Wshadow -Wconversion -Wsign-conversion
             -Wnull-dereference -Wdouble-promotion
             -Wformat=2 -Wmisleading-indentation
-            -Wduplicated-cond -Wlogical-op
             -Wno-unused-parameter
             -Wno-unused-function
         )
+        # GCC-specific warnings not supported by Clang
+        if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+            list(APPEND TEST_WARNINGS -Wduplicated-cond -Wlogical-op)
+        endif()
         target_compile_options(${target} PRIVATE ${TEST_WARNINGS})
-        # Force include system math.h before Box2D headers to fix missing sqrtf/atan2f declarations
-        target_compile_options(${target} PRIVATE -include /usr/include/math.h -Wno-double-promotion)
+        # Force include system math.h before Box2D headers to fix missing sqrtf/atan2f declarations (Linux only)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            target_compile_options(${target} PRIVATE -include math.h -Wno-double-promotion)
+        else()
+            target_compile_options(${target} PRIVATE -Wno-double-promotion)
+        endif()
         if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             target_compile_options(${target} PRIVATE -Werror)
-            target_compile_options(${target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
-            target_link_options(${target} PRIVATE -fsanitize=address,undefined)
+            # On Windows/Clang, Box2D headers trigger -Wimplicit-function-declaration
+            # Disable -Werror for this specific warning on Windows
+            if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+                target_compile_options(${target} PRIVATE -Wno-error=implicit-function-declaration)
+            endif()
+            # Sanitizers only on Linux/GNU - not supported on Windows/Clang
+            if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+                target_compile_options(${target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+                target_link_options(${target} PRIVATE -fsanitize=address,undefined)
+            endif()
         endif()
     elseif(MSVC)
         target_compile_options(${target} PRIVATE /W4 /WX /permissive- /std:c17)

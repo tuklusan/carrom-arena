@@ -58,6 +58,18 @@ cd carrom
 
 ---
 
+## Cross-Platform Verification ✅
+
+| Platform | OS | Compiler | Status | Evidence |
+|----------|-----|----------|--------|----------|
+| **Linux** | Ubuntu 24.04 | GCC 15.2.0 | **VERIFIED** | CI (6/6 PASS, ~12 s) |
+| **Windows 10** | 10.0.19045 | Clang 22.1.7 + MSVC runtime | **VERIFIED** | `EVIDENCE/windows10_ctest.log` (6/6 PASS, 14.4 s) |
+| **Windows 11** | 10.0.22631 | MinGW-w64 GCC 16.1.0 | **VERIFIED** | `EVIDENCE/windows11_ctest.log` (6/6 PASS, 13.5 s) |
+
+Full certification: [`CROSS_PLATFORM_QA_CERTIFICATE.md`](CROSS_PLATFORM_QA_CERTIFICATE.md)
+
+---
+
 ## Build Commands
 
 | Task | Command |

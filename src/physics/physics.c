@@ -1,9 +1,10 @@
+#define __USE_MINGW_ANSI_STDIO 1
 #include <math.h>
-#include "physics.h"
-#include "types.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include "physics.h"
+#include "types.h"
 
 /* -----------------------------------------------------------------------------
  * PhysicsWorld Structure
@@ -422,7 +423,7 @@ void physics_collect_pocketed(PhysicsWorld* pw, ShotResult* result) {
     result->pocketed_count = (uint8_t)pw->pocketed_count;
     for (int i = 0; i < pw->pocketed_count; i++) {
         result->pocketed_ids[i] = pw->pocketed_ids[i];
-        result->pocketed_colors[i] = pw->pocketed_colors[i];
+        result->pocketed_colors[i] = (uint8_t)pw->pocketed_colors[i];
     }
     result->queen_pocketed = false;
     result->striker_pocketed = pw->striker_pocketed;

@@ -58,13 +58,24 @@ set(RAYLIB_NO_WERROR ON CACHE BOOL "Disable -Werror in raylib" FORCE)
 # Make all dependencies available
 FetchContent_MakeAvailable(raylib box2d unity)
 
-# Patch Box2D math_functions.h to include math.h for sqrtf
+# Patch Box2D math_functions.h to add explicit math function declarations for MinGW
 if(EXISTS "${box2d_SOURCE_DIR}/include/box2d/math_functions.h")
     file(READ "${box2d_SOURCE_DIR}/include/box2d/math_functions.h" BOX2D_MATH_H)
-    if(BOX2D_MATH_H AND NOT BOX2D_MATH_H MATCHES "#include <math.h>")
-        string(REPLACE "#include <float.h>" "#include <float.h>\n#include <math.h>" BOX2D_MATH_H "${BOX2D_MATH_H}")
+    if(BOX2D_MATH_H AND NOT BOX2D_MATH_H MATCHES "MinGW compatibility")
+        # Add explicit math function declarations for MinGW compatibility
+        string(REPLACE "#pragma once" 
+            "#pragma once\n\n// MinGW compatibility: declare math functions\n#ifdef __MINGW32__\nextern float sqrtf(float);\nextern float atan2f(float, float);\nextern float cosf(float);\nextern float sinf(float);\n#endif\n" 
+            BOX2D_MATH_H "${BOX2D_MATH_H}")
         file(WRITE "${box2d_SOURCE_DIR}/include/box2d/math_functions.h" "${BOX2D_MATH_H}")
-        message(STATUS "Patched Box2D math_functions.h to include math.h")
+        message(STATUS "Patched Box2D math_functions.h with MinGW math function declarations")
+    endif()
+endif()
+
+# Disable -Werror for Box2D target (external dependency)
+if(TARGET box2d)
+    target_compile_options(box2d PRIVATE -Wno-error=implicit-function-declaration)
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(box2d PRIVATE -Wno-error=builtin-declaration-mismatch)
     endif()
 endif()
 
@@ -114,6 +125,9 @@ elseif(UNIX)
     find_library(XCURSOR Xcursor)
     find_library(XI Xi)
     set(PLATFORM_LIBS ${PLATFORM_LIBS} ${RT} ${M} ${DL} ${X11} ${XRANDR} ${XINERAMA} ${XCURSOR} ${XI} Threads::Threads)
+else()
+    # Fallback for other platforms
+    set(PLATFORM_LIBS ${PLATFORM_LIBS})
 endif()
 
 # =============================================================================

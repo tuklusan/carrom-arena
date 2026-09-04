@@ -1,9 +1,15 @@
+#define __USE_MINGW_ANSI_STDIO 1
 #include <math.h>
+#ifdef __MINGW32__
+extern float atan2f(float, float);
+extern float cosf(float);
+extern float sinf(float);
+#endif
+#include <stdlib.h>
+#include <string.h>
 #include "physics_snapshot.h"
 #include "physics.h"
 #include "common/types.h"
-#include <stdlib.h>
-#include <string.h>
 
 /* Include internal PhysicsWorld definition */
 struct PhysicsWorld {

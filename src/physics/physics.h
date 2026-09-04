@@ -2,7 +2,7 @@
 #define CARROM_PHYSICS_H
 
 #include "types.h"
-#include <math.h>
+#include <math.h>  // Must be before Box2D for sqrtf, atan2f, cosf, sinf
 #include <box2d/box2d.h>
 #include "physics_snapshot.h"
 
