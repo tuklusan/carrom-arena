@@ -58,16 +58,17 @@ set(RAYLIB_NO_WERROR ON CACHE BOOL "Disable -Werror in raylib" FORCE)
 # Make all dependencies available
 FetchContent_MakeAvailable(raylib box2d unity)
 
-# Patch Box2D math_functions.h to add explicit math function declarations for MinGW
+# Patch Box2D math_functions.h to add explicit math function declarations for all platforms
+# Box2D v3.1.0 headers don't include math.h, causing implicit declaration warnings/errors
 if(EXISTS "${box2d_SOURCE_DIR}/include/box2d/math_functions.h")
     file(READ "${box2d_SOURCE_DIR}/include/box2d/math_functions.h" BOX2D_MATH_H)
-    if(BOX2D_MATH_H AND NOT BOX2D_MATH_H MATCHES "MinGW compatibility")
-        # Add explicit math function declarations for MinGW compatibility
+    if(BOX2D_MATH_H AND NOT BOX2D_MATH_H MATCHES "Math function declarations added")
+        # Add explicit math function declarations for all platforms
         string(REPLACE "#pragma once" 
-            "#pragma once\n\n// MinGW compatibility: declare math functions\n#ifdef __MINGW32__\nextern float sqrtf(float);\nextern float atan2f(float, float);\nextern float cosf(float);\nextern float sinf(float);\n#endif\n" 
+            "#pragma once\n\n// Math function declarations for Box2D (all platforms)\n// Box2D headers use math functions without including math.h\nextern float sqrtf(float);\nextern float atan2f(float, float);\nextern float cosf(float);\nextern float sinf(float);\nextern float fabsf(float);\n" 
             BOX2D_MATH_H "${BOX2D_MATH_H}")
         file(WRITE "${box2d_SOURCE_DIR}/include/box2d/math_functions.h" "${BOX2D_MATH_H}")
-        message(STATUS "Patched Box2D math_functions.h with MinGW math function declarations")
+        message(STATUS "Patched Box2D math_functions.h with math function declarations for all platforms")
     endif()
 endif()
 
