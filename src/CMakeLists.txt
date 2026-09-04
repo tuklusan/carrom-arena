@@ -89,6 +89,11 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     # Suppress double-promotion warnings from Box2D headers
     target_compile_options(carrom_core PRIVATE -Wno-double-promotion)
     target_compile_options(carrom_render PRIVATE -Wno-double-promotion)
+    # Force include system math.h before Box2D headers to fix missing sqrtf/atan2f declarations (Linux only)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_compile_options(carrom_core PRIVATE -include math.h)
+        target_compile_options(carrom_render PRIVATE -include math.h)
+    endif()
     
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         target_compile_options(carrom_core PRIVATE -Werror)
@@ -176,6 +181,10 @@ target_link_libraries(carrom_arena
 # Suppress double-promotion warnings from Box2D headers - GNU/Clang
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(carrom_arena PRIVATE -Wno-double-promotion)
+    # Force include system math.h before Box2D headers to fix missing sqrtf/atan2f declarations (Linux only)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_compile_options(carrom_arena PRIVATE -include math.h)
+    endif()
     # Enable math.h float functions (sqrtf, atan2f, etc.) on MinGW
     if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND WIN32)
         target_compile_definitions(carrom_arena PRIVATE __USE_MINGW_ANSI_STDIO=1)
@@ -200,3 +209,10 @@ endif()
 set_target_properties(carrom_arena PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
 )
+
+# Disable -Werror=implicit-function-declaration and builtin-declaration-mismatch for targets including Box2D headers
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(carrom_core PRIVATE -Wno-error=implicit-function-declaration -Wno-error=builtin-declaration-mismatch)
+    target_compile_options(carrom_render PRIVATE -Wno-error=implicit-function-declaration -Wno-error=builtin-declaration-mismatch)
+    target_compile_options(carrom_arena PRIVATE -Wno-error=implicit-function-declaration -Wno-error=builtin-declaration-mismatch)
+endif()
