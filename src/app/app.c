@@ -239,6 +239,14 @@ int app_run_simulation(AppContext* ctx) {
     ctx->accumulator = 0.0;
     uint64_t debug_frame = 0;
     
+    // Wall-time budget for capture mode (hard timeout to prevent hangs)
+    double capture_start_wall = 0.0;
+    double capture_max_wall = 0.0;
+    if (ctx->config.mode == APP_MODE_CAPTURE) {
+        capture_start_wall = platform_time_now();
+        capture_max_wall = (ctx->config.frames * 0.5 > 30.0) ? ctx->config.frames * 0.5 : 30.0;
+    }
+    
     // Initialize first board
     match_start_board(&ctx->match, &ctx->game, &ctx->rng);
     physics_sync_from_board(ctx->physics, &ctx->game.board, ctx->game.turn_seat);
@@ -334,8 +342,40 @@ int app_run_simulation(AppContext* ctx) {
             if (ctx->config.mode == APP_MODE_CAPTURE && ctx->capture_frame_count < ctx->config.frames) {
                 renderer_capture_frame(ctx->renderer, ctx->config.capture_dir, ctx->capture_frame_count);
                 ctx->capture_frame_count++;
+                
+                // Check if we've captured enough frames - exit simulation loop
+                if (ctx->capture_frame_count >= ctx->config.frames) {
+                    if (ctx->config.verbose) {
+                        printf("[DEBUG] Capture complete: %lu frames captured\n", (unsigned long)ctx->capture_frame_count);
+                        fflush(stdout);
+                    }
+                    ctx->running = false;
+                }
             }
             ctx->frame_count++;
+            
+            // Hard wall-time budget for capture mode (belt-and-suspenders)
+            if (ctx->config.mode == APP_MODE_CAPTURE) {
+                double elapsed_wall = platform_time_now() - capture_start_wall;
+                if (elapsed_wall > capture_max_wall) {
+                    fprintf(stderr, "[ERROR] Capture wall-time budget exceeded: %.2fs > %.2fs (frames=%lu)\n",
+                            elapsed_wall, capture_max_wall, (unsigned long)ctx->capture_frame_count);
+                    
+                    // Write .stall marker file
+                    if (ctx->config.capture_dir) {
+                        char stall_path[512];
+                        snprintf(stall_path, sizeof(stall_path), "%s/.stall", ctx->config.capture_dir);
+                        FILE* fp = fopen(stall_path, "w");
+                        if (fp) {
+                            fprintf(fp, "Capture stalled at frame %lu after %.2f seconds (budget %.2fs)\n",
+                                    (unsigned long)ctx->capture_frame_count, elapsed_wall, capture_max_wall);
+                            fclose(fp);
+                        }
+                    }
+                    
+                    return 74;  // EX_IOERR
+                }
+            }
         }
         
         // Soak mode: run as fast as possible (no sleep)
