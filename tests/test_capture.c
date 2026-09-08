@@ -58,14 +58,14 @@ void test_capture_completes_bounded(void) {
 
     char cmd[1024];
 #ifdef _WIN32
-    /* Windows (Git Bash): run carrom_arena.exe with software rendering for headless CI.
+    /* Windows: system() uses cmd.exe. Use cmd syntax with software rendering env vars.
      * Force Mesa llvmpipe software renderer since GitHub Windows runners lack GPU for WGL. */
     snprintf(cmd, sizeof(cmd),
-        "rm -rf %s && mkdir -p %s && "
-        "LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe "
-        "timeout 60 ./carrom_arena.exe --mode=capture --seed=42 --headless "
-        "--frames=5 --capture-dir=%s > %s/log.txt 2>&1; echo \"EXIT_CODE=$?\" >> %s/log.txt",
-        dir, dir, dir, dir, dir);
+        "set LIBGL_ALWAYS_SOFTWARE=1 && set GALLIUM_DRIVER=llvmpipe && "
+        "rmdir /S /Q %s 2>nul && mkdir %s && "
+        "carrom_arena.exe --mode=capture --seed=42 --headless "
+        "--frames=5 --capture-dir=%s > %s\\log.txt 2>&1",
+        dir, dir, dir, dir);
 #else
     // If DISPLAY is already set (e.g. CI setup Xvfb externally), skip xvfb-run
     const char* display = getenv("DISPLAY");
