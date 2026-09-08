@@ -15,7 +15,7 @@ static int count_pngs(const char* dir) {
 #ifdef _WIN32
     /* Windows: use _findfirst/_findnext */
     char pattern[512];
-    snprintf(pattern, sizeof(pattern), "%s\\frame_*.png", dir);
+    snprintf(pattern, sizeof(pattern), "%s/frame_*.png", dir);
     struct _finddata_t fileinfo;
     intptr_t handle = _findfirst(pattern, &fileinfo);
     if (handle == -1) return 0;
@@ -56,19 +56,20 @@ void test_capture_completes_bounded(void) {
     char dir[256];
 #ifdef _WIN32
     const char* temp = getenv("TEMP");
-    if (!temp) temp = "C:\\Windows\\Temp";
-    snprintf(dir, sizeof(dir), "%s\\carrom_capture_test_%d", temp, (int)getpid());
+    if (!temp) temp = "C:/Windows/Temp";
+    snprintf(dir, sizeof(dir), "%s/carrom_capture_test_%d", temp, (int)getpid());
 #else
     snprintf(dir, sizeof(dir), "/tmp/carrom_capture_test_%d", (int)getpid());
 #endif
 
     char cmd[1024];
 #ifdef _WIN32
-    /* Windows: run carrom_arena.exe directly with WGL hidden window */
+    /* Windows (Git Bash): run carrom_arena.exe directly with WGL hidden window.
+     * CI uses Git Bash shell, so use bash-compatible commands. */
     snprintf(cmd, sizeof(cmd),
-        "if exist %s rmdir /S /Q %s & mkdir %s & "
-        "carrom_arena.exe --mode=capture --seed=42 --headless "
-        "--frames=5 --capture-dir=%s > %s\\log.txt 2>&1",
+        "rm -rf '%s' && mkdir -p '%s' && "
+        "timeout 60 ./carrom_arena.exe --mode=capture --seed=42 --headless "
+        "--frames=5 --capture-dir='%s' > '%s/log.txt' 2>&1; echo \"EXIT_CODE=$?\" >> '%s/log.txt'",
         dir, dir, dir, dir, dir);
 #else
     // If DISPLAY is already set (e.g. CI setup Xvfb externally), skip xvfb-run
