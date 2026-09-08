@@ -178,7 +178,11 @@ apply_test_warnings(test_capture)
 
 # Disable -Werror for this test due to POSIX popen/pclose with -std=c17 and format-truncation
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(test_capture PRIVATE -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=format-truncation)
+    target_compile_options(test_capture PRIVATE -Wno-error=implicit-function-declaration -Wno-error=int-conversion)
+endif()
+# format-truncation is GCC-specific; disable as error only for GNU
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(test_capture PRIVATE -Wno-error=format-truncation)
 endif()
 
 # No carrom_core link needed - this test spawns the full binary
