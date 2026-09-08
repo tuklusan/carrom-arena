@@ -36,12 +36,23 @@ void test_capture_completes_bounded(void) {
     char dir[256];
     snprintf(dir, sizeof(dir), "/tmp/carrom_capture_test_%d", (int)getpid());
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd),
-        "rm -rf %s && mkdir -p %s && "
-        "timeout 60 xvfb-run -a -s '-screen 0 1920x1080x24' "
-        "./carrom_arena --mode=capture --seed=42 --headless "
-        "--frames=5 --capture-dir=%s > %s/log.txt 2>&1; echo \"EXIT_CODE=$$?\" >> %s/log.txt",
-        dir, dir, dir, dir, dir);
+    // If DISPLAY is already set (e.g. CI setup Xvfb externally), skip xvfb-run
+    const char* display = getenv("DISPLAY");
+    if (display && display[0]) {
+        snprintf(cmd, sizeof(cmd),
+            "rm -rf %s && mkdir -p %s && "
+            "timeout 60 ./carrom_arena --mode=capture --seed=42 --headless "
+            "--frames=5 --capture-dir=%s > %s/log.txt 2>&1; echo \"EXIT_CODE=$?\" >> %s/log.txt",
+            dir, dir, dir, dir, dir);
+    } else {
+        // Local dev: use xvfb-run as before
+        snprintf(cmd, sizeof(cmd),
+            "rm -rf %s && mkdir -p %s && "
+            "timeout 60 xvfb-run -a -s '-screen 0 1920x1080x24' "
+            "./carrom_arena --mode=capture --seed=42 --headless "
+            "--frames=5 --capture-dir=%s > %s/log.txt 2>&1; echo \"EXIT_CODE=$?\" >> %s/log.txt",
+            dir, dir, dir, dir, dir);
+    }
     int rc = system(cmd);
     // Accept exit 0 (success) or 256 (ASAN leak exit 1). Reject 124 (timeout) or other errors.
     TEST_ASSERT_TRUE_MESSAGE(rc == 0 || rc == 256, "capture must not timeout (exit 124) or crash");
