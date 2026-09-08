@@ -48,26 +48,6 @@ static int count_pngs(const char* dir) {
 #endif
 }
 
-/* Read last N lines of a file into buffer for debug output */
-static void read_tail(const char* path, char* buf, size_t bufsz, int max_lines) {
-    FILE* f = fopen(path, "r");
-    if (!f) { buf[0] = '\0'; return; }
-    char line[512];
-    char* lines[50];
-    int n = 0;
-    while (fgets(line, sizeof(line), f) && n < 50) {
-        lines[n] = strdup(line);
-        n++;
-    }
-    fclose(f);
-    buf[0] = '\0';
-    int start = (n > max_lines) ? n - max_lines : 0;
-    for (int i = start; i < n; i++) {
-        strncat(buf, lines[i], bufsz - strlen(buf) - 1);
-        free(lines[i]);
-    }
-}
-
 /* Spawn the app in capture mode and assert N PNGs written in <60s wall.
  * Note: ASAN in debug builds may report pre-existing leaks (exit != 0).
  * We verify success by checking PNG count and that timeout didn't trigger. */
@@ -86,8 +66,8 @@ void test_capture_completes_bounded(void) {
     snprintf(cmd, sizeof(cmd),
         "rmdir /S /Q %s 2>nul && mkdir %s && "
         "carrom_arena.exe --mode=capture --seed=42 --headless "
-        "--frames=5 --capture-dir=%s > %s 2>&1 && echo EXIT_CODE=0 >> %s || echo EXIT_CODE=%%ERRORLEVEL%% >> %s",
-        dir, dir, dir, logpath, logpath, logpath);
+        "--frames=5 --capture-dir=%s > %s 2>&1",
+        dir, dir, dir, logpath);
 #else
     snprintf(logpath, sizeof(logpath), "%s/log.txt", dir);
     // If DISPLAY is already set (e.g. CI setup Xvfb externally), skip xvfb-run
@@ -96,30 +76,23 @@ void test_capture_completes_bounded(void) {
         snprintf(cmd, sizeof(cmd),
             "rm -rf %s && mkdir -p %s && "
             "timeout 60 ./carrom_arena --mode=capture --seed=42 --headless "
-            "--frames=5 --capture-dir=%s > %s 2>&1; echo \"EXIT_CODE=$?\" >> %s",
-            dir, dir, dir, logpath, logpath);
+            "--frames=5 --capture-dir=%s > %s 2>&1",
+            dir, dir, dir, logpath);
     } else {
         // Local dev: use xvfb-run as before
         snprintf(cmd, sizeof(cmd),
             "rm -rf %s && mkdir -p %s && "
             "timeout 60 xvfb-run -a -s '-screen 0 1920x1080x24' "
             "./carrom_arena --mode=capture --seed=42 --headless "
-            "--frames=5 --capture-dir=%s > %s 2>&1; echo \"EXIT_CODE=$?\" >> %s",
-            dir, dir, dir, logpath, logpath);
+            "--frames=5 --capture-dir=%s > %s 2>&1",
+            dir, dir, dir, logpath);
     }
 #endif
 
     int rc = system(cmd);
 
-    // On failure, read log tail for debug
-    char logtail[1024];
-    read_tail(logpath, logtail, sizeof(logtail), 20);
-
     // Accept exit 0 (success) or 256 (ASAN leak exit 1). Reject 124 (timeout) or other errors.
-    char msg[128];
-    snprintf(msg, sizeof(msg), "capture failed (rc=%d)%s", rc, logtail[0] ? ": " : "");
-    if (logtail[0]) strncat(msg, logtail, sizeof(msg) - strlen(msg) - 1);
-    TEST_ASSERT_TRUE_MESSAGE(rc == 0 || rc == 256, msg);
+    TEST_ASSERT_TRUE_MESSAGE(rc == 0 || rc == 256, "capture must not timeout (exit 124) or crash");
 
     // Count PNGs
     int count = count_pngs(dir);
