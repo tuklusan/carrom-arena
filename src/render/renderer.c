@@ -15,10 +15,12 @@
 #define COPYRIGHT_PADDING 12
 #define WINDOW_H_MARGIN 40
 #define WINDOW_V_MARGIN 80
-#define MIN_GAME_SURFACE 480
-#define MAX_GAME_SURFACE 1200
-#define DEFAULT_FALLBACK_WIDTH 1280
-#define DEFAULT_FALLBACK_HEIGHT 720
+#define MIN_GAME_SURFACE 300
+#define MAX_GAME_SURFACE 484        /* fits within 1000x600 total window */
+#define DEFAULT_FALLBACK_WIDTH 1000
+#define DEFAULT_FALLBACK_HEIGHT 600
+#define MAX_WINDOW_WIDTH 1000       /* operator requirement: lowest-common-denominator display */
+#define MAX_WINDOW_HEIGHT 600
 
 static const char* TITLE_TEXT = "SANYALnet Labs Carrom Arena";
 static const char* COPYRIGHT_TEXT = "\xC2\xA9 Supratim Sanyal";  // UTF-8 ©
@@ -167,8 +169,43 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     if (window_width < 200) window_width = 200;
     if (window_height < 200) window_height = 200;
     
+    /* Hard clamp to 1000x600 (operator requirement: lowest-common-denominator display).
+     * If CLI --width/--height were specified, warn on clamping. */
+    bool width_clamped = false;
+    bool height_clamped = false;
+    if (width > 0 && window_width > MAX_WINDOW_WIDTH) {
+        window_width = MAX_WINDOW_WIDTH;
+        width_clamped = true;
+    }
+    if (height > 0 && window_height > MAX_WINDOW_HEIGHT) {
+        window_height = MAX_WINDOW_HEIGHT;
+        height_clamped = true;
+    }
+    // Also clamp auto-sized windows
+    if (window_width > MAX_WINDOW_WIDTH) window_width = MAX_WINDOW_WIDTH;
+    if (window_height > MAX_WINDOW_HEIGHT) window_height = MAX_WINDOW_HEIGHT;
+    
+    if (width_clamped) {
+        fprintf(stderr, "[WARN] --width=%d clamped to max %d\n", width, MAX_WINDOW_WIDTH);
+    }
+    if (height_clamped) {
+        fprintf(stderr, "[WARN] --height=%d clamped to max %d\n", height, MAX_WINDOW_HEIGHT);
+    }
+    
     r->width = window_width;
     r->height = window_height;
+    
+    /* Recalculate game_surface_size from clamped window dimensions so board actually fits.
+     * Available height = window_height - chrome_height - WINDOW_V_MARGIN
+     * Available width = window_width - WINDOW_H_MARGIN
+     * Game surface is square, so take the minimum. */
+    int avail_width_for_surface = r->width - WINDOW_H_MARGIN;
+    int avail_height_for_surface = r->height - chrome_height - WINDOW_V_MARGIN;
+    int game_surface_clamped = avail_width_for_surface < avail_height_for_surface ? 
+                               avail_width_for_surface : avail_height_for_surface;
+    if (game_surface_clamped < MIN_GAME_SURFACE) game_surface_clamped = MIN_GAME_SURFACE;
+    if (game_surface_clamped > MAX_GAME_SURFACE) game_surface_clamped = MAX_GAME_SURFACE;
+    r->game_surface_size = game_surface_clamped;
     
     /* Game surface position within window - centered horizontally, below title */
     r->game_surface_x = (r->width - r->game_surface_size) / 2;
