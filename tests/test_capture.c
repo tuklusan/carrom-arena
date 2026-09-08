@@ -58,10 +58,11 @@ void test_capture_completes_bounded(void) {
 
     char cmd[1024];
 #ifdef _WIN32
-    /* Windows (Git Bash): run carrom_arena.exe directly with WGL hidden window.
-     * CI uses Git Bash shell, so use bash-compatible commands. */
+    /* Windows (Git Bash): run carrom_arena.exe with software rendering for headless CI.
+     * Force Mesa llvmpipe software renderer since GitHub Windows runners lack GPU for WGL. */
     snprintf(cmd, sizeof(cmd),
         "rm -rf %s && mkdir -p %s && "
+        "LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe "
         "timeout 60 ./carrom_arena.exe --mode=capture --seed=42 --headless "
         "--frames=5 --capture-dir=%s > %s/log.txt 2>&1; echo \"EXIT_CODE=$?\" >> %s/log.txt",
         dir, dir, dir, dir, dir);
