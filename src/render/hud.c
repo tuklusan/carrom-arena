@@ -5,7 +5,10 @@
 
 void hud_draw(Viewport vp, const MatchState* match, const GameState* game) {
     // Base font size scales with game surface (600px = baseline)
+    // Clamp scale between 0.6 and 1.5 so text never gets illegibly small or absurdly large
     float scale = vp.board_size_px / 600.0f;
+    if (scale < 0.6f) scale = 0.6f;
+    if (scale > 1.5f) scale = 1.5f;
     int base_font = (int)(18 * scale);
     int large_font = (int)(24 * scale);
     int small_font = (int)(14 * scale);
