@@ -52,24 +52,18 @@ static int count_pngs(const char* dir) {
  * Note: ASAN in debug builds may report pre-existing leaks (exit != 0).
  * We verify success by checking PNG count and that timeout didn't trigger. */
 void test_capture_completes_bounded(void) {
-    // Use a per-run capture dir to keep parallel test isolated.
+    // Use a per-run capture dir in build tree to avoid TEMP path issues on Windows Git Bash.
     char dir[256];
-#ifdef _WIN32
-    const char* temp = getenv("TEMP");
-    if (!temp) temp = "C:/Windows/Temp";
-    snprintf(dir, sizeof(dir), "%s/carrom_capture_test_%d", temp, (int)getpid());
-#else
-    snprintf(dir, sizeof(dir), "/tmp/carrom_capture_test_%d", (int)getpid());
-#endif
+    snprintf(dir, sizeof(dir), "carrom_capture_test_%d", (int)getpid());
 
     char cmd[1024];
 #ifdef _WIN32
     /* Windows (Git Bash): run carrom_arena.exe directly with WGL hidden window.
      * CI uses Git Bash shell, so use bash-compatible commands. */
     snprintf(cmd, sizeof(cmd),
-        "rm -rf '%s' && mkdir -p '%s' && "
+        "rm -rf %s && mkdir -p %s && "
         "timeout 60 ./carrom_arena.exe --mode=capture --seed=42 --headless "
-        "--frames=5 --capture-dir='%s' > '%s/log.txt' 2>&1; echo \"EXIT_CODE=$?\" >> '%s/log.txt'",
+        "--frames=5 --capture-dir=%s > %s/log.txt 2>&1; echo \"EXIT_CODE=$?\" >> %s/log.txt",
         dir, dir, dir, dir, dir);
 #else
     // If DISPLAY is already set (e.g. CI setup Xvfb externally), skip xvfb-run
