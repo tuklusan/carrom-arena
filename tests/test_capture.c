@@ -12,6 +12,25 @@ void tearDown(void) {}
 
 /* Count PNG files matching frame_*.png in directory */
 static int count_pngs(const char* dir) {
+#ifdef _WIN32
+    /* Windows: use _findfirst/_findnext */
+    char pattern[512];
+    snprintf(pattern, sizeof(pattern), "%s\\frame_*.png", dir);
+    struct _finddata_t fileinfo;
+    intptr_t handle = _findfirst(pattern, &fileinfo);
+    if (handle == -1) return 0;
+    int count = 0;
+    do {
+        if (strncmp(fileinfo.name, "frame_", 6) == 0) {
+            const char* ext = strrchr(fileinfo.name, '.');
+            if (ext && strcmp(ext, ".png") == 0) {
+                count++;
+            }
+        }
+    } while (_findnext(handle, &fileinfo) == 0);
+    _findclose(handle);
+    return count;
+#else
     int count = 0;
     DIR* d = opendir(dir);
     if (!d) return 0;
@@ -26,6 +45,7 @@ static int count_pngs(const char* dir) {
     }
     closedir(d);
     return count;
+#endif
 }
 
 /* Spawn the app in capture mode and assert N PNGs written in <60s wall.
@@ -34,8 +54,23 @@ static int count_pngs(const char* dir) {
 void test_capture_completes_bounded(void) {
     // Use a per-run capture dir to keep parallel test isolated.
     char dir[256];
+#ifdef _WIN32
+    const char* temp = getenv("TEMP");
+    if (!temp) temp = "C:\\Windows\\Temp";
+    snprintf(dir, sizeof(dir), "%s\\carrom_capture_test_%d", temp, (int)getpid());
+#else
     snprintf(dir, sizeof(dir), "/tmp/carrom_capture_test_%d", (int)getpid());
+#endif
+
     char cmd[1024];
+#ifdef _WIN32
+    /* Windows: run carrom_arena.exe directly with WGL hidden window */
+    snprintf(cmd, sizeof(cmd),
+        "if exist %s rmdir /S /Q %s & mkdir %s & "
+        "carrom_arena.exe --mode=capture --seed=42 --headless "
+        "--frames=5 --capture-dir=%s > %s\\log.txt 2>&1",
+        dir, dir, dir, dir, dir);
+#else
     // If DISPLAY is already set (e.g. CI setup Xvfb externally), skip xvfb-run
     const char* display = getenv("DISPLAY");
     if (display && display[0]) {
@@ -53,6 +88,8 @@ void test_capture_completes_bounded(void) {
             "--frames=5 --capture-dir=%s > %s/log.txt 2>&1; echo \"EXIT_CODE=$?\" >> %s/log.txt",
             dir, dir, dir, dir, dir);
     }
+#endif
+
     int rc = system(cmd);
     // Accept exit 0 (success) or 256 (ASAN leak exit 1). Reject 124 (timeout) or other errors.
     TEST_ASSERT_TRUE_MESSAGE(rc == 0 || rc == 256, "capture must not timeout (exit 124) or crash");
