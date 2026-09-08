@@ -48,6 +48,15 @@ static int count_pngs(const char* dir) {
 #endif
 }
 
+/* Read first N bytes of a file for debug output */
+static void read_head(const char* path, char* buf, size_t bufsz) {
+    FILE* f = fopen(path, "r");
+    if (!f) { buf[0] = '\0'; return; }
+    size_t n = fread(buf, 1, bufsz - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+}
+
 /* Spawn the app in capture mode and assert N PNGs written in <60s wall.
  * Note: ASAN in debug builds may report pre-existing leaks (exit != 0).
  * We verify success by checking PNG count and that timeout didn't trigger. */
@@ -59,11 +68,11 @@ void test_capture_completes_bounded(void) {
     char cmd[1024];
     char logpath[256];
 #ifdef _WIN32
-    /* Windows: system() uses cmd.exe. Use cmd syntax.
-     * Windows carrom_arena builds with WGL/OpenGL and can create a hidden window natively
-     * via FLAG_WINDOW_HIDDEN (already in the Gap 2 renderer). */
+    /* Windows: system() uses cmd.exe. Force Mesa llvmpipe software renderer
+     * since GitHub Windows runners lack GPU for WGL headless rendering. */
     snprintf(logpath, sizeof(logpath), "%s\\log.txt", dir);
     snprintf(cmd, sizeof(cmd),
+        "set LIBGL_ALWAYS_SOFTWARE=1 && set GALLIUM_DRIVER=llvmpipe && "
         "rmdir /S /Q %s 2>nul && mkdir %s && "
         "carrom_arena.exe --mode=capture --seed=42 --headless "
         "--frames=5 --capture-dir=%s > %s 2>&1",
@@ -91,8 +100,15 @@ void test_capture_completes_bounded(void) {
 
     int rc = system(cmd);
 
+    // On failure, read log head for debug
+    char loghead[512];
+    read_head(logpath, loghead, sizeof(loghead));
+
     // Accept exit 0 (success) or 256 (ASAN leak exit 1). Reject 124 (timeout) or other errors.
-    TEST_ASSERT_TRUE_MESSAGE(rc == 0 || rc == 256, "capture must not timeout (exit 124) or crash");
+    char msg[640];
+    snprintf(msg, sizeof(msg), "capture failed (rc=%d)%s", rc, loghead[0] ? ": " : "");
+    if (loghead[0]) strncat(msg, loghead, sizeof(msg) - strlen(msg) - 1);
+    TEST_ASSERT_TRUE_MESSAGE(rc == 0 || rc == 256, msg);
 
     // Count PNGs
     int count = count_pngs(dir);
