@@ -364,11 +364,13 @@ int app_run_simulation(AppContext* ctx) {
         // Render (mode-specific)
         if (ctx->renderer) {
             renderer_begin(ctx->renderer);
+            renderer_draw_hud(ctx->renderer, &ctx->match, &ctx->game, ctx->playback_speed);
+            renderer_begin_board(ctx->renderer);
             float alpha = (float)(ctx->accumulator / PHYSICS_DT);
             if (alpha > 1.0f) alpha = 1.0f;
             renderer_draw_board(ctx->renderer, &ctx->game.board, ctx->physics, alpha);
-            renderer_draw_hud(ctx->renderer, &ctx->match, &ctx->game, ctx->playback_speed);
             renderer_draw_effects(ctx->renderer, &ctx->game, ctx->placement_timer);
+            renderer_end_board(ctx->renderer);
             renderer_end(ctx->renderer);
             
             // Capture frames if in capture mode
