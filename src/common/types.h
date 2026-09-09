@@ -65,7 +65,7 @@ typedef enum { SEAT_NORTH, SEAT_EAST, SEAT_SOUTH, SEAT_WEST } Seat;
 typedef enum { PIECE_WHITE, PIECE_BLACK, PIECE_QUEEN, PIECE_STRIKER } PieceColor;
 
 typedef enum {
-    PHASE_IDLE, PHASE_PLACEMENT, PHASE_AIMING, PHASE_SHOT_EXECUTION,
+    PHASE_IDLE, PHASE_THINKING, PHASE_PLACEMENT, PHASE_AIMING, PHASE_SHOT_EXECUTION,
     PHASE_SETTLING, PHASE_RESOLVING, PHASE_BOARD_OVER, PHASE_GAME_OVER, PHASE_MATCH_OVER
 } GamePhase;
 
@@ -209,6 +209,8 @@ struct PhysicsSnapshot;
 typedef struct {
     const MatchState* match; const GameState* game;
     const BoardState* board; const PhysicsSnapshot* physics; Seat active_seat;
+    uint32_t ai_budget_ms;      // AI decision time budget in milliseconds
+    int max_candidates;         // Maximum candidates to evaluate
 } DecisionSnapshot;
 
 /* -----------------------------------------------------------------------------

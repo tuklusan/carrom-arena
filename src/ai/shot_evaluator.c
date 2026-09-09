@@ -45,6 +45,7 @@ void shot_evaluator_evaluate(ShotCandidate* candidate, const DecisionSnapshot* s
     const float MAX_SIM_TIME = MAX_SIM_TIME_VAL;
 #endif
     const float SIM_DT = PHYSICS_DT;
+    int sim_iter = 0;
     
     while (sim_time < MAX_SIM_TIME) {
         // Check wall-time budget
@@ -55,13 +56,16 @@ void shot_evaluator_evaluate(ShotCandidate* candidate, const DecisionSnapshot* s
         
         physics_step(sim_world, SIM_DT);
         sim_time += SIM_DT;
+        sim_iter++;
         
         if (physics_is_settled(sim_world)) {
             break;
         }
         
-        // Yield to OS between simulation steps to keep host responsive
-        platform_yield();
+        // Yield to OS every 8 simulation steps to keep host responsive (R5)
+        if (sim_iter % 8 == 0) {
+            platform_yield();
+        }
     }
     
     // Collect result

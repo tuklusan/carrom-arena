@@ -2,12 +2,13 @@
 #define CARROM_BOARD_VIEW_H
 
 #include "types.h"
+#include "renderer.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics, float alpha);
+void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* layout);
 
 #ifdef __cplusplus
 }

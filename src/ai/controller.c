@@ -169,24 +169,22 @@ static ShotPlan arena_decide(Controller* self, const DecisionSnapshot* snap, PCG
     // Save RNG state for restoration after planning
     RNGSnapshot rng_snap = rng_snapshot(rng);
     
+    // Get AI budget and max candidates from snapshot (with defaults)
+    double ai_budget_seconds = (snap->ai_budget_ms > 0) ? (snap->ai_budget_ms / 1000.0) : 0.15;  // 150ms default (R5)
+    int max_candidates = (snap->max_candidates > 0) ? snap->max_candidates : MAX_CANDIDATES;
+    
     // Step 1-2: Generate candidates (placements + tactical candidates)
-    impl->candidate_count = shot_candidates_generate(snap, impl->candidates, MAX_CANDIDATES, rng);
+    impl->candidate_count = shot_candidates_generate(snap, impl->candidates, max_candidates, rng);
     
     // Step 3-4: Bound aim/power variants (already done in generate)
     
     // Step 5: Scratch simulation for each candidate
     double start_time = platform_time_now();
-    // Get AI budget from config - for now use default 250ms
-    // In the future this could be passed via DecisionSnapshot
-    double ai_budget_seconds = 0.25;  // 250ms default
     
     for (int i = 0; i < impl->candidate_count; i++) {
         // Check time budget before each candidate
         double elapsed = platform_time_now() - start_time;
         if (elapsed > ai_budget_seconds) {
-            if (self->profile.weight_pocket > 0) {  // Only log if verbose
-                // Budget exceeded, stop evaluating more candidates
-            }
             break;
         }
         

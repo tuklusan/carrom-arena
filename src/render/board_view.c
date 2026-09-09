@@ -1,9 +1,11 @@
 #include "board_view.h"
+#include "renderer.h"
 #include "common/types.h"
 #include "common/math.h"
 #include "physics/physics.h"
-#include <raylib.h>
 #include <math.h>
+#define __USE_MINGW_ANSI_STDIO 1
+#include <raylib.h>
 
 /* Colors */
 #define COLOR_BOARD (Color){ 139, 105, 70, 255 }      // Wood brown
@@ -15,7 +17,7 @@
 #define COLOR_STRIKER (Color){ 255, 215, 0, 255 }     // Gold
 #define COLOR_LINE (Color){ 255, 255, 255, 100 }      // White translucent
 #define COLOR_BASELINE (Color){ 100, 255, 100, 150 }  // Green translucent (muted for baseline)
-#define COLOR_BASELINE_MUTED (Color){ 100, 255, 100, 76 }  // 30% alpha of team color (150 * 0.3 ≈ 45, but using 76 for visibility)
+#define COLOR_BASELINE_MUTED (Color){ 100, 255, 100, 76 }  // 30% alpha of team color
 
 /* Team colors for figure drawing - per spec */
 #define COLOR_TEAM_WHITE_FILL (Color){ 240, 240, 220, 255 }   // Light silhouette
@@ -24,31 +26,22 @@
 #define COLOR_TEAM_BLACK_OUTLINE (Color){ 200, 200, 200, 255 } // Light outline
 #define COLOR_TURN_HIGHLIGHT (Color){ 255, 215, 0, 255 }      // Gold highlight for current turn
 
-/* Fixed world positions for player figures (mapped to screen coordinates per layout spec)
- * Viewport: board_center_px = (510, 250), world_to_screen = 360
- * Screen positions: North(510,50), South(510,450), West(280,250), East(740,250)
- * World = (screen - center) / world_to_screen (y inverted)
- */
-#define FIGURE_NORTH_WORLD_Y (200.0f / 360.0f)    // 0.5555...
-#define FIGURE_SOUTH_WORLD_Y (-200.0f / 360.0f)   // -0.5555...
-#define FIGURE_WEST_WORLD_X (-230.0f / 360.0f)    // -0.6388...
-#define FIGURE_EAST_WORLD_X (230.0f / 360.0f)     // 0.6388...
-
 /* Draw a stylised head-and-shoulders silhouette per spec:
- *    ○         (head: DrawCircle radius 8)
+ *    ○         (head: DrawCircle radius 8 * scale)
  *   ┃┃         (shoulders: DrawEllipse)
  *  ▄▄▄▄        (torso: filled trapezoid via DrawTriangle * 2)
  */
-static void draw_human_figure(Viewport vp, Vec2 world_pos, float angle, Team team, bool is_current_turn) {
+static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float halo_pulse) {
     // Convert world position to screen
     Vec2 screen = math_world_to_screen(vp, world_pos);
     
-    // Figure dimensions in screen pixels
-    float head_radius = 8.0f;
-    float shoulder_width = 12.0f;
-    float shoulder_height = 4.0f;
-    float torso_height = 24.0f;
-    float torso_bottom_width = 16.0f;
+    // Figure dimensions in screen pixels (scaled by figure_scale)
+    float scale = L->figure_scale;
+    float head_radius = 8.0f * scale;
+    float shoulder_width = 12.0f * scale;
+    float shoulder_height = 4.0f * scale;
+    float torso_height = 24.0f * scale;
+    float torso_bottom_width = 16.0f * scale;
     
     // Colors based on team
     Color fill_color = (team == TEAM_WHITE) ? COLOR_TEAM_WHITE_FILL : COLOR_TEAM_BLACK_FILL;
@@ -56,7 +49,6 @@ static void draw_human_figure(Viewport vp, Vec2 world_pos, float angle, Team tea
     Color highlight_color = is_current_turn ? COLOR_TURN_HIGHLIGHT : outline_color;
     
     // Calculate figure orientation (facing board center)
-    // angle points from figure toward board center
     Vec2 forward = { cosf(angle), sinf(angle) };
     Vec2 right = { -sinf(angle), cosf(angle) };
     
@@ -65,8 +57,8 @@ static void draw_human_figure(Viewport vp, Vec2 world_pos, float angle, Team tea
     
     // Shoulders (ellipse centered below head)
     Vec2 shoulders_center = {
-        head_center.x - forward.x * (head_radius + 2),
-        head_center.y - forward.y * (head_radius + 2)
+        head_center.x - forward.x * (head_radius + 2.0f * scale),
+        head_center.y - forward.y * (head_radius + 2.0f * scale)
     };
     
     // Torso bottom (trapezoid base)
@@ -129,16 +121,72 @@ static void draw_human_figure(Viewport vp, Vec2 world_pos, float angle, Team tea
     DrawCircle((int)head_center.x, (int)head_center.y, head_radius, fill_color);
     DrawCircleLines((int)head_center.x, (int)head_center.y, head_radius, highlight_color);
     
-    // If current turn, draw a gold halo ring around the head
+    // If current turn, draw a pulsing gold halo ring around the head
     if (is_current_turn) {
+        float halo_r_inner = L->figure_halo_base_r + halo_pulse * 5.0f * L->figure_scale;
+        float halo_r_outer = halo_r_inner + 2.0f * L->figure_scale;
         DrawRing(
             (Vector2){ head_center.x, head_center.y },
-            12.0f, 14.0f, 0, 360, 32, COLOR_TURN_HIGHLIGHT
+            halo_r_inner, halo_r_outer, 0, 360, 32, COLOR_TURN_HIGHLIGHT
         );
     }
 }
 
-void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics, float alpha) {
+/* Draw thinking animation: striker sliding along baseline with fade pulse */
+static void draw_thinking_striker(Viewport vp, const Layout* L, Seat seat, const BoardState* board, float think_time) {
+    // Only draw if striker is on baseline for this seat
+    if (!board->striker.on_baseline || board->striker.owner_seat != seat) return;
+    
+    // Slide back and forth along baseline: one full pass every 1.5s
+    float slide_period = 1.5f;
+    float slide_phase = fmodf(think_time, slide_period) / slide_period;  // 0 to 1
+    // Map to ping-pong: 0->1->0
+    float slide_t = slide_phase <= 0.5f ? slide_phase * 2.0f : (1.0f - slide_phase) * 2.0f;
+    
+    // Baseline limits in normalized coords
+    float min_offset = BASELINE_MIN_OFFSET;
+    float max_offset = BASELINE_MAX_OFFSET;
+    float slide_offset = min_offset + slide_t * (max_offset - min_offset);
+    
+    // Alternate direction each half-period for visual variety
+    if (slide_phase > 0.5f) slide_offset = max_offset - slide_t * (max_offset - min_offset);
+    
+    // Compute striker world position based on seat
+    Vec2 striker_world = {0, 0};
+    switch (seat) {
+        case SEAT_NORTH:
+            striker_world.x = slide_offset;
+            striker_world.y = BASELINE_Y_NORTH;
+            break;
+        case SEAT_SOUTH:
+            striker_world.x = slide_offset;
+            striker_world.y = BASELINE_Y_SOUTH;
+            break;
+        case SEAT_EAST:
+            striker_world.x = BASELINE_X_EAST;
+            striker_world.y = slide_offset;
+            break;
+        case SEAT_WEST:
+            striker_world.x = BASELINE_X_WEST;
+            striker_world.y = slide_offset;
+            break;
+    }
+    
+    Vec2 screen = math_world_to_screen(vp, striker_world);
+    
+    // Fade pulse: 40% to 100% alpha, once per second (different from slide period)
+    float fade_period = 1.0f;
+    float fade_phase = fmodf(think_time, fade_period) / fade_period;
+    float alpha = 0.4f + 0.6f * (0.5f + 0.5f * sinf(fade_phase * 2.0f * M_PI));
+    
+    Color striker_color = (Color){ 255, 215, 0, (unsigned char)(alpha * 255) };
+    Color line_color = (Color){ 255, 255, 255, (unsigned char)(alpha * 100) };
+    
+    DrawCircle((int)screen.x, (int)screen.y, L->striker_r_px, striker_color);
+    DrawCircleLines((int)screen.x, (int)screen.y, L->striker_r_px, line_color);
+}
+
+void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* L) {
     // Determine current turn seat from striker owner
     Seat current_turn_seat = board->striker.owner_seat;
     if (board->striker.on_baseline) {
@@ -212,22 +260,25 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     DrawLine((int)baseline_x_e, (int)baseline_y_start, (int)baseline_x_e, (int)(baseline_y_start + baseline_len), COLOR_BASELINE_MUTED);
     DrawLine((int)baseline_x_w, (int)baseline_y_start, (int)baseline_x_w, (int)(baseline_y_start + baseline_len), COLOR_BASELINE_MUTED);
     
-    // Draw human figures for each seat at fixed world positions (mapped to layout spec screen coords)
+    // Draw human figures for each seat - positions 40px outside board edges
+    float figure_offset = 40.0f * L->figure_scale;
+    
     // North seat (top) - WHITE team, faces down (angle = -PI/2)
-    Vec2 north_figure_pos = { 0.0f, FIGURE_NORTH_WORLD_Y };
-    draw_human_figure(vp, north_figure_pos, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH);
+    // Position: center_x, board_top - figure_offset
+    Vec2 north_figure_pos = { 0.0f, 0.5f + figure_offset / vp.world_to_screen };
+    draw_human_figure(vp, L, north_figure_pos, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH, 0.0f);
     
     // South seat (bottom) - WHITE team, faces up (angle = PI/2)
-    Vec2 south_figure_pos = { 0.0f, FIGURE_SOUTH_WORLD_Y };
-    draw_human_figure(vp, south_figure_pos, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH);
+    Vec2 south_figure_pos = { 0.0f, -0.5f - figure_offset / vp.world_to_screen };
+    draw_human_figure(vp, L, south_figure_pos, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, 0.0f);
     
     // East seat (right) - BLACK team, faces left (angle = PI)
-    Vec2 east_figure_pos = { FIGURE_EAST_WORLD_X, 0.0f };
-    draw_human_figure(vp, east_figure_pos, M_PI, TEAM_BLACK, current_turn_seat == SEAT_EAST);
+    Vec2 east_figure_pos = { 0.5f + figure_offset / vp.world_to_screen, 0.0f };
+    draw_human_figure(vp, L, east_figure_pos, M_PI, TEAM_BLACK, current_turn_seat == SEAT_EAST, 0.0f);
     
     // West seat (left) - BLACK team, faces right (angle = 0)
-    Vec2 west_figure_pos = { FIGURE_WEST_WORLD_X, 0.0f };
-    draw_human_figure(vp, west_figure_pos, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_WEST);
+    Vec2 west_figure_pos = { -0.5f - figure_offset / vp.world_to_screen, 0.0f };
+    draw_human_figure(vp, L, west_figure_pos, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_WEST, 0.0f);
     
     // Pockets
     float pocket_r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM);
@@ -261,7 +312,7 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         DrawCircleLines((int)screen.x, (int)screen.y, piece_r, COLOR_LINE);
     }
     
-    // Striker (interpolated)
+    // Striker (interpolated) - only draw if not in thinking phase (thinking draws its own)
     if (board->striker.on_baseline && !board->striker.pocketed) {
         Vec2 pos;
         if (use_physics) {
