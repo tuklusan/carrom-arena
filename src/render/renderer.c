@@ -3,252 +3,193 @@
 #include "hud.h"
 #include "effects.h"
 #include "common/math.h"
+#include "common/types.h"
 #include <raylib.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
-/* Layout constants */
-#define TITLE_FONT_SIZE 24
-#define COPYRIGHT_FONT_SIZE 16
-#define TITLE_PADDING 16
-#define COPYRIGHT_PADDING 12
-#define WINDOW_H_MARGIN 40
-#define WINDOW_V_MARGIN 20        /* 10px top + 10px bottom margin */
-#define SAFETY_RESERVE 20         /* reserve for window chrome quirks */
-#define MIN_GAME_SURFACE 300
-#define MAX_GAME_SURFACE 460      /* 600 - 56(title) - 40(copyright) - 20(margins) - 20(safety) = 464, rounded to 460 */
-#define DEFAULT_FALLBACK_WIDTH 1000
-#define DEFAULT_FALLBACK_HEIGHT 600
-#define MAX_WINDOW_WIDTH 1000       /* operator requirement: lowest-common-denominator display */
-#define MAX_WINDOW_HEIGHT 600
+/* Fixed layout constants for 1000x600 window */
+#define WINDOW_WIDTH 1000
+#define WINDOW_HEIGHT 600
+
+#define TITLE_BAND_HEIGHT 30
+#define TITLE_FONT_SIZE 22
+#define TITLE_Y 5
+
+#define MAIN_BODY_TOP 30
+#define MAIN_BODY_BOTTOM 470
+#define MAIN_BODY_HEIGHT 440
+
+#define HUD_SIDEBAR_LEFT 10
+#define HUD_SIDEBAR_RIGHT 200
+#define HUD_SIDEBAR_WIDTH 190
+
+#define BOARD_REGION_LEFT 210
+#define BOARD_REGION_RIGHT 810
+#define BOARD_REGION_WIDTH 600
+
+#define RIGHT_SIDEBAR_LEFT 820
+#define RIGHT_SIDEBAR_RIGHT 990
+
+#define BOARD_SURFACE_SIZE 360
+#define BOARD_SURFACE_LEFT 330
+#define BOARD_SURFACE_TOP 70
+#define BOARD_SURFACE_RIGHT 690
+#define BOARD_SURFACE_BOTTOM 430
+
+#define BOARD_CENTER_X 510
+#define BOARD_CENTER_Y 250
+
+#define FOOTER_BAND_TOP 470
+#define FOOTER_BAND_HEIGHT 130
+#define FOOTER_RULE_Y 475
+#define FOOTER_LINK_Y 495
+#define FOOTER_LINK_FONT 16
+#define FOOTER_COPYRIGHT_Y 525
+#define FOOTER_COPYRIGHT_FONT 14
+
+#define HUD_START_Y 40
+#define HUD_LINE_HEIGHT 18
+#define HUD_FONT_SIZE 14
 
 static const char* TITLE_TEXT = "SANYALnet Labs Carrom Arena";
 static const char* COPYRIGHT_TEXT = "\xC2\xA9 Supratim Sanyal";  // UTF-8 ©
+static const char* BLOG_LINK = "https://blog.sanyalnet.com/carrom";
 
 struct Renderer {
     int width;
     int height;
     bool capture_mode;
     bool paused;
-    float playback_speed;  // Simulation speed multiplier
+    float playback_speed;
     Viewport viewport;
     Camera2D camera;
     RenderTexture2D capture_texture;
     char capture_dir[256];
     
-    /* Layout */
-    int game_surface_x;
-    int game_surface_y;
-    int game_surface_size;
+    /* Precomputed text widths */
     int title_width;
+    int blog_link_width;
     int copyright_width;
 };
 
-/* Helper to measure text width */
-static int measure_text_width(const char* text, int font_size) {
-    return MeasureText(text, font_size);
+/* Draw HUD sidebar in window coordinates (called before BeginMode2D) */
+static void draw_hud_sidebar(const MatchState* match, const GameState* game, float playback_speed) {
+    float x = HUD_SIDEBAR_LEFT;
+    float y = HUD_START_Y;
+    int font = HUD_FONT_SIZE;
+    float lh = HUD_LINE_HEIGHT;
+    
+    bool white_turn = (game->active_player.team == TEAM_WHITE);
+    Color white_color = white_turn ? (Color){ 255, 215, 0, 255 } : WHITE;
+    Color black_color = !white_turn ? (Color){ 255, 215, 0, 255 } : WHITE;
+    
+    DrawText(TextFormat("WHITE  %d", match->games_won_white), (int)x, (int)y, font, white_color);
+    y += lh;
+    DrawText(TextFormat("BLACK  %d", match->games_won_black), (int)x, (int)y, font, black_color);
+    y += lh;
+    DrawText(TextFormat("Board: W %d - B %d", game->scores.white, game->scores.black), (int)x, (int)y, font, WHITE);
+    y += lh;
+    
+    const char* seat_names[4] = { "NORTH", "EAST", "SOUTH", "WEST" };
+    const char* team_names[2] = { "WHITE", "BLACK" };
+    Color turn_color = white_turn ? (Color){ 255, 215, 0, 255 } : (Color){ 255, 165, 0, 255 };
+    DrawText(TextFormat("Turn: %s (%s)", seat_names[game->turn_seat], team_names[game->active_player.team]), (int)x, (int)y, font, turn_color);
+    y += lh;
+    
+    const char* phase_names[] = {
+        "IDLE", "PLACEMENT", "AIMING", "SHOT", "SETTLING", "RESOLVING",
+        "BOARD_OVER", "GAME_OVER", "MATCH_OVER"
+    };
+    DrawText(TextFormat("Phase: %s", phase_names[game->phase]), (int)x, (int)y, font, GREEN);
+    y += lh;
+    
+    Color speed_color = (playback_speed <= 0.0f) ? RED : WHITE;
+    DrawText(TextFormat("Speed: %.2fx", playback_speed), (int)x, (int)y, font, speed_color);
+    y += lh;
+    
+    DrawText(TextFormat("Boards: %d/%d", match->boards_won_white + match->boards_won_black, match->target_boards_per_game), (int)x, (int)y, font, LIGHTGRAY);
+    y += lh;
+    DrawText(TextFormat("Games: %d/%d", match->games_won_white + match->games_won_black, match->target_games_per_match), (int)x, (int)y, font, LIGHTGRAY);
+    y += lh;
+    
+    const char* queen_states[] = { "ON_BOARD", "POCKETED_NO_COVER", "COVERED", "DUE" };
+    Color queen_color = (game->board.queen_state == QUEEN_STATE_COVERED) ? GOLD : WHITE;
+    DrawText(TextFormat("Queen: %s", queen_states[game->board.queen_state]), (int)x, (int)y, font, queen_color);
+    y += lh;
+    
+    DrawText(TextFormat("Dues: W=%d B=%d Q=%d", game->board.white_dues, game->board.black_dues, game->board.queen_dues), (int)x, (int)y, font, LIGHTGRAY);
+    y += lh;
+    
+    DrawText(TextFormat("Pieces: W=%d B=%d Q=%s", game->board.white_on_board, game->board.black_on_board, 
+             game->board.queen_on_board ? "YES" : "NO"), (int)x, (int)y, font, LIGHTGRAY);
 }
 
-/* Select best monitor for window placement.
- * Returns monitor index, or -1 if no monitors available (headless/Xvfb).
- * Strategy: prefer primary monitor (0), but if it's too small, pick the largest. */
-static int select_best_monitor(int min_width, int min_height) {
-    int monitor_count = GetMonitorCount();
-    if (monitor_count <= 0) return -1;
-    
-    // Check primary monitor first
-    int primary_width = GetMonitorWidth(0);
-    int primary_height = GetMonitorHeight(0);
-    if (primary_width >= min_width && primary_height >= min_height) {
-        return 0;
-    }
-    
-    // Primary too small - find largest monitor that meets minimum requirements
-    int best_monitor = -1;
-    int best_area = 0;
-    for (int i = 0; i < monitor_count; i++) {
-        int w = GetMonitorWidth(i);
-        int h = GetMonitorHeight(i);
-        if (w >= min_width && h >= min_height) {
-            int area = w * h;
-            if (area > best_area) {
-                best_area = area;
-                best_monitor = i;
-            }
-        }
-    }
-    return best_monitor;
+static void draw_title_bar(Renderer* r) {
+    int title_x = (WINDOW_WIDTH - r->title_width) / 2;
+    DrawText(TITLE_TEXT, title_x, TITLE_Y, TITLE_FONT_SIZE, WHITE);
 }
 
-/* Get monitor working area (approximation using monitor dimensions minus typical taskbar).
- * Raylib doesn't expose working area directly, so we use monitor dims with margins. */
-static void get_monitor_work_area(int monitor, int* out_width, int* out_height, int* out_pos_x, int* out_pos_y) {
-    *out_width = GetMonitorWidth(monitor);
-    *out_height = GetMonitorHeight(monitor);
-    Vector2 pos = GetMonitorPosition(monitor);
-    *out_pos_x = (int)pos.x;
-    *out_pos_y = (int)pos.y;
+static void draw_footer_band(Renderer* r) {
+    DrawLineEx((Vector2){ 10, FOOTER_RULE_Y }, (Vector2){ 990, FOOTER_RULE_Y }, 1, LIGHTGRAY);
     
-    // Fallback if monitor dimensions are invalid (e.g., Xvfb/headless)
-    if (*out_width <= 0 || *out_height <= 0) {
-        *out_width = DEFAULT_FALLBACK_WIDTH;
-        *out_height = DEFAULT_FALLBACK_HEIGHT;
-        *out_pos_x = 0;
-        *out_pos_y = 0;
-    }
-}
-
-/* Center window on the specified monitor's working area */
-static void center_window_on_monitor(int monitor, int window_width, int window_height) {
-    int mon_w, mon_h, mon_x, mon_y;
-    get_monitor_work_area(monitor, &mon_w, &mon_h, &mon_x, &mon_y);
+    int link_x = (WINDOW_WIDTH - r->blog_link_width) / 2;
+    DrawText(BLOG_LINK, link_x, FOOTER_LINK_Y, FOOTER_LINK_FONT, LIGHTGRAY);
     
-    int pos_x = mon_x + (mon_w - window_width) / 2;
-    int pos_y = mon_y + (mon_h - window_height) / 2;
-    SetWindowPosition(pos_x, pos_y);
+    int copyright_x = (WINDOW_WIDTH - r->copyright_width) / 2;
+    DrawText(COPYRIGHT_TEXT, copyright_x, FOOTER_COPYRIGHT_Y, FOOTER_COPYRIGHT_FONT, (Color){ 180, 180, 180, 255 });
 }
 
 Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window) {
+    (void)width; (void)height; (void)title;
+    
     Renderer* r = calloc(1, sizeof(Renderer));
     if (!r) return NULL;
     
     r->capture_mode = capture_mode;
     r->paused = false;
-    r->playback_speed = 0.5f;  // Default for rendered/capture
+    r->playback_speed = 0.5f;
+    r->width = WINDOW_WIDTH;
+    r->height = WINDOW_HEIGHT;
     
-    /* Calculate layout dimensions */
-    r->title_width = measure_text_width(TITLE_TEXT, TITLE_FONT_SIZE);
-    r->copyright_width = measure_text_width(COPYRIGHT_TEXT, COPYRIGHT_FONT_SIZE);
+    r->title_width = MeasureText(TITLE_TEXT, TITLE_FONT_SIZE);
+    r->blog_link_width = MeasureText(BLOG_LINK, FOOTER_LINK_FONT);
+    r->copyright_width = MeasureText(COPYRIGHT_TEXT, FOOTER_COPYRIGHT_FONT);
     
-    int title_area_height = TITLE_FONT_SIZE + TITLE_PADDING * 2;
-    int copyright_area_height = COPYRIGHT_FONT_SIZE + COPYRIGHT_PADDING * 2;
-    int chrome_height = title_area_height + copyright_area_height;
-    
-    /* Select best monitor BEFORE InitWindow (requires FLAG_WINDOW_HIGHDPI to be set early) */
-    int min_window_width = MIN_GAME_SURFACE + WINDOW_H_MARGIN;
-    int min_window_height = MIN_GAME_SURFACE + chrome_height + WINDOW_V_MARGIN;
-    int monitor = select_best_monitor(min_window_width, min_window_height);
-    
-    int mon_w, mon_h, mon_x, mon_y;
-    if (monitor >= 0) {
-        get_monitor_work_area(monitor, &mon_w, &mon_h, &mon_x, &mon_y);
-    } else {
-        // Headless/Xvfb fallback
-        mon_w = DEFAULT_FALLBACK_WIDTH;
-        mon_h = DEFAULT_FALLBACK_HEIGHT;
-        mon_x = 0;
-        mon_y = 0;
-        monitor = 0;  // Use monitor 0 for positioning calls
-    }
-    
-    // Available space for game surface (with margins)
-    int avail_width = mon_w - WINDOW_H_MARGIN;
-    int avail_height = mon_h - WINDOW_V_MARGIN - chrome_height;
-    
-    // Calculate adaptive game surface size (square, clamped to range)
-    int game_surface = avail_width < avail_height ? avail_width : avail_height;
-    if (game_surface < MIN_GAME_SURFACE) game_surface = MIN_GAME_SURFACE;
-    if (game_surface > MAX_GAME_SURFACE) game_surface = MAX_GAME_SURFACE;
-    r->game_surface_size = game_surface;
-    
-    // Window dimensions: CLI override takes precedence, otherwise auto-sized
-    int window_width = (width > 0) ? width : game_surface + WINDOW_H_MARGIN;
-    int window_height = (height > 0) ? height : game_surface + chrome_height + WINDOW_V_MARGIN;
-    
-    // Clamp to monitor bounds
-    int max_width = mon_w - WINDOW_H_MARGIN;
-    int max_height = mon_h - WINDOW_V_MARGIN;
-    if (window_width < min_window_width) window_width = min_window_width;
-    if (window_width > max_width) window_width = max_width;
-    if (window_height < min_window_height) window_height = min_window_height;
-    if (window_height > max_height) window_height = max_height;
-    
-    // Ensure text fits
-    if (r->title_width + WINDOW_H_MARGIN > window_width) window_width = r->title_width + WINDOW_H_MARGIN;
-    if (r->copyright_width + WINDOW_H_MARGIN > window_width) window_width = r->copyright_width + WINDOW_H_MARGIN;
-    
-    // Final safety clamp
-    if (window_width < 200) window_width = 200;
-    if (window_height < 200) window_height = 200;
-    
-    /* Hard clamp to 1000x600 (operator requirement: lowest-common-denominator display).
-     * If CLI --width/--height were specified, warn on clamping. */
-    bool width_clamped = false;
-    bool height_clamped = false;
-    if (width > 0 && window_width > MAX_WINDOW_WIDTH) {
-        window_width = MAX_WINDOW_WIDTH;
-        width_clamped = true;
-    }
-    if (height > 0 && window_height > MAX_WINDOW_HEIGHT) {
-        window_height = MAX_WINDOW_HEIGHT;
-        height_clamped = true;
-    }
-    // Also clamp auto-sized windows
-    if (window_width > MAX_WINDOW_WIDTH) window_width = MAX_WINDOW_WIDTH;
-    if (window_height > MAX_WINDOW_HEIGHT) window_height = MAX_WINDOW_HEIGHT;
-    
-    if (width_clamped) {
-        fprintf(stderr, "[WARN] --width=%d clamped to max %d\n", width, MAX_WINDOW_WIDTH);
-    }
-    if (height_clamped) {
-        fprintf(stderr, "[WARN] --height=%d clamped to max %d\n", height, MAX_WINDOW_HEIGHT);
-    }
-    
-    r->width = window_width;
-    r->height = window_height;
-    
-    /* Recalculate game_surface_size from clamped window dimensions so board actually fits.
-     * Available height = window_height - chrome_height - WINDOW_V_MARGIN
-     * Available width = window_width - WINDOW_H_MARGIN
-     * Game surface is square, so take the minimum. */
-    int avail_width_for_surface = r->width - WINDOW_H_MARGIN;
-    int avail_height_for_surface = r->height - chrome_height - WINDOW_V_MARGIN;
-    int game_surface_clamped = avail_width_for_surface < avail_height_for_surface ? 
-                               avail_width_for_surface : avail_height_for_surface;
-    if (game_surface_clamped < MIN_GAME_SURFACE) game_surface_clamped = MIN_GAME_SURFACE;
-    if (game_surface_clamped > MAX_GAME_SURFACE) game_surface_clamped = MAX_GAME_SURFACE;
-    r->game_surface_size = game_surface_clamped;
-    
-    /* Game surface position within window - centered horizontally AND vertically.
-     * Vertical layout (top to bottom):
-     *   10px top margin
-     *   title_area_height (56px)
-     *   remaining space (centered game surface)
-     *   copyright_area_height (40px)
-     *   10px bottom margin
+    /* Viewport configured so math_world_to_screen returns WORLD coords:
+     * board surface pixels (0..360, 0..360) with origin at top-left of board surface.
+     * Normalized coords (-0.5..0.5, -0.5..0.5) -> World (0..360, 0..360).
+     * math_world_to_screen: screen = center + world * scale (y inverted).
+     * We want: world_x = (norm_x + 0.5) * 360, world_y = (0.5 - norm_y) * 360.
+     * So: center_x = 180, center_y = 180, scale = 360.
      */
-    r->game_surface_x = (r->width - r->game_surface_size) / 2;
-    int title_bottom = TITLE_PADDING + title_area_height;  // 10 + 56 = 66
-    int copyright_top = r->height - COPYRIGHT_PADDING - copyright_area_height - (WINDOW_V_MARGIN / 2);  // height - 12 - 40 - 10 = height - 62
-    int space_between = copyright_top - title_bottom;
-    r->game_surface_y = title_bottom + (space_between - r->game_surface_size) / 2;
+    r->viewport = math_viewport_create(BOARD_SURFACE_SIZE, BOARD_SURFACE_SIZE);
+    r->viewport.screen_width = BOARD_SURFACE_SIZE;
+    r->viewport.screen_height = BOARD_SURFACE_SIZE;
+    r->viewport.board_size_px = BOARD_SURFACE_SIZE;
+    r->viewport.board_center_px = (Vec2){ BOARD_SURFACE_SIZE * 0.5f, BOARD_SURFACE_SIZE * 0.5f };
+    r->viewport.world_to_screen = (float)BOARD_SURFACE_SIZE / BOARD_SIDE_NORM;
     
-    /* Create viewport for the adaptive game surface */
-    r->viewport = math_viewport_create(r->game_surface_size, r->game_surface_size);
+    /* Camera maps world (board surface pixels, origin at top-left) to window coords.
+     * World (0, 0) -> window (BOARD_SURFACE_LEFT, BOARD_SURFACE_TOP) = (330, 70).
+     */
+    r->camera = (Camera2D){ 0 };
+    r->camera.offset = (Vector2){ (float)BOARD_SURFACE_LEFT, (float)BOARD_SURFACE_TOP };
+    r->camera.target = (Vector2){ 0, 0 };
+    r->camera.rotation = 0.0f;
+    r->camera.zoom = 1.0f;
     
-    /* Set config flags BEFORE InitWindow - HIGH DPI must be first */
     unsigned int flags = FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT;
     if (hidden_window) {
         flags |= FLAG_WINDOW_HIDDEN;
     }
     SetConfigFlags(flags);
-    InitWindow(r->width, r->height, "SANYALnet Labs Carrom Arena");
+    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "SANYALnet Labs Carrom Arena");
     SetTargetFPS(30);
     
-    /* Center window on selected monitor (skip if hidden) */
-    if (!hidden_window && monitor >= 0) {
-        center_window_on_monitor(monitor, r->width, r->height);
-    }
-    
-    r->camera = (Camera2D){ 0 };
-    r->camera.offset = (Vector2){ (float)r->game_surface_size * 0.5f, (float)r->game_surface_size * 0.5f };
-    r->camera.target = (Vector2){ 0, 0 };
-    r->camera.rotation = 0.0f;
-    r->camera.zoom = 1.0f;
-    
     if (capture_mode) {
-        r->capture_texture = LoadRenderTexture(r->width, r->height);
+        r->capture_texture = LoadRenderTexture(WINDOW_WIDTH, WINDOW_HEIGHT);
     }
     
     return r;
@@ -272,14 +213,12 @@ void renderer_poll_events(Renderer* r) {
         r->paused = !r->paused;
     }
     if (IsKeyPressed(KEY_ESCAPE)) {
-        // Handled by WindowShouldClose
     }
-    // Playback speed controls: + doubles, - halves, clamped to [0.05, 4.0]
-    if (IsKeyPressed(KEY_KP_ADD) || IsKeyPressed(KEY_EQUAL)) {  // + or =
+    if (IsKeyPressed(KEY_KP_ADD) || IsKeyPressed(KEY_EQUAL)) {
         r->playback_speed *= 2.0f;
         if (r->playback_speed > 4.0f) r->playback_speed = 4.0f;
     }
-    if (IsKeyPressed(KEY_KP_SUBTRACT) || IsKeyPressed(KEY_MINUS)) {  // - or _
+    if (IsKeyPressed(KEY_KP_SUBTRACT) || IsKeyPressed(KEY_MINUS)) {
         r->playback_speed *= 0.5f;
         if (r->playback_speed < 0.05f) r->playback_speed = 0.05f;
     }
@@ -307,34 +246,47 @@ void renderer_begin(Renderer* r) {
     BeginDrawing();
     ClearBackground((Color){ 30, 30, 40, 255 });
     
-    /* Draw title at top margin + padding */
-    int title_x = r->game_surface_x + (r->game_surface_size - r->title_width) / 2;
-    int title_y = (WINDOW_V_MARGIN / 2) + TITLE_PADDING + (TITLE_FONT_SIZE / 2);  // 10 + 16 + 12 = 38
-    DrawText(TITLE_TEXT, title_x, title_y, TITLE_FONT_SIZE, WHITE);
-    
-    /* Draw copyright at bottom margin + padding */
-    int copyright_x = r->game_surface_x + (r->game_surface_size - r->copyright_width) / 2;
-    int copyright_y = r->height - (WINDOW_V_MARGIN / 2) - COPYRIGHT_PADDING - (COPYRIGHT_FONT_SIZE / 2);  // height - 10 - 12 - 8 = height - 30
-    DrawText(COPYRIGHT_TEXT, copyright_x, copyright_y, COPYRIGHT_FONT_SIZE, (Color){ 180, 180, 180, 255 });
+    /* Draw title bar, HUD sidebar, footer band in window coordinates (no camera) */
+    draw_title_bar(r);
+    draw_footer_band(r);
+    /* HUD is drawn by renderer_draw_hud_sidebar which is called from app.c between begin/end */
+    /* But we need it before BeginMode2D, so we'll draw it here if we have match/game state.
+     * However, renderer_begin doesn't have match/game. So we'll draw HUD in renderer_draw_hud
+     * but call it before BeginMode2D. Let's restructure: renderer_begin does NOT call BeginMode2D.
+     * Instead, we'll have renderer_begin_board() that starts the camera, and renderer_end_board() that ends it.
+     * But to minimize API changes, let's draw HUD in renderer_draw_hud which is called after renderer_begin.
+     * We'll move BeginMode2D to after HUD drawing.
+     */
     
     if (r->capture_mode) {
         BeginTextureMode(r->capture_texture);
         ClearBackground((Color){ 30, 30, 40, 255 });
-        /* Also draw title/copyright in capture */
-        DrawText(TITLE_TEXT, title_x, title_y, TITLE_FONT_SIZE, WHITE);
-        DrawText(COPYRIGHT_TEXT, copyright_x, copyright_y, COPYRIGHT_FONT_SIZE, (Color){ 180, 180, 180, 255 });
+        draw_title_bar(r);
+        draw_footer_band(r);
     }
-    
-    BeginMode2D(r->camera);
 }
 
-void renderer_end(Renderer* r) {
+void renderer_draw_hud_sidebar(Renderer* r, const MatchState* match, const GameState* game, float playback_speed) {
+    draw_hud_sidebar(match, game, playback_speed);
+}
+
+void renderer_begin_board(Renderer* r) {
+    BeginMode2D(r->camera);
+    
+    if (r->capture_mode) {
+        BeginMode2D(r->camera);
+    }
+}
+
+void renderer_end_board(Renderer* r) {
     EndMode2D();
     
     if (r->capture_mode) {
-        EndTextureMode();
+        EndMode2D();
     }
-    
+}
+
+void renderer_end(Renderer* r) {
     EndDrawing();
 }
 
@@ -343,7 +295,9 @@ void renderer_draw_board(Renderer* r, const BoardState* board, const PhysicsWorl
 }
 
 void renderer_draw_hud(Renderer* r, const MatchState* match, const GameState* game, float playback_speed) {
-    hud_draw(r->viewport, match, game, playback_speed);
+    /* HUD now drawn in window coords, but this is called after renderer_begin which doesn't
+     * start the camera yet. We'll draw it here in window coords. */
+    draw_hud_sidebar(match, game, playback_speed);
 }
 
 void renderer_draw_effects(Renderer* r, const GameState* game, double placement_timer) {
@@ -357,7 +311,7 @@ void renderer_capture_frame(Renderer* r, const char* dir, uint64_t frame_num) {
     snprintf(path, sizeof(path), "%s/frame_%06llu.png", dir, (unsigned long long)frame_num);
     
     Image img = LoadImageFromTexture(r->capture_texture.texture);
-    ImageFlipVertical(&img);  // raylib textures are upside down
+    ImageFlipVertical(&img);
     ExportImage(img, path);
     UnloadImage(img);
 }
