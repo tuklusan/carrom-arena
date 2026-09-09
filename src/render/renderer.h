@@ -21,13 +21,15 @@ void renderer_destroy(Renderer* renderer);
 void renderer_poll_events(Renderer* renderer);
 bool renderer_should_close(Renderer* renderer);
 bool renderer_is_paused(Renderer* renderer);
+float renderer_get_playback_speed(const Renderer* renderer);
+void renderer_set_playback_speed(Renderer* renderer, float speed);
 
 void renderer_begin(Renderer* renderer);
 void renderer_end(Renderer* renderer);
 
 void renderer_draw_board(Renderer* renderer, const BoardState* board, const PhysicsWorld* physics, float alpha);
-void renderer_draw_hud(Renderer* renderer, const MatchState* match, const GameState* game);
-void renderer_draw_effects(Renderer* renderer, const GameState* game);
+void renderer_draw_hud(Renderer* renderer, const MatchState* match, const GameState* game, float playback_speed);
+void renderer_draw_effects(Renderer* renderer, const GameState* game, double placement_timer);
 
 void renderer_capture_frame(Renderer* renderer, const char* dir, uint64_t frame_num);
 

@@ -14,9 +14,10 @@
 #define TITLE_PADDING 16
 #define COPYRIGHT_PADDING 12
 #define WINDOW_H_MARGIN 40
-#define WINDOW_V_MARGIN 80
+#define WINDOW_V_MARGIN 20        /* 10px top + 10px bottom margin */
+#define SAFETY_RESERVE 20         /* reserve for window chrome quirks */
 #define MIN_GAME_SURFACE 300
-#define MAX_GAME_SURFACE 484        /* fits within 1000x600 total window */
+#define MAX_GAME_SURFACE 460      /* 600 - 56(title) - 40(copyright) - 20(margins) - 20(safety) = 464, rounded to 460 */
 #define DEFAULT_FALLBACK_WIDTH 1000
 #define DEFAULT_FALLBACK_HEIGHT 600
 #define MAX_WINDOW_WIDTH 1000       /* operator requirement: lowest-common-denominator display */
@@ -30,6 +31,7 @@ struct Renderer {
     int height;
     bool capture_mode;
     bool paused;
+    float playback_speed;  // Simulation speed multiplier
     Viewport viewport;
     Camera2D camera;
     RenderTexture2D capture_texture;
@@ -113,6 +115,7 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     
     r->capture_mode = capture_mode;
     r->paused = false;
+    r->playback_speed = 0.5f;  // Default for rendered/capture
     
     /* Calculate layout dimensions */
     r->title_width = measure_text_width(TITLE_TEXT, TITLE_FONT_SIZE);
@@ -207,9 +210,19 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     if (game_surface_clamped > MAX_GAME_SURFACE) game_surface_clamped = MAX_GAME_SURFACE;
     r->game_surface_size = game_surface_clamped;
     
-    /* Game surface position within window - centered horizontally, below title */
+    /* Game surface position within window - centered horizontally AND vertically.
+     * Vertical layout (top to bottom):
+     *   10px top margin
+     *   title_area_height (56px)
+     *   remaining space (centered game surface)
+     *   copyright_area_height (40px)
+     *   10px bottom margin
+     */
     r->game_surface_x = (r->width - r->game_surface_size) / 2;
-    r->game_surface_y = title_area_height;
+    int title_bottom = TITLE_PADDING + title_area_height;  // 10 + 56 = 66
+    int copyright_top = r->height - COPYRIGHT_PADDING - copyright_area_height - (WINDOW_V_MARGIN / 2);  // height - 12 - 40 - 10 = height - 62
+    int space_between = copyright_top - title_bottom;
+    r->game_surface_y = title_bottom + (space_between - r->game_surface_size) / 2;
     
     /* Create viewport for the adaptive game surface */
     r->viewport = math_viewport_create(r->game_surface_size, r->game_surface_size);
@@ -221,7 +234,7 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     }
     SetConfigFlags(flags);
     InitWindow(r->width, r->height, "SANYALnet Labs Carrom Arena");
-    SetTargetFPS(60);
+    SetTargetFPS(30);
     
     /* Center window on selected monitor (skip if hidden) */
     if (!hidden_window && monitor >= 0) {
@@ -261,6 +274,15 @@ void renderer_poll_events(Renderer* r) {
     if (IsKeyPressed(KEY_ESCAPE)) {
         // Handled by WindowShouldClose
     }
+    // Playback speed controls: + doubles, - halves, clamped to [0.05, 4.0]
+    if (IsKeyPressed(KEY_KP_ADD) || IsKeyPressed(KEY_EQUAL)) {  // + or =
+        r->playback_speed *= 2.0f;
+        if (r->playback_speed > 4.0f) r->playback_speed = 4.0f;
+    }
+    if (IsKeyPressed(KEY_KP_SUBTRACT) || IsKeyPressed(KEY_MINUS)) {  // - or _
+        r->playback_speed *= 0.5f;
+        if (r->playback_speed < 0.05f) r->playback_speed = 0.05f;
+    }
 }
 
 bool renderer_should_close(Renderer* r) {
@@ -271,18 +293,28 @@ bool renderer_is_paused(Renderer* r) {
     return r->paused;
 }
 
+float renderer_get_playback_speed(const Renderer* r) {
+    return r->playback_speed;
+}
+
+void renderer_set_playback_speed(Renderer* r, float speed) {
+    if (speed < 0.05f) speed = 0.05f;
+    if (speed > 4.0f) speed = 4.0f;
+    r->playback_speed = speed;
+}
+
 void renderer_begin(Renderer* r) {
     BeginDrawing();
     ClearBackground((Color){ 30, 30, 40, 255 });
     
-    /* Draw title above game surface */
+    /* Draw title at top margin + padding */
     int title_x = r->game_surface_x + (r->game_surface_size - r->title_width) / 2;
-    int title_y = TITLE_PADDING + (TITLE_FONT_SIZE / 2);
+    int title_y = (WINDOW_V_MARGIN / 2) + TITLE_PADDING + (TITLE_FONT_SIZE / 2);  // 10 + 16 + 12 = 38
     DrawText(TITLE_TEXT, title_x, title_y, TITLE_FONT_SIZE, WHITE);
     
-    /* Draw copyright below game surface */
+    /* Draw copyright at bottom margin + padding */
     int copyright_x = r->game_surface_x + (r->game_surface_size - r->copyright_width) / 2;
-    int copyright_y = r->game_surface_y + r->game_surface_size + COPYRIGHT_PADDING + (COPYRIGHT_FONT_SIZE / 2);
+    int copyright_y = r->height - (WINDOW_V_MARGIN / 2) - COPYRIGHT_PADDING - (COPYRIGHT_FONT_SIZE / 2);  // height - 10 - 12 - 8 = height - 30
     DrawText(COPYRIGHT_TEXT, copyright_x, copyright_y, COPYRIGHT_FONT_SIZE, (Color){ 180, 180, 180, 255 });
     
     if (r->capture_mode) {
@@ -310,12 +342,12 @@ void renderer_draw_board(Renderer* r, const BoardState* board, const PhysicsWorl
     board_view_draw(r->viewport, board, physics, alpha);
 }
 
-void renderer_draw_hud(Renderer* r, const MatchState* match, const GameState* game) {
-    hud_draw(r->viewport, match, game);
+void renderer_draw_hud(Renderer* r, const MatchState* match, const GameState* game, float playback_speed) {
+    hud_draw(r->viewport, match, game, playback_speed);
 }
 
-void renderer_draw_effects(Renderer* r, const GameState* game) {
-    effects_draw(r->viewport, game);
+void renderer_draw_effects(Renderer* r, const GameState* game, double placement_timer) {
+    effects_draw(r->viewport, game, placement_timer);
 }
 
 void renderer_capture_frame(Renderer* r, const char* dir, uint64_t frame_num) {

@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-void effects_draw(Viewport vp, const GameState* game);
+void effects_draw(Viewport vp, const GameState* game, double placement_timer);
 void effects_trigger_pocket_fade(int pocket_index);
 
 #ifdef __cplusplus

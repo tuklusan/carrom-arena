@@ -12,12 +12,20 @@ extern float sqrtf(float);
 #include "board.h"
 #include "rules.h"
 #include <stdlib.h>
+#include "platform/platform.h"
 
 /* -----------------------------------------------------------------------------
- * Scratch Simulation
+ * Scratch Simulation with Time Budget
  * --------------------------------------------------------------------------- */
 void shot_evaluator_evaluate(ShotCandidate* candidate, const DecisionSnapshot* snap, PCG32* rng) {
     (void)rng;
+    
+    // Record start time for budget enforcement
+    double start_time = platform_time_now();
+    // Default budget: 250ms, can be overridden via environment or passed in
+    // For now, use a reasonable default
+    const double budget_seconds = 0.25;  // 250ms
+    
     // Create physics world from snapshot
     PhysicsWorld* sim_world = physics_world_from_snapshot(snap->physics);
     if (!sim_world) {
@@ -39,12 +47,21 @@ void shot_evaluator_evaluate(ShotCandidate* candidate, const DecisionSnapshot* s
     const float SIM_DT = PHYSICS_DT;
     
     while (sim_time < MAX_SIM_TIME) {
+        // Check wall-time budget
+        double elapsed = platform_time_now() - start_time;
+        if (elapsed > budget_seconds) {
+            break;  // Time budget exceeded, return best-so-far
+        }
+        
         physics_step(sim_world, SIM_DT);
         sim_time += SIM_DT;
         
         if (physics_is_settled(sim_world)) {
             break;
         }
+        
+        // Yield to OS between simulation steps to keep host responsive
+        platform_yield();
     }
     
     // Collect result
