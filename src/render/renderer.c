@@ -153,10 +153,6 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     r->width = WINDOW_WIDTH;
     r->height = WINDOW_HEIGHT;
     
-    r->title_width = MeasureText(TITLE_TEXT, TITLE_FONT_SIZE);
-    r->blog_link_width = MeasureText(BLOG_LINK, FOOTER_LINK_FONT);
-    r->copyright_width = MeasureText(COPYRIGHT_TEXT, FOOTER_COPYRIGHT_FONT);
-    
     /* Viewport configured so math_world_to_screen returns WORLD coords:
      * board surface pixels (0..360, 0..360) with origin at top-left of board surface.
      * Normalized coords (-0.5..0.5, -0.5..0.5) -> World (0..360, 0..360).
@@ -187,6 +183,11 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     SetConfigFlags(flags);
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "SANYALnet Labs Carrom Arena");
     SetTargetFPS(30);
+    
+    /* Measure text widths AFTER InitWindow so default font is loaded */
+    r->title_width = MeasureText(TITLE_TEXT, TITLE_FONT_SIZE);
+    r->blog_link_width = MeasureText(BLOG_LINK, FOOTER_LINK_FONT);
+    r->copyright_width = MeasureText(COPYRIGHT_TEXT, FOOTER_COPYRIGHT_FONT);
     
     if (capture_mode) {
         r->capture_texture = LoadRenderTexture(WINDOW_WIDTH, WINDOW_HEIGHT);
