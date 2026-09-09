@@ -39,6 +39,14 @@ struct AppContext {
     bool speed_paused;     // Temporary pause from space key (speed = 0)
     double placement_timer;  // Timer for striker placement phase (seconds)
     bool placement_phase_active;  // Whether we're in the placement hold phase
+    
+    /* THINKING phase (R6) */
+    bool thinking_phase_active;
+    double thinking_timer;  // Wall-time budget for AI thinking
+    int candidates_evaluated;  // Number of candidates evaluated so far (for HUD)
+    int max_candidates;  // Max candidates for current mode (R5)
+    ShotPlan pending_shot_plan;  // Shot plan decided during THINKING phase
+    bool pending_shot_valid;     // Whether pending_shot_plan is valid
 };
 
 /* -----------------------------------------------------------------------------
@@ -67,6 +75,17 @@ static void app_init_match(AppContext* ctx) {
     ctx->game.turn_seat = SEAT_NORTH;
     ctx->frame_count = 0;
     ctx->shot_count = 0;
+    
+    // Set max candidates based on mode (R5)
+    if (ctx->config.mode == APP_MODE_RENDERED || ctx->config.mode == APP_MODE_CAPTURE) {
+        ctx->max_candidates = 3;  // Reduced for rendered mode
+    } else {
+        ctx->max_candidates = MAX_CANDIDATES;  // Full for soak/diagnostic
+    }
+    
+    ctx->thinking_phase_active = false;
+    ctx->thinking_timer = 0.0;
+    ctx->candidates_evaluated = 0;
 }
 
 static void app_setup_trace(AppContext* ctx) {
@@ -148,7 +167,9 @@ static void app_execute_shot(AppContext* ctx) {
         .game = &ctx->game,
         .board = &ctx->game.board,
         .physics = physics_snapshot(ctx->physics),
-        .active_seat = seat
+        .active_seat = seat,
+        .ai_budget_ms = ctx->config.ai_budget_ms,
+        .max_candidates = ctx->max_candidates
     };
     
     // AI decides shot plan
@@ -174,6 +195,8 @@ static void app_execute_shot(AppContext* ctx) {
     }
     
     ctx->shot_count++;
+    ctx->thinking_phase_active = false;
+    ctx->candidates_evaluated = 0;
 }
 
 static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
@@ -192,10 +215,14 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     switch (outcome.turn_decision) {
         case TURN_CONTINUE:
         case TURN_ADVANCE:
-            ctx->game.phase = PHASE_PLACEMENT;
+            ctx->game.phase = PHASE_THINKING;
+            ctx->thinking_phase_active = true;
+            ctx->thinking_timer = 0.0;
+            ctx->candidates_evaluated = 0;
+            ctx->pending_shot_valid = false;
             break;
         case TURN_BOARD_OVER:
-            // match_start_board will set PHASE_PLACEMENT
+            // match_start_board will set PHASE_THINKING for new board
             break;
         case TURN_GAME_OVER:
         case TURN_MATCH_OVER:
@@ -246,6 +273,10 @@ int app_run_simulation(AppContext* ctx) {
     ctx->paused = false;
     ctx->last_frame_time = platform_time_now();
     ctx->accumulator = 0.0;
+    ctx->thinking_phase_active = false;
+    ctx->thinking_timer = 0.0;
+    ctx->candidates_evaluated = 0;
+    ctx->pending_shot_valid = false;
     uint64_t debug_frame = 0;
     
     // Wall-time budget for capture mode (hard timeout to prevent hangs)
@@ -256,9 +287,12 @@ int app_run_simulation(AppContext* ctx) {
         capture_max_wall = (ctx->config.frames * 0.5 > 30.0) ? ctx->config.frames * 0.5 : 30.0;
     }
     
-    // Initialize first board
+    // Initialize first board - start with THINKING for first turn
     match_start_board(&ctx->match, &ctx->game, &ctx->rng);
     physics_sync_from_board(ctx->physics, &ctx->game.board, ctx->game.turn_seat);
+    ctx->game.phase = PHASE_THINKING;
+    ctx->thinking_phase_active = true;
+    ctx->thinking_timer = 0.0;
     
     if (ctx->config.verbose) {
         printf("[DEBUG] Starting simulation, seed=%llu\n", (unsigned long long)ctx->rng.master_seed);
@@ -304,10 +338,66 @@ int app_run_simulation(AppContext* ctx) {
                 case PHASE_IDLE:
                     break;
                     
+                case PHASE_THINKING:
+                    // AI thinking phase: compute shot plan
+                    if (ctx->thinking_phase_active) {
+                        ctx->thinking_timer += dt;
+                        
+                        // Run AI decision (this may take multiple frames due to budget)
+                        if (!ctx->pending_shot_valid) {
+                            Seat seat = ctx->game.turn_seat;
+                            Controller* controller = ctx->controllers[seat];
+                            
+                            DecisionSnapshot snap = {
+                                .match = &ctx->match,
+                                .game = &ctx->game,
+                                .board = &ctx->game.board,
+                                .physics = physics_snapshot(ctx->physics),
+                                .active_seat = seat,
+                                .ai_budget_ms = ctx->config.ai_budget_ms,
+                                .max_candidates = ctx->max_candidates
+                            };
+                            
+                            // AI decides shot plan
+                            ShotPlan plan = controller_decide(controller, &snap, &ctx->rng.streams[seat]);
+                            
+                            // Validate shot plan
+                            if (!match_validate_shot(&ctx->game, &plan)) {
+                                plan = controller_fallback_shot(controller, &snap, &ctx->rng.streams[seat]);
+                            }
+                            
+                            ctx->pending_shot_plan = plan;
+                            ctx->pending_shot_valid = true;
+                            
+                            if (ctx->config.verbose) {
+                                printf("[DEBUG] Frame %llu: THINKING complete for seat %d, tactic=%d\n", 
+                                       (unsigned long long)ctx->frame_count, seat, plan.tactic);
+                                fflush(stdout);
+                            }
+                        }
+                        
+                        // For HUD: estimate candidates evaluated based on time
+                        ctx->candidates_evaluated = (int)(ctx->thinking_timer * 1000.0 / 
+                            ((ctx->config.ai_budget_ms > 0) ? ctx->config.ai_budget_ms : 150) * ctx->max_candidates);
+                        if (ctx->candidates_evaluated > ctx->max_candidates) {
+                            ctx->candidates_evaluated = ctx->max_candidates;
+                        }
+                        
+                        // Transition to PLACEMENT when AI decision is ready
+                        if (ctx->pending_shot_valid) {
+                            ctx->thinking_phase_active = false;
+                            ctx->game.phase = PHASE_PLACEMENT;
+                            ctx->placement_phase_active = false;
+                            ctx->thinking_timer = 0.0;
+                        }
+                    }
+                    break;
+                    
                 case PHASE_PLACEMENT:
                     // Striker placement phase: hold for 1.0s / playback_speed before striking
                     if (!ctx->placement_phase_active) {
                         // Just entered placement phase - start timer
+                        // Use pre-computed shot plan from THINKING phase
                         ctx->placement_timer = 1.0 / fmaxf(ctx->playback_speed, 0.05f);
                         ctx->placement_phase_active = true;
                         if (ctx->config.verbose) {
@@ -322,7 +412,7 @@ int app_run_simulation(AppContext* ctx) {
                         ctx->placement_timer -= dt;
                     }
                     
-                    // Timer expired - execute the shot
+                    // Timer expired - execute the pre-computed shot
                     if (ctx->placement_timer <= 0.0) {
                         ctx->placement_phase_active = false;
                         if (ctx->config.verbose) {
@@ -330,7 +420,20 @@ int app_run_simulation(AppContext* ctx) {
                                    (unsigned long long)ctx->frame_count, ctx->game.turn_seat);
                             fflush(stdout);
                         }
-                        app_execute_shot(ctx);
+                        
+                        // Execute the pre-computed shot plan
+                        Seat seat = ctx->game.turn_seat;
+                        physics_place_striker(ctx->physics, seat, ctx->pending_shot_plan.placement);
+                        physics_apply_shot(ctx->physics, ctx->pending_shot_plan.aim_angle, ctx->pending_shot_plan.power);
+                        ctx->game.phase = PHASE_SHOT_EXECUTION;
+                        
+                        // Log shot plan
+                        if (ctx->trace) {
+                            trace_write_shot_start(ctx->trace, &ctx->match, &ctx->game, 
+                                                   ctx->shot_count, seat, &ctx->pending_shot_plan);
+                        }
+                        ctx->shot_count++;
+                        ctx->pending_shot_valid = false;
                     }
                     break;
                     
@@ -353,7 +456,7 @@ int app_run_simulation(AppContext* ctx) {
                     break;
                     
                 case PHASE_RESOLVING:
-                    // Handled above
+                    // Handled above in app_resolve_shot which sets next phase
                     break;
                     
                 default:
@@ -363,13 +466,18 @@ int app_run_simulation(AppContext* ctx) {
         
         // Render (mode-specific)
         if (ctx->renderer) {
+            int sw = GetScreenWidth();
+            int sh = GetScreenHeight();
+            Layout L;
+            layout_compute(sw, sh, &L);
+            
             renderer_begin(ctx->renderer);
-            renderer_draw_hud(ctx->renderer, &ctx->match, &ctx->game, ctx->playback_speed);
+            renderer_draw_hud_sidebar(ctx->renderer, &ctx->match, &ctx->game, ctx->playback_speed, &L);
             renderer_begin_board(ctx->renderer);
             float alpha = (float)(ctx->accumulator / PHYSICS_DT);
             if (alpha > 1.0f) alpha = 1.0f;
-            renderer_draw_board(ctx->renderer, &ctx->game.board, ctx->physics, alpha);
-            renderer_draw_effects(ctx->renderer, &ctx->game, ctx->placement_timer);
+            renderer_draw_board(ctx->renderer, &ctx->game.board, ctx->physics, alpha, &L);
+            renderer_draw_effects(ctx->renderer, &ctx->game, ctx->placement_timer, &L);
             renderer_end_board(ctx->renderer);
             renderer_end(ctx->renderer);
             
@@ -413,18 +521,12 @@ int app_run_simulation(AppContext* ctx) {
             }
         }
         
-        // Soak mode: run as fast as possible (no sleep)
-        if (ctx->config.mode == APP_MODE_SOAK) {
-            // No frame limiting
-        } else if (ctx->config.mode == APP_MODE_DIAGNOSTIC) {
-            // Step-through mode handled by renderer
-        } else {
-            // Rendered mode: limit to ~60 FPS
-            double frame_time = platform_time_now() - now;
-            double target_frame_time = 1.0 / 60.0;
-            if (frame_time < target_frame_time) {
-                platform_sleep_ms((uint32_t)((target_frame_time - frame_time) * 1000));
-            }
+        // Frame limiting with WaitTime to cap CPU (R5)
+        // Target 15 FPS = 66.67ms per frame
+        double frame_time = platform_time_now() - now;
+        double target_frame_time = 1.0 / 15.0;
+        if (frame_time < target_frame_time) {
+            platform_sleep_ms((uint32_t)((target_frame_time - frame_time) * 1000));
         }
     }
     
@@ -675,8 +777,8 @@ void app_print_usage(const char* prog_name) {
     printf("  --frames <n>          Frames to capture (capture mode, default: 300)\n");
     printf("  --trace-dir <path>    Trace output directory (default: traces)\n");
     printf("  --capture-dir <path>  Capture output directory (default: captures)\n");
-    printf("  --playback-speed <x>  Sim speed multiplier 0.05-4.0 (default: 0.5 rendered/capture, 1.0 soak/diagnostic)\n");
-    printf("  --ai-budget-ms <n>    AI decision time budget in ms (default: 250, range: 10-10000)\n");
+    printf("  --playback-speed <x>  Sim speed multiplier 0.05-4.0 (default: 0.05 rendered/capture, 1.0 soak/diagnostic)\n");
+    printf("  --ai-budget-ms <n>    AI decision time budget in ms (default: 150, range: 10-10000)\n");
     printf("  --verbose             Verbose logging\n");
     printf("  --headless            Force headless mode\n");
     printf("  --width <n>           Window width (default: 1280)\n");

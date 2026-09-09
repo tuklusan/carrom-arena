@@ -8,50 +8,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
-/* Fixed layout constants for 1000x600 window */
-#define WINDOW_WIDTH 1000
-#define WINDOW_HEIGHT 600
-
-#define TITLE_BAND_HEIGHT 30
-#define TITLE_FONT_SIZE 22
-#define TITLE_Y 5
-
-#define MAIN_BODY_TOP 30
-#define MAIN_BODY_BOTTOM 470
-#define MAIN_BODY_HEIGHT 440
-
-#define HUD_SIDEBAR_LEFT 10
-#define HUD_SIDEBAR_RIGHT 200
-#define HUD_SIDEBAR_WIDTH 190
-
-#define BOARD_REGION_LEFT 210
-#define BOARD_REGION_RIGHT 810
-#define BOARD_REGION_WIDTH 600
-
-#define RIGHT_SIDEBAR_LEFT 820
-#define RIGHT_SIDEBAR_RIGHT 990
-
-#define BOARD_SURFACE_SIZE 360
-#define BOARD_SURFACE_LEFT 330
-#define BOARD_SURFACE_TOP 70
-#define BOARD_SURFACE_RIGHT 690
-#define BOARD_SURFACE_BOTTOM 430
-
-#define BOARD_CENTER_X 510
-#define BOARD_CENTER_Y 250
-
-#define FOOTER_BAND_TOP 470
-#define FOOTER_BAND_HEIGHT 130
-#define FOOTER_RULE_Y 475
-#define FOOTER_LINK_Y 495
-#define FOOTER_LINK_FONT 16
-#define FOOTER_COPYRIGHT_Y 525
-#define FOOTER_COPYRIGHT_FONT 14
-
-#define HUD_START_Y 40
-#define HUD_LINE_HEIGHT 18
-#define HUD_FONT_SIZE 14
+#define MAX_BOARD_SIZE 500
 
 static const char* TITLE_TEXT = "SANYALnet Labs Carrom Arena";
 static const char* COPYRIGHT_TEXT = "\xC2\xA9 Supratim Sanyal";  // UTF-8 ©
@@ -74,12 +33,65 @@ struct Renderer {
     int copyright_width;
 };
 
-/* Draw HUD sidebar in window coordinates (called before BeginMode2D) */
-static void draw_hud_sidebar(const MatchState* match, const GameState* game, float playback_speed) {
-    float x = HUD_SIDEBAR_LEFT;
-    float y = HUD_START_Y;
-    int font = HUD_FONT_SIZE;
-    float lh = HUD_LINE_HEIGHT;
+/* Compute dynamic layout from actual screen dimensions */
+void layout_compute(int sw, int sh, Layout* out) {
+    out->sw = sw;
+    out->sh = sh;
+    
+    float fsw = (float)sw;
+    float fsh = (float)sh;
+    
+    out->title_band_h = (int)(fsh * 0.05f);
+    out->footer_band_h = (int)(fsh * 0.22f);
+    out->body_h = sh - out->title_band_h - out->footer_band_h;
+    out->hud_w = (int)(fsw * 0.19f);
+    out->right_sidebar_w = (int)(fsw * 0.17f);
+    out->board_region_x = out->hud_w + 10;
+    out->board_region_w = sw - out->hud_w - out->right_sidebar_w - 10;
+    
+    int candidate_board_size = (int)fminf((float)(out->body_h - 80), (float)(out->board_region_w - 80));
+    out->board_size = candidate_board_size > MAX_BOARD_SIZE ? MAX_BOARD_SIZE : candidate_board_size;
+    if (out->board_size < 200) out->board_size = 200;  // Minimum usable size
+    
+    out->board_x = out->board_region_x + (out->board_region_w - out->board_size) / 2;
+    out->board_y = out->title_band_h + (out->body_h - out->board_size) / 2;
+    
+    /* Font sizes derived from board size */
+    float board_size_f = (float)out->board_size;
+    out->font_size_title = (int)(board_size_f / 22.0f);
+    if (out->font_size_title < 18) out->font_size_title = 18;
+    if (out->font_size_title > 36) out->font_size_title = 36;
+    
+    out->font_size_footer_link = (int)(board_size_f / 30.0f);
+    if (out->font_size_footer_link < 12) out->font_size_footer_link = 12;
+    if (out->font_size_footer_link > 20) out->font_size_footer_link = 20;
+    
+    out->font_size_footer_copyright = (int)(board_size_f / 35.0f);
+    if (out->font_size_footer_copyright < 10) out->font_size_footer_copyright = 10;
+    if (out->font_size_footer_copyright > 16) out->font_size_footer_copyright = 16;
+    
+    out->font_size_hud = (int)(board_size_f / 25.0f);
+    if (out->font_size_hud < 12) out->font_size_hud = 12;
+    if (out->font_size_hud > 20) out->font_size_hud = 20;
+    
+    out->hud_line_height = (int)((float)out->font_size_hud * 1.3f);
+    out->hud_start_y = out->title_band_h + 10;
+    
+    /* Figure scaling derived from board size */
+    out->figure_scale = board_size_f / 360.0f;
+    out->figure_halo_base_r = 10.0f * out->figure_scale;
+    
+    /* Piece/striker radii in pixels */
+    out->striker_r_px = board_size_f * STRIKER_RADIUS_NORM / BOARD_SIDE_NORM;
+    out->piece_r_px = board_size_f * PIECE_RADIUS_NORM / BOARD_SIDE_NORM;
+}
+
+/* Draw HUD sidebar in window coordinates using layout */
+static void draw_hud_sidebar(const MatchState* match, const GameState* game, float playback_speed, const Layout* L) {
+    float x = (float)10;
+    float y = (float)L->hud_start_y;
+    int font = L->font_size_hud;
+    float lh = (float)L->hud_line_height;
     
     bool white_turn = (game->active_player.team == TEAM_WHITE);
     Color white_color = white_turn ? (Color){ 255, 215, 0, 255 } : WHITE;
@@ -99,7 +111,7 @@ static void draw_hud_sidebar(const MatchState* match, const GameState* game, flo
     y += lh;
     
     const char* phase_names[] = {
-        "IDLE", "PLACEMENT", "AIMING", "SHOT", "SETTLING", "RESOLVING",
+        "IDLE", "THINKING", "PLACEMENT", "AIMING", "SHOT", "SETTLING", "RESOLVING",
         "BOARD_OVER", "GAME_OVER", "MATCH_OVER"
     };
     DrawText(TextFormat("Phase: %s", phase_names[game->phase]), (int)x, (int)y, font, GREEN);
@@ -126,52 +138,41 @@ static void draw_hud_sidebar(const MatchState* match, const GameState* game, flo
              game->board.queen_on_board ? "YES" : "NO"), (int)x, (int)y, font, LIGHTGRAY);
 }
 
-static void draw_title_bar(Renderer* r) {
-    int title_x = (WINDOW_WIDTH - r->title_width) / 2;
-    DrawText(TITLE_TEXT, title_x, TITLE_Y, TITLE_FONT_SIZE, WHITE);
+static void draw_title_bar(Renderer* r, const Layout* L) {
+    int title_x = (L->sw - r->title_width) / 2;
+    DrawText(TITLE_TEXT, title_x, 5, L->font_size_title, WHITE);
 }
 
-static void draw_footer_band(Renderer* r) {
-    DrawLineEx((Vector2){ 10, FOOTER_RULE_Y }, (Vector2){ 990, FOOTER_RULE_Y }, 1, LIGHTGRAY);
+static void draw_footer_band(Renderer* r, const Layout* L) {
+    int rule_y = L->title_band_h + L->body_h + 5;
+    DrawLineEx((Vector2){ 10, (float)rule_y }, (Vector2){ (float)(L->sw - 10), (float)rule_y }, 1, LIGHTGRAY);
     
-    int link_x = (WINDOW_WIDTH - r->blog_link_width) / 2;
-    DrawText(BLOG_LINK, link_x, FOOTER_LINK_Y, FOOTER_LINK_FONT, LIGHTGRAY);
+    int link_x = (L->sw - r->blog_link_width) / 2;
+    int link_y = rule_y + 20;
+    DrawText(BLOG_LINK, link_x, link_y, L->font_size_footer_link, LIGHTGRAY);
     
-    int copyright_x = (WINDOW_WIDTH - r->copyright_width) / 2;
-    DrawText(COPYRIGHT_TEXT, copyright_x, FOOTER_COPYRIGHT_Y, FOOTER_COPYRIGHT_FONT, (Color){ 180, 180, 180, 255 });
+    int copyright_x = (L->sw - r->copyright_width) / 2;
+    int copyright_y = link_y + L->font_size_footer_link + 10;
+    DrawText(COPYRIGHT_TEXT, copyright_x, copyright_y, L->font_size_footer_copyright, (Color){ 180, 180, 180, 255 });
 }
 
 Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window) {
-    (void)width; (void)height; (void)title;
+    (void)title;
     
     Renderer* r = calloc(1, sizeof(Renderer));
     if (!r) return NULL;
     
     r->capture_mode = capture_mode;
     r->paused = false;
-    r->playback_speed = 0.5f;
-    r->width = WINDOW_WIDTH;
-    r->height = WINDOW_HEIGHT;
+    r->playback_speed = 0.05f;  // R3: 1/10th speed default
+    r->width = width;
+    r->height = height;
     
-    /* Viewport configured so math_world_to_screen returns WORLD coords:
-     * board surface pixels (0..360, 0..360) with origin at top-left of board surface.
-     * Normalized coords (-0.5..0.5, -0.5..0.5) -> World (0..360, 0..360).
-     * math_world_to_screen: screen = center + world * scale (y inverted).
-     * We want: world_x = (norm_x + 0.5) * 360, world_y = (0.5 - norm_y) * 360.
-     * So: center_x = 180, center_y = 180, scale = 360.
-     */
-    r->viewport = math_viewport_create(BOARD_SURFACE_SIZE, BOARD_SURFACE_SIZE);
-    r->viewport.screen_width = BOARD_SURFACE_SIZE;
-    r->viewport.screen_height = BOARD_SURFACE_SIZE;
-    r->viewport.board_size_px = BOARD_SURFACE_SIZE;
-    r->viewport.board_center_px = (Vec2){ BOARD_SURFACE_SIZE * 0.5f, BOARD_SURFACE_SIZE * 0.5f };
-    r->viewport.world_to_screen = (float)BOARD_SURFACE_SIZE / BOARD_SIDE_NORM;
+    /* Initial viewport - will be updated each frame in renderer_begin_board */
+    r->viewport = (Viewport){0};
     
-    /* Camera maps world (board surface pixels, origin at top-left) to window coords.
-     * World (0, 0) -> window (BOARD_SURFACE_LEFT, BOARD_SURFACE_TOP) = (330, 70).
-     */
     r->camera = (Camera2D){ 0 };
-    r->camera.offset = (Vector2){ (float)BOARD_SURFACE_LEFT, (float)BOARD_SURFACE_TOP };
+    r->camera.offset = (Vector2){ 0, 0 };
     r->camera.target = (Vector2){ 0, 0 };
     r->camera.rotation = 0.0f;
     r->camera.zoom = 1.0f;
@@ -181,16 +182,18 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
         flags |= FLAG_WINDOW_HIDDEN;
     }
     SetConfigFlags(flags);
-    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "SANYALnet Labs Carrom Arena");
-    SetTargetFPS(30);
+    InitWindow(width, height, "SANYALnet Labs Carrom Arena");
+    SetTargetFPS(15);  // R4: 15 FPS
     
     /* Measure text widths AFTER InitWindow so default font is loaded */
-    r->title_width = MeasureText(TITLE_TEXT, TITLE_FONT_SIZE);
-    r->blog_link_width = MeasureText(BLOG_LINK, FOOTER_LINK_FONT);
-    r->copyright_width = MeasureText(COPYRIGHT_TEXT, FOOTER_COPYRIGHT_FONT);
+    Layout dummy;
+    layout_compute(GetScreenWidth(), GetScreenHeight(), &dummy);
+    r->title_width = MeasureText(TITLE_TEXT, dummy.font_size_title);
+    r->blog_link_width = MeasureText(BLOG_LINK, dummy.font_size_footer_link);
+    r->copyright_width = MeasureText(COPYRIGHT_TEXT, dummy.font_size_footer_copyright);
     
     if (capture_mode) {
-        r->capture_texture = LoadRenderTexture(WINDOW_WIDTH, WINDOW_HEIGHT);
+        r->capture_texture = LoadRenderTexture(GetScreenWidth(), GetScreenHeight());
     }
     
     return r;
@@ -247,31 +250,45 @@ void renderer_begin(Renderer* r) {
     BeginDrawing();
     ClearBackground((Color){ 30, 30, 40, 255 });
     
-    /* Draw title bar, HUD sidebar, footer band in window coordinates (no camera) */
-    draw_title_bar(r);
-    draw_footer_band(r);
-    /* HUD is drawn by renderer_draw_hud_sidebar which is called from app.c between begin/end */
-    /* But we need it before BeginMode2D, so we'll draw it here if we have match/game state.
-     * However, renderer_begin doesn't have match/game. So we'll draw HUD in renderer_draw_hud
-     * but call it before BeginMode2D. Let's restructure: renderer_begin does NOT call BeginMode2D.
-     * Instead, we'll have renderer_begin_board() that starts the camera, and renderer_end_board() that ends it.
-     * But to minimize API changes, let's draw HUD in renderer_draw_hud which is called after renderer_begin.
-     * We'll move BeginMode2D to after HUD drawing.
-     */
+    int sw = GetScreenWidth();
+    int sh = GetScreenHeight();
+    Layout L;
+    layout_compute(sw, sh, &L);
+    
+    draw_title_bar(r, &L);
+    draw_footer_band(r, &L);
     
     if (r->capture_mode) {
         BeginTextureMode(r->capture_texture);
         ClearBackground((Color){ 30, 30, 40, 255 });
-        draw_title_bar(r);
-        draw_footer_band(r);
+        draw_title_bar(r, &L);
+        draw_footer_band(r, &L);
     }
 }
 
-void renderer_draw_hud_sidebar(Renderer* r, const MatchState* match, const GameState* game, float playback_speed) {
-    draw_hud_sidebar(match, game, playback_speed);
+void renderer_draw_hud_sidebar(Renderer* r, const MatchState* match, const GameState* game, float playback_speed, const Layout* L) {
+    draw_hud_sidebar(match, game, playback_speed, L);
 }
 
 void renderer_begin_board(Renderer* r) {
+    int sw = GetScreenWidth();
+    int sh = GetScreenHeight();
+    Layout L;
+    layout_compute(sw, sh, &L);
+    
+    /* Update viewport for board drawing */
+    r->viewport.screen_width = L.board_size;
+    r->viewport.screen_height = L.board_size;
+    r->viewport.board_size_px = (float)L.board_size;
+    r->viewport.board_center_px = (Vec2){ (float)L.board_size * 0.5f, (float)L.board_size * 0.5f };
+    r->viewport.world_to_screen = (float)L.board_size / BOARD_SIDE_NORM;
+    
+    /* Camera maps world (board surface pixels, origin at top-left) to window coords */
+    r->camera.offset = (Vector2){ (float)L.board_x, (float)L.board_y };
+    r->camera.target = (Vector2){ 0, 0 };
+    r->camera.rotation = 0.0f;
+    r->camera.zoom = 1.0f;
+    
     BeginMode2D(r->camera);
     
     if (r->capture_mode) {
@@ -291,18 +308,12 @@ void renderer_end(Renderer* r) {
     EndDrawing();
 }
 
-void renderer_draw_board(Renderer* r, const BoardState* board, const PhysicsWorld* physics, float alpha) {
-    board_view_draw(r->viewport, board, physics, alpha);
+void renderer_draw_board(Renderer* r, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* L) {
+    board_view_draw(r->viewport, board, physics, alpha, L);
 }
 
-void renderer_draw_hud(Renderer* r, const MatchState* match, const GameState* game, float playback_speed) {
-    /* HUD now drawn in window coords, but this is called after renderer_begin which doesn't
-     * start the camera yet. We'll draw it here in window coords. */
-    draw_hud_sidebar(match, game, playback_speed);
-}
-
-void renderer_draw_effects(Renderer* r, const GameState* game, double placement_timer) {
-    effects_draw(r->viewport, game, placement_timer);
+void renderer_draw_effects(Renderer* r, const GameState* game, double placement_timer, const Layout* L) {
+    effects_draw(r->viewport, game, placement_timer, L);
 }
 
 void renderer_capture_frame(Renderer* r, const char* dir, uint64_t frame_num) {
