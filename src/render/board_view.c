@@ -321,7 +321,7 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     float gap = 2.0f; // pixels
     float body_length_world = (head_radius + gap + torso_height) / vp.world_to_screen;
     Vec2 east_world = { BASELINE_X_EAST + offset_world + body_length_world, 0.0f };
-    draw_human_figure(vp, L, east_world, M_PI, TEAM_BLACK, current_turn_seat == SEAT_EAST, halo_pulse_e);
+    draw_human_figure(vp, L, east_world, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_EAST, halo_pulse_e);
     
     // West seat (left) - BLACK team, faces right (angle = 0)
     // World X = BASELINE_X_WEST - offset - body_length (further left so torso extends inward)
@@ -331,7 +331,7 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         halo_pulse_w = (sinf(current_time * 2.0f) * 0.5f + 0.5f);
     }
     Vec2 west_world = { BASELINE_X_WEST - offset_world - body_length_world, 0.0f };
-    draw_human_figure(vp, L, west_world, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_WEST, halo_pulse_w);
+    draw_human_figure(vp, L, west_world, M_PI, TEAM_BLACK, current_turn_seat == SEAT_WEST, halo_pulse_w);
     
     // Pockets
     float pocket_r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM);

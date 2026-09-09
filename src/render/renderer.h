@@ -35,6 +35,10 @@ typedef struct {
     float figure_halo_base_r;      // Base halo radius for figures
     float striker_r_px;            // Striker radius in pixels
     float piece_r_px;              // Piece radius in pixels
+    int figure_band_h;             // Height of each figure band (N and S)
+    int n_figure_center_y;         // Screen Y for N figure center
+    int s_figure_center_y;         // Screen Y for S figure center
+    int placement_banner_y;        // Screen Y for placement banner (in N band)
 } Layout;
 
 /* Compute layout from actual screen dimensions */
@@ -59,6 +63,7 @@ void renderer_end(Renderer* renderer);
 
 void renderer_draw_board(Renderer* renderer, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* layout);
 void renderer_draw_effects(Renderer* renderer, const GameState* game, double placement_timer, const Layout* layout);
+void renderer_draw_placement_banner(Renderer* renderer, const GameState* game, double placement_timer, const Layout* layout);
 
 void renderer_capture_frame(Renderer* renderer, const char* dir, uint64_t frame_num);
 

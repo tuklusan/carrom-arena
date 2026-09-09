@@ -91,30 +91,6 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
             Color halo_color = (Color){ 255, 215, 0, (unsigned char)(ring_alpha * 255) };
             DrawCircleLines((int)screen.x, (int)screen.y, ring_radius, halo_color);
         }
-        
-        // Countdown HUD banner at top of game surface
-        float gs_left = vp.board_center_px.x - vp.board_size_px * 0.5f;
-        float gs_top = vp.board_center_px.y - vp.board_size_px * 0.5f;
-        float scale = vp.board_size_px / 600.0f;
-        if (scale < 0.6f) scale = 0.6f;
-        if (scale > 1.5f) scale = 1.5f;
-        int banner_font = (int)(20.0f * scale);
-        int banner_height = (int)(40.0f * scale);
-        
-        int banner_x = (int)(gs_left);
-        int banner_y = (int)(gs_top - (float)banner_height - 10.0f * scale);
-        int banner_w = (int)vp.board_size_px;
-        DrawRectangle(banner_x, banner_y, banner_w, banner_height, (Color){ 0, 0, 0, 200 });
-        DrawRectangleLines(banner_x, banner_y, banner_w, banner_height, (Color){ 255, 215, 0, 255 });
-        
-        char countdown_text[128];
-        snprintf(countdown_text, sizeof(countdown_text), 
-                 "Striker placed at (%.2f, %.2f) - striking in %.1fs", 
-                 striker_pos.x, striker_pos.y, placement_timer);
-        int text_width = MeasureText(countdown_text, banner_font);
-        int text_x = banner_x + (banner_w - text_width) / 2;
-        int text_y = banner_y + (banner_height - banner_font) / 2;
-        DrawText(countdown_text, text_x, text_y, banner_font, (Color){ 255, 215, 0, 255 });
     }
     
     // Aim line and power bar during aiming/placement phase (when not in placement hold)
