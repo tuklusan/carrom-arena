@@ -96,7 +96,9 @@ static void run_headless_match(uint64_t seed, uint64_t* p_total_steps, uint32_t*
                 .game = &game,
                 .board = &game.board,
                 .physics = snap,
-                .active_seat = game.turn_seat
+                .active_seat = game.turn_seat,
+                .ai_budget_ms = 250,
+                .max_candidates = 5
             };
             
             // AI decides shot
@@ -325,7 +327,15 @@ void test_shot_settling_bounded_per_shot(void) {
     for (int shot = 0; shot < 10; shot++) {
         if (gs.phase == PHASE_PLACEMENT) {
             PhysicsSnapshot* snap = physics_snapshot(physics);
-            DecisionSnapshot dsnap = { &match, &gs, &gs.board, snap, gs.turn_seat };
+            DecisionSnapshot dsnap = {
+                .match = &match,
+                .game = &gs,
+                .board = &gs.board,
+                .physics = snap,
+                .active_seat = gs.turn_seat,
+                .ai_budget_ms = 150,
+                .max_candidates = 5
+            };
             ShotPlan plan = controller_decide(ctrl, &dsnap, &rng.streams[gs.turn_seat]);
             physics_snapshot_destroy(snap);
             
@@ -405,7 +415,15 @@ void test_debug_ai_candidates(void) {
     physics_sync_from_board(physics, &gs.board, gs.turn_seat);
     
     PhysicsSnapshot* snap = physics_snapshot(physics);
-    DecisionSnapshot dsnap = { &match, &gs, &gs.board, snap, gs.turn_seat };
+    DecisionSnapshot dsnap = {
+        .match = &match,
+        .game = &gs,
+        .board = &gs.board,
+        .physics = snap,
+        .active_seat = gs.turn_seat,
+        .ai_budget_ms = 150,
+        .max_candidates = 5
+    };
     
     debug_ai_decision(ctrl, &dsnap, &rng.streams[SEAT_NORTH], "INITIAL");
     

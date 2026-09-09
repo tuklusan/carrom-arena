@@ -27,21 +27,21 @@
 #define COLOR_TURN_HIGHLIGHT (Color){ 255, 215, 0, 255 }      // Gold highlight for current turn
 
 /* Draw a stylised head-and-shoulders silhouette per spec:
- *    ○         (head: DrawCircle radius 8 * scale)
- *   ┃┃         (shoulders: DrawEllipse)
- *  ▄▄▄▄        (torso: filled trapezoid via DrawTriangle * 2)
+ *    ○         (head: DrawCircle radius = L->board_size / 25)
+ *   ┃┃         (shoulders: DrawEllipse half-width = L->board_size / 18, height = L->board_size / 45)
+ *  ▄▄▄▄        (torso: filled trapezoid height = L->board_size / 12, bottom half-width = L->board_size / 22.5)
+ * All shapes FILLED with team color, 2px outline accent
  */
 static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float halo_pulse) {
     // Convert world position to screen
     Vec2 screen = math_world_to_screen(vp, world_pos);
     
-    // Figure dimensions in screen pixels (scaled by figure_scale)
-    float scale = L->figure_scale;
-    float head_radius = 8.0f * scale;
-    float shoulder_width = 12.0f * scale;
-    float shoulder_height = 4.0f * scale;
-    float torso_height = 24.0f * scale;
-    float torso_bottom_width = 16.0f * scale;
+    // Figure dimensions in screen pixels (based on L->board_size per spec)
+    float head_radius = (float)L->board_size / 25.0f;
+    float shoulder_half_width = (float)L->board_size / 18.0f;
+    float shoulder_height = (float)L->board_size / 45.0f;
+    float torso_height = (float)L->board_size / 12.0f;
+    float torso_bottom_half_width = (float)L->board_size / 22.5f;
     
     // Colors based on team
     Color fill_color = (team == TEAM_WHITE) ? COLOR_TEAM_WHITE_FILL : COLOR_TEAM_BLACK_FILL;
@@ -57,8 +57,8 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     
     // Shoulders (ellipse centered below head)
     Vec2 shoulders_center = {
-        head_center.x - forward.x * (head_radius + 2.0f * scale),
-        head_center.y - forward.y * (head_radius + 2.0f * scale)
+        head_center.x - forward.x * (head_radius + 2.0f),
+        head_center.y - forward.y * (head_radius + 2.0f)
     };
     
     // Torso bottom (trapezoid base)
@@ -69,20 +69,20 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     
     // Torso corners (trapezoid)
     Vec2 torso_top_left = {
-        shoulders_center.x + right.x * shoulder_width,
-        shoulders_center.y + right.y * shoulder_width
+        shoulders_center.x + right.x * shoulder_half_width,
+        shoulders_center.y + right.y * shoulder_half_width
     };
     Vec2 torso_top_right = {
-        shoulders_center.x - right.x * shoulder_width,
-        shoulders_center.y - right.y * shoulder_width
+        shoulders_center.x - right.x * shoulder_half_width,
+        shoulders_center.y - right.y * shoulder_half_width
     };
     Vec2 torso_bottom_left = {
-        torso_bottom_center.x + right.x * torso_bottom_width,
-        torso_bottom_center.y + right.y * torso_bottom_width
+        torso_bottom_center.x + right.x * torso_bottom_half_width,
+        torso_bottom_center.y + right.y * torso_bottom_half_width
     };
     Vec2 torso_bottom_right = {
-        torso_bottom_center.x - right.x * torso_bottom_width,
-        torso_bottom_center.y - right.y * torso_bottom_width
+        torso_bottom_center.x - right.x * torso_bottom_half_width,
+        torso_bottom_center.y - right.y * torso_bottom_half_width
     };
     
     // Draw torso as two triangles (filled trapezoid)
@@ -99,7 +99,7 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
         fill_color
     );
     
-    // Torso outline
+    // Torso outline (2px thick - draw 2 passes)
     DrawTriangleLines(
         (Vector2){ torso_top_left.x, torso_top_left.y },
         (Vector2){ torso_top_right.x, torso_top_right.y },
@@ -112,14 +112,31 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
         (Vector2){ torso_bottom_left.x, torso_bottom_left.y },
         highlight_color
     );
+    // Second pass for 2px thickness - slightly offset
+    DrawTriangleLines(
+        (Vector2){ torso_top_left.x + 1.0f, torso_top_left.y },
+        (Vector2){ torso_top_right.x + 1.0f, torso_top_right.y },
+        (Vector2){ torso_bottom_left.x + 1.0f, torso_bottom_left.y },
+        highlight_color
+    );
+    DrawTriangleLines(
+        (Vector2){ torso_top_right.x + 1.0f, torso_top_right.y },
+        (Vector2){ torso_bottom_right.x + 1.0f, torso_bottom_right.y },
+        (Vector2){ torso_bottom_left.x + 1.0f, torso_bottom_left.y },
+        highlight_color
+    );
     
-    // Draw shoulders ellipse
-    DrawEllipse((int)shoulders_center.x, (int)shoulders_center.y, shoulder_width, shoulder_height, fill_color);
-    DrawEllipseLines((int)shoulders_center.x, (int)shoulders_center.y, shoulder_width, shoulder_height, highlight_color);
+    // Draw shoulders ellipse (filled)
+    DrawEllipse((int)shoulders_center.x, (int)shoulders_center.y, (int)shoulder_half_width, (int)shoulder_height, fill_color);
+    // Shoulders outline (2px thick - draw 2 passes)
+    DrawEllipseLines((int)shoulders_center.x, (int)shoulders_center.y, (int)shoulder_half_width, (int)shoulder_height, highlight_color);
+    DrawEllipseLines((int)shoulders_center.x + 1, (int)shoulders_center.y, (int)shoulder_half_width, (int)shoulder_height, highlight_color);
     
-    // Draw head circle
-    DrawCircle((int)head_center.x, (int)head_center.y, head_radius, fill_color);
-    DrawCircleLines((int)head_center.x, (int)head_center.y, head_radius, highlight_color);
+    // Draw head circle (filled)
+    DrawCircle((int)head_center.x, (int)head_center.y, (int)head_radius, fill_color);
+    // Head outline (2px thick - draw 2 passes)
+    DrawCircleLines((int)head_center.x, (int)head_center.y, (int)head_radius, highlight_color);
+    DrawCircleLines((int)head_center.x, (int)head_center.y, (float)(int)head_radius + 1.0f, highlight_color);
     
     // If current turn, draw a pulsing gold halo ring around the head
     if (is_current_turn) {
@@ -260,25 +277,54 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     DrawLine((int)baseline_x_e, (int)baseline_y_start, (int)baseline_x_e, (int)(baseline_y_start + baseline_len), COLOR_BASELINE_MUTED);
     DrawLine((int)baseline_x_w, (int)baseline_y_start, (int)baseline_x_w, (int)(baseline_y_start + baseline_len), COLOR_BASELINE_MUTED);
     
-    // Draw human figures for each seat - positions 40px outside board edges
-    float figure_offset = 40.0f * L->figure_scale;
+    // Draw human figures for each seat - all positioned in WORLD coordinates relative to board geometry
+    
+    // Compute figure margin and offset from board geometry (not screen coordinates)
+    float figure_margin = L->figure_scale * 8.0f;           // replaces hardcoded 12.0f
+    float figure_offset = (float)L->board_size * 0.11f;     // replaces magic 40.0f
+    
+    // Convert pixel offsets to world units
+    float margin_world = figure_margin / vp.world_to_screen;
+    float offset_world = figure_offset / vp.world_to_screen;
+    
+    // Current time for halo pulse animation
+    float current_time = (float)GetTime();
     
     // North seat (top) - WHITE team, faces down (angle = -PI/2)
-    // Position: center_x, board_top - figure_offset
-    Vec2 north_figure_pos = { 0.0f, 0.5f + figure_offset / vp.world_to_screen };
-    draw_human_figure(vp, L, north_figure_pos, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH, 0.0f);
+    // World Y = BASELINE_Y_NORTH - margin (above north baseline), X = 0 (centered)
+    float halo_pulse_n = 0.0f;
+    if (current_turn_seat == SEAT_NORTH) {
+        halo_pulse_n = (sinf(current_time * 2.0f) * 0.5f + 0.5f); // 0-1 pulse
+    }
+    Vec2 north_world = { 0.0f, BASELINE_Y_NORTH - margin_world };
+    draw_human_figure(vp, L, north_world, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH, halo_pulse_n);
     
     // South seat (bottom) - WHITE team, faces up (angle = PI/2)
-    Vec2 south_figure_pos = { 0.0f, -0.5f - figure_offset / vp.world_to_screen };
-    draw_human_figure(vp, L, south_figure_pos, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, 0.0f);
+    // World Y = BASELINE_Y_SOUTH + margin (below south baseline), X = 0 (centered)
+    float halo_pulse_s = 0.0f;
+    if (current_turn_seat == SEAT_SOUTH) {
+        halo_pulse_s = (sinf(current_time * 2.0f) * 0.5f + 0.5f);
+    }
+    Vec2 south_world = { 0.0f, BASELINE_Y_SOUTH + margin_world };
+    draw_human_figure(vp, L, south_world, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, halo_pulse_s);
     
     // East seat (right) - BLACK team, faces left (angle = PI)
-    Vec2 east_figure_pos = { 0.5f + figure_offset / vp.world_to_screen, 0.0f };
-    draw_human_figure(vp, L, east_figure_pos, M_PI, TEAM_BLACK, current_turn_seat == SEAT_EAST, 0.0f);
+    // World X = BASELINE_X_EAST + offset (right of east baseline), Y = 0 (centered)
+    float halo_pulse_e = 0.0f;
+    if (current_turn_seat == SEAT_EAST) {
+        halo_pulse_e = (sinf(current_time * 2.0f) * 0.5f + 0.5f);
+    }
+    Vec2 east_world = { BASELINE_X_EAST + offset_world, 0.0f };
+    draw_human_figure(vp, L, east_world, M_PI, TEAM_BLACK, current_turn_seat == SEAT_EAST, halo_pulse_e);
     
     // West seat (left) - BLACK team, faces right (angle = 0)
-    Vec2 west_figure_pos = { -0.5f - figure_offset / vp.world_to_screen, 0.0f };
-    draw_human_figure(vp, L, west_figure_pos, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_WEST, 0.0f);
+    // World X = BASELINE_X_WEST - offset (left of west baseline), Y = 0 (centered)
+    float halo_pulse_w = 0.0f;
+    if (current_turn_seat == SEAT_WEST) {
+        halo_pulse_w = (sinf(current_time * 2.0f) * 0.5f + 0.5f);
+    }
+    Vec2 west_world = { BASELINE_X_WEST - offset_world, 0.0f };
+    draw_human_figure(vp, L, west_world, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_WEST, halo_pulse_w);
     
     // Pockets
     float pocket_r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM);
