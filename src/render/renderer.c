@@ -37,51 +37,61 @@ struct Renderer {
 void layout_compute(int sw, int sh, Layout* out) {
     out->sw = sw;
     out->sh = sh;
-    
     float fsw = (float)sw;
     float fsh = (float)sh;
-    
-    out->title_band_h = (int)(fsh * 0.05f);
-    out->footer_band_h = (int)(fsh * 0.22f);
-    out->body_h = sh - out->title_band_h - out->footer_band_h;
+
+    out->title_band_h = (int)(fsh * 0.055f);        // Was 0.05
+    out->footer_band_h = (int)(fsh * 0.14f);         // Was 0.22
     out->hud_w = (int)(fsw * 0.19f);
     out->right_sidebar_w = (int)(fsw * 0.17f);
     out->board_region_x = out->hud_w + 10;
     out->board_region_w = sw - out->hud_w - out->right_sidebar_w - 10;
+
+    // Estimate figure_band_h for available_h calc (will refine after board_size)
+    int est_figure_band_h = (int)(fsh * 0.08f);  // ~58px at 720
     
-    int candidate_board_size = (int)fminf((float)(out->body_h - 80), (float)(out->board_region_w - 80));
+    int available_h = sh - out->title_band_h - 2 * est_figure_band_h - out->footer_band_h - 40;
+    int available_w = out->board_region_w - 80;
+    int candidate_board_size = (int)fminf((float)available_h, (float)available_w);
     out->board_size = candidate_board_size > MAX_BOARD_SIZE ? MAX_BOARD_SIZE : candidate_board_size;
-    if (out->board_size < 200) out->board_size = 200;  // Minimum usable size
+    if (out->board_size < 200) out->board_size = 200;
+
+    // Now refine figure_band_h from actual board_size
+    out->figure_band_h = out->board_size / 8;
     
+    // N figure band center
+    out->n_figure_center_y = out->title_band_h + out->figure_band_h + 10;
+    // Board top edge
+    out->board_y = out->title_band_h + 2 * out->figure_band_h + 20;
+    // Board centered horizontally
     out->board_x = out->board_region_x + (out->board_region_w - out->board_size) / 2;
-    out->board_y = out->title_band_h + (out->body_h - out->board_size) / 2;
+    // S figure band center (symmetric from bottom)
+    out->s_figure_center_y = sh - out->footer_band_h - out->figure_band_h - 10;
     
-    /* Font sizes derived from board size */
+    // Placement banner in N figure band
+    out->placement_banner_y = out->title_band_h + 6;
+
+    out->body_h = sh - out->title_band_h - out->footer_band_h;  // Keep for compat
+
+    // Font sizes (same as before)
     float board_size_f = (float)out->board_size;
     out->font_size_title = (int)(board_size_f / 22.0f);
     if (out->font_size_title < 18) out->font_size_title = 18;
     if (out->font_size_title > 36) out->font_size_title = 36;
-    
     out->font_size_footer_link = (int)(board_size_f / 30.0f);
     if (out->font_size_footer_link < 12) out->font_size_footer_link = 12;
     if (out->font_size_footer_link > 20) out->font_size_footer_link = 20;
-    
     out->font_size_footer_copyright = (int)(board_size_f / 35.0f);
     if (out->font_size_footer_copyright < 10) out->font_size_footer_copyright = 10;
     if (out->font_size_footer_copyright > 16) out->font_size_footer_copyright = 16;
-    
     out->font_size_hud = (int)(board_size_f / 25.0f);
     if (out->font_size_hud < 12) out->font_size_hud = 12;
     if (out->font_size_hud > 20) out->font_size_hud = 20;
-    
     out->hud_line_height = (int)((float)out->font_size_hud * 1.3f);
     out->hud_start_y = out->title_band_h + 10;
-    
-    /* Figure scaling derived from board size */
+
     out->figure_scale = board_size_f / 360.0f;
     out->figure_halo_base_r = 10.0f * out->figure_scale;
-    
-    /* Piece/striker radii in pixels */
     out->striker_r_px = board_size_f * STRIKER_RADIUS_NORM / BOARD_SIDE_NORM;
     out->piece_r_px = board_size_f * PIECE_RADIUS_NORM / BOARD_SIDE_NORM;
 }
@@ -154,6 +164,34 @@ static void draw_footer_band(Renderer* r, const Layout* L) {
     int copyright_x = (L->sw - r->copyright_width) / 2;
     int copyright_y = link_y + L->font_size_footer_link + 10;
     DrawText(COPYRIGHT_TEXT, copyright_x, copyright_y, L->font_size_footer_copyright, (Color){ 180, 180, 180, 255 });
+}
+
+static void draw_placement_banner(Renderer* r, const GameState* game, double placement_timer, const Layout* L) {
+    if (game->phase != PHASE_PLACEMENT) return;
+    if (!game->board.striker.on_baseline || game->board.striker.pocketed) return;
+    if (game->turn_seat != SEAT_NORTH) return;  // Only show for N seat (human-readable)
+
+    Vec2 striker_pos = game->board.striker.position;
+    char countdown_text[128];
+    snprintf(countdown_text, sizeof(countdown_text),
+             "Striker placed at (%.2f, %.2f) - striking in %.1fs",
+             striker_pos.x, striker_pos.y, placement_timer);
+
+    int font_size = L->font_size_hud;  // Or scale from board_size
+    if (font_size < 16) font_size = 16;
+    int text_width = MeasureText(countdown_text, font_size);
+    int banner_w = text_width + 40;
+    int banner_h = font_size + 16;
+    int banner_x = (L->sw - banner_w) / 2;
+    int banner_y = L->placement_banner_y;
+
+    DrawRectangle(banner_x, banner_y, banner_w, banner_h, (Color){ 0, 0, 0, 200 });
+    DrawRectangleLines(banner_x, banner_y, banner_w, banner_h, (Color){ 255, 215, 0, 255 });
+    DrawText(countdown_text, banner_x + 20, banner_y + 8, font_size, (Color){ 255, 215, 0, 255 });
+}
+
+void renderer_draw_placement_banner(Renderer* r, const GameState* game, double placement_timer, const Layout* L) {
+    draw_placement_banner(r, game, placement_timer, L);
 }
 
 Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window) {
