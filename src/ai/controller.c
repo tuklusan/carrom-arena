@@ -6,6 +6,7 @@
 #include "ai/shot_evaluator.h"
 #include "game/rules.h"
 #include "game/board.h"
+#include "platform/platform.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -174,8 +175,25 @@ static ShotPlan arena_decide(Controller* self, const DecisionSnapshot* snap, PCG
     // Step 3-4: Bound aim/power variants (already done in generate)
     
     // Step 5: Scratch simulation for each candidate
+    double start_time = platform_time_now();
+    // Get AI budget from config - for now use default 250ms
+    // In the future this could be passed via DecisionSnapshot
+    double ai_budget_seconds = 0.25;  // 250ms default
+    
     for (int i = 0; i < impl->candidate_count; i++) {
+        // Check time budget before each candidate
+        double elapsed = platform_time_now() - start_time;
+        if (elapsed > ai_budget_seconds) {
+            if (self->profile.weight_pocket > 0) {  // Only log if verbose
+                // Budget exceeded, stop evaluating more candidates
+            }
+            break;
+        }
+        
         shot_evaluator_evaluate(&impl->candidates[i], snap, rng);
+        
+        // Yield to OS between candidates to keep host responsive
+        platform_yield();
     }
     
     // Step 6: Score candidates

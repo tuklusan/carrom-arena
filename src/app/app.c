@@ -35,6 +35,10 @@ struct AppContext {
     bool paused;
     double last_frame_time;
     double accumulator;
+    float playback_speed;  // Current playback speed multiplier
+    bool speed_paused;     // Temporary pause from space key (speed = 0)
+    double placement_timer;  // Timer for striker placement phase (seconds)
+    bool placement_phase_active;  // Whether we're in the placement hold phase
 };
 
 /* -----------------------------------------------------------------------------
@@ -94,7 +98,12 @@ static void app_setup_renderer(AppContext* ctx) {
 // Use physics.h definitions: PHYSICS_HZ, PHYSICS_DT, MAX_SUBSTEPS
 
 static void app_simulation_step(AppContext* ctx, double dt) {
-    ctx->accumulator += dt;
+    // Apply playback speed: at 0.5x, 1 wall-clock second advances 0.5s of simulation
+    // Space key pause sets speed_paused=true, which forces dt=0
+    if (ctx->speed_paused) {
+        dt = 0.0;
+    }
+    ctx->accumulator += dt * ctx->playback_speed;
     
     int substeps = 0;
     while (ctx->accumulator >= PHYSICS_DT && substeps < MAX_SUBSTEPS) {
@@ -272,6 +281,10 @@ int app_run_simulation(AppContext* ctx) {
                 break;
             }
             ctx->paused = renderer_is_paused(ctx->renderer);
+            
+            // Sync playback speed from renderer (modified by +/- keys)
+            ctx->playback_speed = renderer_get_playback_speed(ctx->renderer);
+            ctx->speed_paused = ctx->paused;
         }
         
         if (!ctx->paused) {
@@ -289,11 +302,31 @@ int app_run_simulation(AppContext* ctx) {
             // State machine
             switch (ctx->game.phase) {
                 case PHASE_IDLE:
+                    break;
+                    
                 case PHASE_PLACEMENT:
-                    // AI plans shot during placement phase
-                    if (ctx->game.phase == PHASE_PLACEMENT) {
+                    // Striker placement phase: hold for 1.0s / playback_speed before striking
+                    if (!ctx->placement_phase_active) {
+                        // Just entered placement phase - start timer
+                        ctx->placement_timer = 1.0 / fmaxf(ctx->playback_speed, 0.05f);
+                        ctx->placement_phase_active = true;
                         if (ctx->config.verbose) {
-                            printf("[DEBUG] Frame %llu: Executing shot for seat %d\n", 
+                            printf("[DEBUG] Frame %llu: Placement phase started for seat %d, timer=%.2fs\n", 
+                                   (unsigned long long)ctx->frame_count, ctx->game.turn_seat, ctx->placement_timer);
+                            fflush(stdout);
+                        }
+                    }
+                    
+                    // Count down timer (only if not paused)
+                    if (!ctx->paused && !ctx->speed_paused) {
+                        ctx->placement_timer -= dt;
+                    }
+                    
+                    // Timer expired - execute the shot
+                    if (ctx->placement_timer <= 0.0) {
+                        ctx->placement_phase_active = false;
+                        if (ctx->config.verbose) {
+                            printf("[DEBUG] Frame %llu: Placement complete, executing shot for seat %d\n", 
                                    (unsigned long long)ctx->frame_count, ctx->game.turn_seat);
                             fflush(stdout);
                         }
@@ -334,8 +367,8 @@ int app_run_simulation(AppContext* ctx) {
             float alpha = (float)(ctx->accumulator / PHYSICS_DT);
             if (alpha > 1.0f) alpha = 1.0f;
             renderer_draw_board(ctx->renderer, &ctx->game.board, ctx->physics, alpha);
-            renderer_draw_hud(ctx->renderer, &ctx->match, &ctx->game);
-            renderer_draw_effects(ctx->renderer, &ctx->game);
+            renderer_draw_hud(ctx->renderer, &ctx->match, &ctx->game, ctx->playback_speed);
+            renderer_draw_effects(ctx->renderer, &ctx->game, ctx->placement_timer);
             renderer_end(ctx->renderer);
             
             // Capture frames if in capture mode
@@ -404,6 +437,27 @@ AppContext* app_create(const AppConfig* config) {
     if (!ctx) return NULL;
     
     ctx->config = *config;
+    
+    // Initialize playback speed based on mode
+    if (config->playback_speed > 0.0f) {
+        ctx->playback_speed = config->playback_speed;
+    } else {
+        // Default based on mode
+        switch (config->mode) {
+            case APP_MODE_SOAK:
+            case APP_MODE_DIAGNOSTIC:
+                ctx->playback_speed = 1.0f;
+                break;
+            case APP_MODE_RENDERED:
+            case APP_MODE_CAPTURE:
+            default:
+                ctx->playback_speed = 0.5f;
+                break;
+        }
+    }
+    ctx->speed_paused = false;
+    ctx->placement_timer = 0.0;
+    ctx->placement_phase_active = false;
     
     // Initialize RNG
     uint64_t seed = config->seed;
@@ -588,6 +642,15 @@ AppConfig app_parse_args(int argc, char* argv[]) {
             config.window_height = atoi(val);
         } else if ((val = get_arg_value(argv[i], "--replay")) != 0) {
             config.replay_file = val;
+        } else if ((val = get_arg_value(argv[i], "--playback-speed")) != 0) {
+            float speed = strtof(val, NULL);
+            if (speed < 0.05f) speed = 0.05f;
+            if (speed > 4.0f) speed = 4.0f;
+            config.playback_speed = speed;
+        } else if ((val = get_arg_value(argv[i], "--ai-budget-ms")) != 0) {
+            config.ai_budget_ms = (uint32_t)strtoul(val, NULL, 10);
+            if (config.ai_budget_ms < 10) config.ai_budget_ms = 10;
+            if (config.ai_budget_ms > 10000) config.ai_budget_ms = 10000;
         } else if (strcmp(argv[i], "--verbose") == 0) {
             config.verbose = true;
         } else if (strcmp(argv[i], "--headless") == 0) {
@@ -602,21 +665,23 @@ void app_print_usage(const char* prog_name) {
     printf("Carrom Arena - Autonomous Four-Player Carrom Simulation\n\n");
     printf("Usage: %s [options]\n\n", prog_name);
     printf("Options:\n");
-    printf("  --mode <mode>       Mode: rendered, diagnostic, soak, capture (default: rendered)\n");
-    printf("  --seed <n>          Master RNG seed (0 = random)\n");
-    printf("  --boards <n>        Boards per seed (soak mode, default: 100)\n");
-    printf("  --seeds <n>         Number of seeds (soak mode, default: 100)\n");
-    printf("  --matches <n>       Matches per board/seed (soak mode, default: 10)\n");
-    printf("  --frames <n>        Frames to capture (capture mode, default: 300)\n");
-    printf("  --trace-dir <path>  Trace output directory (default: traces)\n");
-    printf("  --capture-dir <path> Capture output directory (default: captures)\n");
-    printf("  --verbose           Verbose logging\n");
-    printf("  --headless          Force headless mode\n");
-    printf("  --width <n>         Window width (default: 1280)\n");
-    printf("  --height <n>        Window height (default: 720)\n");
-    printf("  --replay <file>     Replay trace file\n");
-    printf("  --help, -h          Show this help\n");
-    printf("  --version, -v       Show version\n");
+    printf("  --mode <mode>         Mode: rendered, diagnostic, soak, capture (default: rendered)\n");
+    printf("  --seed <n>            Master RNG seed (0 = random)\n");
+    printf("  --boards <n>          Boards per seed (soak mode, default: 100)\n");
+    printf("  --seeds <n>           Number of seeds (soak mode, default: 100)\n");
+    printf("  --matches <n>         Matches per board/seed (soak mode, default: 10)\n");
+    printf("  --frames <n>          Frames to capture (capture mode, default: 300)\n");
+    printf("  --trace-dir <path>    Trace output directory (default: traces)\n");
+    printf("  --capture-dir <path>  Capture output directory (default: captures)\n");
+    printf("  --playback-speed <x>  Sim speed multiplier 0.05-4.0 (default: 0.5 rendered/capture, 1.0 soak/diagnostic)\n");
+    printf("  --ai-budget-ms <n>    AI decision time budget in ms (default: 250, range: 10-10000)\n");
+    printf("  --verbose             Verbose logging\n");
+    printf("  --headless            Force headless mode\n");
+    printf("  --width <n>           Window width (default: 1280)\n");
+    printf("  --height <n>          Window height (default: 720)\n");
+    printf("  --replay <file>       Replay trace file\n");
+    printf("  --help, -h            Show this help\n");
+    printf("  --version, -v         Show version\n");
 }
 
 void app_print_version(void) {

@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-void hud_draw(Viewport vp, const MatchState* match, const GameState* game);
+void hud_draw(Viewport vp, const MatchState* match, const GameState* game, float playback_speed);
 
 #ifdef __cplusplus
 }

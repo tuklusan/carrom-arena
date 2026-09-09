@@ -4,12 +4,10 @@
 #include <raylib.h>
 #define __USE_MINGW_ANSI_STDIO 1
 #include <math.h>
-#ifdef __MINGW32__
-extern float cosf(float);
-extern float sinf(float);
-#endif
+#include <stdio.h>
 
 #define MAX_POCKET_FADE_TIME 0.2f  // 200ms fade
+#define PLACEMENT_HOLD_TIME 1.0f   // 1 second at 1x playback
 
 typedef struct {
     Vec2 pocket_center;
@@ -19,9 +17,56 @@ typedef struct {
 
 static PocketFadeEffect pocket_fades[4] = {0};
 
-void effects_draw(Viewport vp, const GameState* game) {
-    // Aim line and power bar during aiming/placement phase
-    if (game->phase == PHASE_AIMING || game->phase == PHASE_PLACEMENT) {
+void effects_draw(Viewport vp, const GameState* game, double placement_timer) {
+    // Striker placement phase: draw pulsing halo and countdown banner
+    if (game->phase == PHASE_PLACEMENT && game->board.striker.on_baseline && !game->board.striker.pocketed && placement_timer > 0.0) {
+        Vec2 striker_pos = game->board.striker.position;
+        Vec2 screen = math_world_to_screen(vp, striker_pos);
+        float striker_r = math_world_to_screen_dist(vp, STRIKER_RADIUS_NORM);
+        
+        // Pulsing halo: 3 concentric rings fading out, animated with time
+        float time = (float)GetTime();
+        for (int ring = 0; ring < 3; ring++) {
+            float ring_f = (float)ring;
+            float ring_phase = time * 3.0f + ring_f * 2.0f;  // Staggered phases
+            float ring_radius = striker_r * 1.5f + ring_f * striker_r * 0.8f + sinf(ring_phase) * striker_r * 0.3f;
+            float ring_alpha = 0.6f - ring_f * 0.15f + 0.2f * sinf(ring_phase);
+            if (ring_alpha < 0.1f) ring_alpha = 0.1f;
+            if (ring_alpha > 0.8f) ring_alpha = 0.8f;
+            
+            Color halo_color = (Color){ 255, 215, 0, (unsigned char)(ring_alpha * 255) };  // Gold
+            DrawCircleLines((int)screen.x, (int)screen.y, ring_radius, halo_color);
+        }
+        
+        // Countdown HUD banner at top of game surface
+        float gs_left = vp.board_center_px.x - vp.board_size_px * 0.5f;
+        float gs_top = vp.board_center_px.y - vp.board_size_px * 0.5f;
+        float scale = vp.board_size_px / 600.0f;
+        if (scale < 0.6f) scale = 0.6f;
+        if (scale > 1.5f) scale = 1.5f;
+        int banner_font = (int)(20.0f * scale);
+        int banner_height = (int)(40.0f * scale);
+        
+        // Background banner
+        int banner_x = (int)(gs_left);
+        int banner_y = (int)(gs_top - (float)banner_height - 10.0f * scale);
+        int banner_w = (int)vp.board_size_px;
+        DrawRectangle(banner_x, banner_y, banner_w, banner_height, (Color){ 0, 0, 0, 200 });
+        DrawRectangleLines(banner_x, banner_y, banner_w, banner_height, (Color){ 255, 215, 0, 255 });
+        
+        // Countdown text
+        char countdown_text[128];
+        snprintf(countdown_text, sizeof(countdown_text), 
+                 "Striker placed at (%.2f, %.2f) - striking in %.1fs", 
+                 striker_pos.x, striker_pos.y, placement_timer);
+        int text_width = MeasureText(countdown_text, banner_font);
+        int text_x = banner_x + (banner_w - text_width) / 2;
+        int text_y = banner_y + (banner_height - banner_font) / 2;
+        DrawText(countdown_text, text_x, text_y, banner_font, (Color){ 255, 215, 0, 255 });
+    }
+    
+    // Aim line and power bar during aiming/placement phase (when not in placement hold)
+    if (game->phase == PHASE_AIMING) {
         Vec2 striker_pos = game->board.striker.position;
         Vec2 screen = math_world_to_screen(vp, striker_pos);
         

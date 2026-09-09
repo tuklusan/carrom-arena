@@ -18,6 +18,9 @@ double platform_time_now(void);
 /* Sleep for milliseconds (best effort) */
 void platform_sleep_ms(uint32_t ms);
 
+/* Yield CPU time slice to OS scheduler (sched_yield on POSIX, SwitchToThread on Windows) */
+void platform_yield(void);
+
 /* Get current time as microseconds since epoch (for seeding) */
 uint64_t platform_time_us(void);
 

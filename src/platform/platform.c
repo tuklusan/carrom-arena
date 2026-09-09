@@ -56,6 +56,15 @@ void platform_sleep_ms(uint32_t ms) {
 #endif
 }
 
+void platform_yield(void) {
+#if defined(_WIN32)
+    SwitchToThread();
+#else
+    #include <sched.h>
+    sched_yield();
+#endif
+}
+
 uint64_t platform_time_us(void) {
 #if defined(_WIN32)
     FILETIME ft;

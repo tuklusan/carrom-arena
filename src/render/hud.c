@@ -3,7 +3,7 @@
 #include <raylib.h>
 #include <stdio.h>
 
-void hud_draw(Viewport vp, const MatchState* match, const GameState* game) {
+void hud_draw(Viewport vp, const MatchState* match, const GameState* game, float playback_speed) {
     // Base font size scales with game surface (600px = baseline)
     // Clamp scale between 0.6 and 1.5 so text never gets illegibly small or absurdly large
     float scale = vp.board_size_px / 600.0f;
@@ -62,6 +62,11 @@ void hud_draw(Viewport vp, const MatchState* match, const GameState* game) {
     };
     DrawText(TextFormat("Phase: %s", phase_names[game->phase]), (int)x, (int)y, small_font, GREEN);
     y += line_height;
+    
+    // Playback speed
+    Color speed_color = (playback_speed <= 0.0f) ? RED : WHITE;
+    DrawText(TextFormat("Speed: %.2fx", playback_speed), (int)x, (int)y, small_font, speed_color);
+    y += line_height * 0.8f;
     
     // Progress
     DrawText(TextFormat("Boards: %d/%d", match->boards_won_white + match->boards_won_black, match->target_boards_per_game), 
