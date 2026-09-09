@@ -127,16 +127,16 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     );
     
     // Draw shoulders ellipse (filled)
-    DrawEllipse((int)shoulders_center.x, (int)shoulders_center.y, (int)shoulder_half_width, (int)shoulder_height, fill_color);
+    DrawEllipse((int)shoulders_center.x, (int)shoulders_center.y, shoulder_half_width, shoulder_height, fill_color);
     // Shoulders outline (2px thick - draw 2 passes)
-    DrawEllipseLines((int)shoulders_center.x, (int)shoulders_center.y, (int)shoulder_half_width, (int)shoulder_height, highlight_color);
-    DrawEllipseLines((int)shoulders_center.x + 1, (int)shoulders_center.y, (int)shoulder_half_width, (int)shoulder_height, highlight_color);
+    DrawEllipseLines((int)shoulders_center.x, (int)shoulders_center.y, shoulder_half_width, shoulder_height, highlight_color);
+    DrawEllipseLines((int)shoulders_center.x + 1, (int)shoulders_center.y, shoulder_half_width, shoulder_height, highlight_color);
     
     // Draw head circle (filled)
-    DrawCircle((int)head_center.x, (int)head_center.y, (int)head_radius, fill_color);
+    DrawCircle((int)head_center.x, (int)head_center.y, head_radius, fill_color);
     // Head outline (2px thick - draw 2 passes)
-    DrawCircleLines((int)head_center.x, (int)head_center.y, (int)head_radius, highlight_color);
-    DrawCircleLines((int)head_center.x, (int)head_center.y, (float)(int)head_radius + 1.0f, highlight_color);
+    DrawCircleLines((int)head_center.x, (int)head_center.y, head_radius, highlight_color);
+    DrawCircleLines((int)head_center.x, (int)head_center.y, head_radius + 1.0f, highlight_color);
     
     // If current turn, draw a pulsing gold halo ring around the head
     if (is_current_turn) {
