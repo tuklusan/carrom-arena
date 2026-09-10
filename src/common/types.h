@@ -65,7 +65,7 @@ typedef enum { SEAT_NORTH, SEAT_EAST, SEAT_SOUTH, SEAT_WEST } Seat;
 typedef enum { PIECE_WHITE, PIECE_BLACK, PIECE_QUEEN, PIECE_STRIKER } PieceColor;
 
 typedef enum {
-    PHASE_IDLE, PHASE_THINKING, PHASE_PLACEMENT, PHASE_AIMING, PHASE_SHOT_EXECUTION,
+    PHASE_IDLE, PHASE_THINKING, PHASE_PLACEMENT, PHASE_AIM_PREVIEW, PHASE_AIMING, PHASE_SHOT_EXECUTION,
     PHASE_SETTLING, PHASE_RESOLVING, PHASE_BOARD_OVER, PHASE_GAME_OVER, PHASE_MATCH_OVER
 } GamePhase;
 
@@ -135,6 +135,13 @@ typedef struct {
 } BoardState;
 
 /* -----------------------------------------------------------------------------
+ * Shot Planning & Results (moved before GameState for complete type)
+ * --------------------------------------------------------------------------- */
+typedef struct {
+    Vec2 placement; float aim_angle, power; TacticType tactic; uint32_t rng_draw;
+} ShotPlan;
+
+/* -----------------------------------------------------------------------------
  * Score & Match State
  * --------------------------------------------------------------------------- */
 typedef struct { int white, black; } TeamScores;
@@ -150,6 +157,9 @@ typedef struct {
     Seat turn_seat;
     uint8_t consecutive_turns;
     BoardState board;
+    ShotPlan computed_shot_plan;  // Shot plan computed during THINKING, used in AIM_PREVIEW
+    bool computed_shot_valid;     // Whether computed_shot_plan is valid
+    float aim_preview_progress;   // 0.0 to 1.0 progress of figure slide animation during AIM_PREVIEW
 } GameState;
 
 typedef struct {
@@ -157,13 +167,6 @@ typedef struct {
     uint8_t games_won_white, games_won_black;
     uint8_t target_boards_per_game, target_games_per_match;
 } MatchState;
-
-/* -----------------------------------------------------------------------------
- * Shot Planning & Results
- * --------------------------------------------------------------------------- */
-typedef struct {
-    Vec2 placement; float aim_angle, power; TacticType tactic; uint32_t rng_draw;
-} ShotPlan;
 
 typedef struct {
     uint8_t pocketed_ids[19], pocketed_count, pocketed_colors[19];

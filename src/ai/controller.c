@@ -192,6 +192,12 @@ static ShotPlan arena_decide(Controller* self, const DecisionSnapshot* snap, PCG
         
         // Yield to OS between candidates to keep host responsive
         platform_yield();
+        
+        // Small delay to utilize time budget for visualization (only when budget allows)
+        // Sleep for ~5ms per candidate when budget > 500ms, to spread AI work across frames
+        if (ai_budget_seconds > 0.5) {
+            platform_sleep_ms(5);
+        }
     }
     
     // Step 6: Score candidates

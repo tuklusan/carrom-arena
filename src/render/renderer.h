@@ -61,7 +61,7 @@ void renderer_begin_board(Renderer* renderer);
 void renderer_end_board(Renderer* renderer);
 void renderer_end(Renderer* renderer);
 
-void renderer_draw_board(Renderer* renderer, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* layout);
+void renderer_draw_board(Renderer* renderer, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* layout, int game_phase, const GameState* game);
 void renderer_draw_effects(Renderer* renderer, const GameState* game, double placement_timer, const Layout* layout);
 void renderer_draw_placement_banner(Renderer* renderer, const GameState* game, double placement_timer, const Layout* layout);
 
