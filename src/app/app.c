@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <assert.h>
 
 /* -----------------------------------------------------------------------------
  * Application Context
@@ -364,6 +365,13 @@ int app_run_simulation(AppContext* ctx) {
             app_simulation_step(ctx, dt);
             
             // State machine
+            // Phase invariants (debug assertions)
+            assert(!(ctx->game.phase == PHASE_AIM_PREVIEW && ctx->game.computed_shot_valid && 
+                     (ctx->game.board.striker.velocity.x != 0.0f || ctx->game.board.striker.velocity.y != 0.0f)));
+            assert(!(ctx->game.phase == PHASE_SHOT_EXECUTION && ctx->game.computed_shot_valid));
+            assert(!(ctx->game.phase == PHASE_PLACEMENT && !ctx->game.board.striker.on_baseline));
+            assert(!(ctx->game.phase == PHASE_THINKING && ctx->pending_shot_valid && ctx->aim_preview_active));
+            
             switch (ctx->game.phase) {
                 case PHASE_IDLE:
                     break;
@@ -486,7 +494,11 @@ int app_run_simulation(AppContext* ctx) {
                                 fflush(stdout);
                             }
                             
-                            // Execute the pre-computed shot plan
+                            // FIRST: Invalidate computed shot so aim line clears BEFORE striker gains velocity
+                            ctx->game.computed_shot_valid = false;
+                            ctx->game.aim_preview_progress = 0.0f;
+                            
+                            // THEN: Execute the pre-computed shot plan
                             Seat seat = ctx->game.turn_seat;
                             physics_place_striker(ctx->physics, seat, ctx->game.computed_shot_plan.placement);
                             physics_apply_shot(ctx->physics, ctx->game.computed_shot_plan.aim_angle, ctx->game.computed_shot_plan.power);
@@ -498,8 +510,6 @@ int app_run_simulation(AppContext* ctx) {
                                                        ctx->shot_count, seat, &ctx->game.computed_shot_plan);
                             }
                             ctx->shot_count++;
-                            ctx->game.computed_shot_valid = false;
-                            ctx->game.aim_preview_progress = 0.0f;
                         }
                     }
                     break;
@@ -533,20 +543,15 @@ int app_run_simulation(AppContext* ctx) {
         
         // Render (mode-specific)
         if (ctx->renderer) {
-            int sw = GetScreenWidth();
-            int sh = GetScreenHeight();
-            Layout L;
-            layout_compute(sw, sh, &L);
-            
             renderer_begin(ctx->renderer);
-            renderer_draw_hud_sidebar(ctx->renderer, &ctx->match, &ctx->game, ctx->playback_speed, &L);
+            renderer_draw_hud_sidebar(ctx->renderer, &ctx->match, &ctx->game, ctx->playback_speed);
             renderer_begin_board(ctx->renderer);
             float alpha = (float)(ctx->accumulator / PHYSICS_DT);
             if (alpha > 1.0f) alpha = 1.0f;
-            renderer_draw_board(ctx->renderer, &ctx->game.board, ctx->physics, alpha, &L, ctx->game.phase, &ctx->game);
-            renderer_draw_effects(ctx->renderer, &ctx->game, ctx->placement_timer, &L);
+            renderer_draw_board(ctx->renderer, &ctx->game.board, ctx->physics, alpha, ctx->game.phase, &ctx->game);
+            renderer_draw_effects(ctx->renderer, &ctx->game, ctx->placement_timer);
             renderer_end_board(ctx->renderer);
-            renderer_draw_placement_banner(ctx->renderer, &ctx->game, ctx->placement_timer, &L);
+            renderer_draw_placement_banner(ctx->renderer, &ctx->game, ctx->placement_timer);
             renderer_end(ctx->renderer);
             
             // Capture frames if in capture mode

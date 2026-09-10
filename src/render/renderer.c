@@ -17,7 +17,7 @@ static inline float my_fminf(float a, float b) {
 
 static const char* TITLE_TEXT = "SANYALnet Labs Carrom Arena";
 static const char* COPYRIGHT_TEXT = "\xC2\xA9 Supratim Sanyal";  // UTF-8 ©
-static const char* BLOG_LINK = "https://blog.sanyalnet.com/carrom";
+static const char* BLOG_LINK = "https://supratim-sanyal.blogspot.com/";
 
 struct Renderer {
     int width;
@@ -30,6 +30,7 @@ struct Renderer {
     Camera2D camera;
     RenderTexture2D capture_texture;
     char capture_dir[256];
+    Layout current_layout;
 };
 
 /* Compute dynamic layout from actual screen dimensions */
@@ -40,37 +41,51 @@ void layout_compute(int sw, int sh, Layout* out) {
     float fsh = (float)sh;
 
     out->title_band_h = (int)(fsh * 0.055f);
-    out->footer_band_h = (int)(fsh * 0.10f);         // Reduced from 0.14 to leave more vertical space
-    out->hud_w = (int)(fsw * 0.16f);                  // Reduced from 0.19
-    out->right_sidebar_w = (int)(fsw * 0.04f);        // Drastically reduced from 0.17 to 0.04
+    out->footer_band_h = (int)(fsh * 0.10f);
+    out->hud_w = (int)(fsw * 0.16f);
+    out->right_sidebar_w = (int)(fsw * 0.04f);
     out->board_region_x = out->hud_w + 10;
     out->board_region_w = sw - out->hud_w - out->right_sidebar_w - 10;
 
-    // Estimate figure_band_h for available_h calc (will refine after board_size)
-    int est_figure_band_h = (int)(fsh * 0.07f);  // ~50px at 720
-    
-    int available_h = sh - out->title_band_h - 2 * est_figure_band_h - out->footer_band_h - 30;
+    // Closed-form vertical binding
+    // available_h_raw = sh - title_band_h - footer_band_h - 30
+    int available_h_raw = sh - out->title_band_h - out->footer_band_h - 30;
+    // board_size_if_vert_binds = 0.8 * available_h_raw
+    int board_size_if_vert_binds = (int)(0.8f * (float)available_h_raw);
+    // available_w = board_region_w - 40
     int available_w = out->board_region_w - 40;
-    int candidate_board_size = (int)my_fminf((float)available_h, (float)available_w);
-    out->board_size = candidate_board_size;
-    if (out->board_size < 200) out->board_size = 200;
+    // candidate = min(board_size_if_vert_binds, available_w)
+    int candidate = (board_size_if_vert_binds < available_w) ? board_size_if_vert_binds : available_w;
+    // Clamp: if candidate < 200 → 200; if candidate > 1400 → 1400
+    if (candidate < 200) candidate = 200;
+    if (candidate > 1400) candidate = 1400;
+    out->board_size = candidate;
 
-    // Now refine figure_band_h from actual board_size
+    // Now compute figure_band_h from actual board_size
     out->figure_band_h = out->board_size / 8;
-    
-    // N figure band center
-    out->n_figure_center_y = out->title_band_h + out->figure_band_h + 10;
-    // Board top edge
-    out->board_y = out->title_band_h + 2 * out->figure_band_h + 20;
-    // Board centered horizontally
+
+    // Board centered BOTH horizontally AND vertically in allotted region
+    // Vertical centering: board_y = title_band_h + figure_band_h + (available_space_for_board - board_size) / 2
+    // where available_space_for_board = sh - title_band_h - footer_band_h - 2 * figure_band_h
+    int available_space_for_board = sh - out->title_band_h - out->footer_band_h - 2 * out->figure_band_h;
+    int vertical_padding = (available_space_for_board - out->board_size) / 2;
+    out->board_y = out->title_band_h + out->figure_band_h + vertical_padding;
+    if (out->board_y < out->title_band_h + out->figure_band_h + 10) {
+        out->board_y = out->title_band_h + out->figure_band_h + 10;
+    }
+
+    // Horizontal centering
     out->board_x = out->board_region_x + (out->board_region_w - out->board_size) / 2;
-    // S figure band center (symmetric from bottom)
-    out->s_figure_center_y = sh - out->footer_band_h - out->figure_band_h - 10;
-    
+
+    // N figure band center (above board, in the figure band)
+    out->n_figure_center_y = out->title_band_h + out->figure_band_h / 2;
+    // S figure band center (below board, in the figure band)
+    out->s_figure_center_y = sh - out->footer_band_h - out->figure_band_h / 2;
+
     // Placement banner in N figure band
     out->placement_banner_y = out->title_band_h + 6;
 
-    out->body_h = sh - out->title_band_h - out->footer_band_h;  // Keep for compat
+    out->body_h = sh - out->title_band_h - out->footer_band_h;
 
     // Font sizes (same as before)
     float board_size_f = (float)out->board_size;
@@ -229,7 +244,8 @@ static void draw_placement_banner(Renderer* r, const GameState* game, double pla
     DrawText(countdown_text, banner_x + 20, banner_y + 8, font_size, (Color){ 255, 215, 0, 255 });
 }
 
-void renderer_draw_placement_banner(Renderer* r, const GameState* game, double placement_timer, const Layout* L) {
+void renderer_draw_placement_banner(Renderer* r, const GameState* game, double placement_timer) {
+    Layout* L = &r->current_layout;
     draw_placement_banner(r, game, placement_timer, L);
 }
 
@@ -329,8 +345,9 @@ void renderer_begin(Renderer* r) {
         r->capture_texture = LoadRenderTexture(sw, sh);
     }
     
-    Layout L;
-    layout_compute(sw, sh, &L);
+    // Compute layout once per frame, store in renderer
+    layout_compute(sw, sh, &r->current_layout);
+    Layout* L = &r->current_layout;
     
     if (r->capture_mode && r->hidden_window) {
         // Headless capture: render directly to texture, no main window drawing
@@ -342,29 +359,27 @@ void renderer_begin(Renderer* r) {
         ClearBackground((Color){ 30, 30, 40, 255 });
     }
     
-    draw_title_bar(r, &L);
-    draw_footer_band(r, &L);
+    draw_title_bar(r, L);
+    draw_footer_band(r, L);
 }
 
-void renderer_draw_hud_sidebar(Renderer* r, const MatchState* match, const GameState* game, float playback_speed, const Layout* L) {
+void renderer_draw_hud_sidebar(Renderer* r, const MatchState* match, const GameState* game, float playback_speed) {
+    Layout* L = &r->current_layout;
     draw_hud_sidebar(match, game, playback_speed, L);
 }
 
 void renderer_begin_board(Renderer* r) {
-    int sw = GetScreenWidth();
-    int sh = GetScreenHeight();
-    Layout L;
-    layout_compute(sw, sh, &L);
+    Layout* L = &r->current_layout;
     
     /* Update viewport for board drawing */
-    r->viewport.screen_width = L.board_size;
-    r->viewport.screen_height = L.board_size;
-    r->viewport.board_size_px = (float)L.board_size;
-    r->viewport.board_center_px = (Vec2){ (float)L.board_size * 0.5f, (float)L.board_size * 0.5f };
-    r->viewport.world_to_screen = (float)L.board_size / BOARD_SIDE_NORM;
+    r->viewport.screen_width = L->board_size;
+    r->viewport.screen_height = L->board_size;
+    r->viewport.board_size_px = (float)L->board_size;
+    r->viewport.board_center_px = (Vec2){ (float)L->board_size * 0.5f, (float)L->board_size * 0.5f };
+    r->viewport.world_to_screen = (float)L->board_size / BOARD_SIDE_NORM;
     
     /* Camera maps world (board surface pixels, origin at top-left) to window coords */
-    r->camera.offset = (Vector2){ (float)L.board_x, (float)L.board_y };
+    r->camera.offset = (Vector2){ (float)L->board_x, (float)L->board_y };
     r->camera.target = (Vector2){ 0, 0 };
     r->camera.rotation = 0.0f;
     r->camera.zoom = 1.0f;
@@ -386,11 +401,13 @@ void renderer_end(Renderer* r) {
     }
 }
 
-void renderer_draw_board(Renderer* r, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* L, int game_phase, const GameState* game) {
+void renderer_draw_board(Renderer* r, const BoardState* board, const PhysicsWorld* physics, float alpha, int game_phase, const GameState* game) {
+    Layout* L = &r->current_layout;
     board_view_draw(r->viewport, board, physics, alpha, L, game_phase, game);
 }
 
-void renderer_draw_effects(Renderer* r, const GameState* game, double placement_timer, const Layout* L) {
+void renderer_draw_effects(Renderer* r, const GameState* game, double placement_timer) {
+    Layout* L = &r->current_layout;
     effects_draw(r->viewport, game, placement_timer, L);
 }
 

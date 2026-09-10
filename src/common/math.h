@@ -47,6 +47,15 @@ Vec2 math_world_to_screen(Viewport vp, Vec2 world);
 Vec2 math_screen_to_world(Viewport vp, Vec2 screen);
 float math_world_to_screen_dist(Viewport vp, float world_dist);
 
+/* -----------------------------------------------------------------------------
+ * Ray-Board Boundary Intersection
+ * --------------------------------------------------------------------------- */
+/* Board is [-0.5, 0.5] x [-0.5, 0.5] with cushion thickness.
+ * Ray from pos at angle, find t where it hits cushion lines:
+ * x = ±(0.5 - CUSHION_THICKNESS), y = ±(0.5 - CUSHION_THICKNESS)
+ * Returns smallest positive t (world units), or -1.0f if parallel/no intersection. */
+float distance_to_board_boundary(Vec2 pos, float angle);
+
 #ifdef __cplusplus
 }
 #endif
