@@ -1,11 +1,29 @@
+#include <math.h>
 #include "board_view.h"
 #include "renderer.h"
 #include "common/types.h"
 #include "common/math.h"
 #include "physics/physics.h"
-#include <math.h>
 #define __USE_MINGW_ANSI_STDIO 1
 #include <raylib.h>
+
+/* Inline math functions to avoid implicit declaration issues */
+static inline float my_fmodf(float x, float y) {
+    return x - y * (float)((int)(x / y));
+}
+static inline float my_fmaxf(float a, float b) {
+    return (a > b) ? a : b;
+}
+static inline float my_fminf(float a, float b) {
+    return (a < b) ? a : b;
+}
+
+/* Shared flash alpha computation for syncing figure and striker */
+static inline float compute_flash_alpha(double wall_time) {
+    // alpha = 0.4 + 0.6 * (0.5 + 0.5 * sin(2π * t)) where t = wall time in seconds, ~1Hz
+    float t = (float)wall_time;
+    return 0.4f + 0.6f * (0.5f + 0.5f * sinf(t * 2.0f * M_PI));
+}
 
 /* Colors */
 #define COLOR_BOARD (Color){ 139, 105, 70, 255 }      // Wood brown
@@ -32,7 +50,7 @@
  *  ▄▄▄▄        (torso: filled trapezoid height = L->board_size / 12, bottom half-width = L->board_size / 22.5)
  * All shapes FILLED with team color, 2px outline accent
  */
-static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float halo_pulse) {
+static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float halo_pulse, float alpha) {
     // Convert world position to screen
     Vec2 screen = math_world_to_screen(vp, world_pos);
     
@@ -47,6 +65,11 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     Color fill_color = (team == TEAM_WHITE) ? COLOR_TEAM_WHITE_FILL : COLOR_TEAM_BLACK_FILL;
     Color outline_color = (team == TEAM_WHITE) ? COLOR_TEAM_WHITE_OUTLINE : COLOR_TEAM_BLACK_OUTLINE;
     Color highlight_color = is_current_turn ? COLOR_TURN_HIGHLIGHT : outline_color;
+    
+    // Apply alpha to colors
+    fill_color.a = (unsigned char)(fill_color.a * alpha);
+    outline_color.a = (unsigned char)(outline_color.a * alpha);
+    highlight_color.a = (unsigned char)(highlight_color.a * alpha);
     
     // Calculate figure orientation (facing board center)
     Vec2 forward = { cosf(angle), sinf(angle) };
@@ -156,7 +179,7 @@ static void draw_thinking_striker(Viewport vp, const Layout* L, Seat seat, const
     
     // Slide back and forth along baseline: one full pass every 1.5s
     float slide_period = 1.5f;
-    float slide_phase = fmodf(think_time, slide_period) / slide_period;  // 0 to 1
+    float slide_phase = my_fmodf(think_time, slide_period) / slide_period;  // 0 to 1
     // Map to ping-pong: 0->1->0
     float slide_t = slide_phase <= 0.5f ? slide_phase * 2.0f : (1.0f - slide_phase) * 2.0f;
     
@@ -193,7 +216,7 @@ static void draw_thinking_striker(Viewport vp, const Layout* L, Seat seat, const
     
     // Fade pulse: 40% to 100% alpha, once per second (different from slide period)
     float fade_period = 1.0f;
-    float fade_phase = fmodf(think_time, fade_period) / fade_period;
+    float fade_phase = my_fmodf(think_time, fade_period) / fade_period;
     float alpha = 0.4f + 0.6f * (0.5f + 0.5f * sinf(fade_phase * 2.0f * M_PI));
     
     Color striker_color = (Color){ 255, 215, 0, (unsigned char)(alpha * 255) };
@@ -203,7 +226,7 @@ static void draw_thinking_striker(Viewport vp, const Layout* L, Seat seat, const
     DrawCircleLines((int)screen.x, (int)screen.y, L->striker_r_px, line_color);
 }
 
-void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* L) {
+void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* L, int game_phase, const GameState* game) {
     // Determine current turn seat from striker owner
     Seat current_turn_seat = board->striker.owner_seat;
     if (board->striker.on_baseline) {
@@ -279,38 +302,98 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     
     // Draw human figures for each seat - all positioned in WORLD coordinates relative to board geometry
     
-    // Compute figure margin and offset from board geometry (not screen coordinates)
-    float figure_margin = L->figure_scale * 8.0f;           // replaces hardcoded 12.0f
-    float figure_offset = (float)L->board_size * 0.11f;     // replaces magic 40.0f
+    // Compute figure height in screen pixels: head_radius + gap + torso_height
+    // Figure faces toward board center, so extends from head toward board
+    // Margin from cushion = figure_height + required_margin, where required_margin = max(board_size/10, 24px)
+    float figure_height_px = (float)L->board_size * (1.0f/25.0f + 1.0f/12.0f) + 2.0f;
+    float required_margin_px = my_fmaxf((float)L->board_size / 10.0f, 24.0f);
+    float margin_px = figure_height_px + required_margin_px;
     
     // Convert pixel offsets to world units
-    float margin_world = figure_margin / vp.world_to_screen;
-    float offset_world = figure_offset / vp.world_to_screen;
+    float margin_world = margin_px / vp.world_to_screen;
+    
+    // Cushion edges in normalized coords
+    const float CUSHION_Y_NORTH = -0.5f;
+    const float CUSHION_Y_SOUTH = 0.5f;
+    const float CUSHION_X_EAST = 0.5f;
+    const float CUSHION_X_WEST = -0.5f;
+    
+    // Figure alpha: pulsing 40-100% during THINKING and AIM_PREVIEW phases (synced with striker flash), 100% otherwise
+    double wall_time = GetTime();
+    float figure_alpha = 1.0f;
+    bool is_thinking_or_preview = (game_phase == PHASE_THINKING || game_phase == PHASE_AIM_PREVIEW);
+    if (is_thinking_or_preview) {
+        figure_alpha = compute_flash_alpha(wall_time);
+    }
+    
+    // AIM_PREVIEW: figure slide animation for current turn seat
+    bool is_aim_preview = (game_phase == PHASE_AIM_PREVIEW);
+    float aim_preview_progress = 0.0f;
+    Vec2 aim_preview_target_pos = {0, 0};
+    bool has_aim_preview_target = false;
+    
+    if (is_aim_preview && game && game->computed_shot_valid) {
+        // Animate figure from cushion position to spot adjacent to settled striker on board near edge
+        // Progress comes from GameState (set by AppContext)
+        aim_preview_progress = game->aim_preview_progress;
+        
+        // Target position: adjacent to striker on board near edge
+        Vec2 striker_pos = game->board.striker.position;
+        Seat seat = game->turn_seat;
+        
+        // Compute target position based on seat - place figure near the striker on the board edge
+        float figure_offset = 0.08f;  // Distance from striker in world units
+        switch (seat) {
+            case SEAT_NORTH:
+                aim_preview_target_pos = (Vec2){ striker_pos.x, striker_pos.y + figure_offset };
+                break;
+            case SEAT_SOUTH:
+                aim_preview_target_pos = (Vec2){ striker_pos.x, striker_pos.y - figure_offset };
+                break;
+            case SEAT_EAST:
+                aim_preview_target_pos = (Vec2){ striker_pos.x - figure_offset, striker_pos.y };
+                break;
+            case SEAT_WEST:
+                aim_preview_target_pos = (Vec2){ striker_pos.x + figure_offset, striker_pos.y };
+                break;
+        }
+        has_aim_preview_target = true;
+    }
     
     // Current time for halo pulse animation
-    float current_time = (float)GetTime();
+    float current_time = (float)wall_time;
     
-    // North seat (top) - WHITE team, faces down (angle = -PI/2)
-    // World Y = BASELINE_Y_NORTH - margin (above north baseline), X = 0 (centered)
+    // North seat (top) - WHITE team, faces down (angle = -PI/2) toward board center
+    // Figure extends DOWNWARD from head. Head center should be ABOVE cushion by margin.
     float halo_pulse_n = 0.0f;
     if (current_turn_seat == SEAT_NORTH) {
         halo_pulse_n = (sinf(current_time * 2.0f) * 0.5f + 0.5f); // 0-1 pulse
     }
-    Vec2 north_world = { 0.0f, BASELINE_Y_NORTH - margin_world };
-    draw_human_figure(vp, L, north_world, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH, halo_pulse_n);
+    // Head center at CUSHION_Y_NORTH - margin_world (above cushion)
+    Vec2 north_baseline = { 0.0f, CUSHION_Y_NORTH - margin_world };
+    Vec2 north_world = north_baseline;
+    if (is_aim_preview && has_aim_preview_target && current_turn_seat == SEAT_NORTH) {
+        // Slide from cushion position to target position
+        north_world = vec2_lerp(north_baseline, aim_preview_target_pos, aim_preview_progress);
+    }
+    draw_human_figure(vp, L, north_world, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH, halo_pulse_n, figure_alpha);
     
-    // South seat (bottom) - WHITE team, faces up (angle = PI/2)
-    // World Y = BASELINE_Y_SOUTH + margin (below south baseline), X = 0 (centered)
+    // South seat (bottom) - WHITE team, faces up (angle = PI/2) toward board center
+    // Figure extends UPWARD from head. Head center should be BELOW cushion by margin.
     float halo_pulse_s = 0.0f;
     if (current_turn_seat == SEAT_SOUTH) {
         halo_pulse_s = (sinf(current_time * 2.0f) * 0.5f + 0.5f);
     }
-    Vec2 south_world = { 0.0f, BASELINE_Y_SOUTH + margin_world };
-    draw_human_figure(vp, L, south_world, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, halo_pulse_s);
+    // Head center at CUSHION_Y_SOUTH + margin_world (below cushion)
+    Vec2 south_baseline = { 0.0f, CUSHION_Y_SOUTH + margin_world };
+    Vec2 south_world = south_baseline;
+    if (is_aim_preview && has_aim_preview_target && current_turn_seat == SEAT_SOUTH) {
+        south_world = vec2_lerp(south_baseline, aim_preview_target_pos, aim_preview_progress);
+    }
+    draw_human_figure(vp, L, south_world, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, halo_pulse_s, figure_alpha);
     
-    // East seat (right) - BLACK team, faces left (angle = PI)
-    // World X = BASELINE_X_EAST + offset + body_length (further right so torso extends inward)
-    // Y = 0 (centered)
+    // East seat (right) - BLACK team, faces left (angle = PI) toward board center
+    // Figure extends LEFTWARD from head. Head center should be RIGHT of cushion by margin.
     float halo_pulse_e = 0.0f;
     if (current_turn_seat == SEAT_EAST) {
         halo_pulse_e = (sinf(current_time * 2.0f) * 0.5f + 0.5f);
@@ -320,18 +403,27 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     float torso_height = (float)L->board_size / 12.0f;
     float gap = 2.0f; // pixels
     float body_length_world = (head_radius + gap + torso_height) / vp.world_to_screen;
-    Vec2 east_world = { BASELINE_X_EAST + offset_world + body_length_world, 0.0f };
-    draw_human_figure(vp, L, east_world, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_EAST, halo_pulse_e);
+    // Head center at CUSHION_X_EAST + margin_world + body_length_world (right of cushion)
+    Vec2 east_baseline = { CUSHION_X_EAST + margin_world + body_length_world, 0.0f };
+    Vec2 east_world = east_baseline;
+    if (is_aim_preview && has_aim_preview_target && current_turn_seat == SEAT_EAST) {
+        east_world = vec2_lerp(east_baseline, aim_preview_target_pos, aim_preview_progress);
+    }
+    draw_human_figure(vp, L, east_world, M_PI, TEAM_BLACK, current_turn_seat == SEAT_EAST, halo_pulse_e, figure_alpha);
     
-    // West seat (left) - BLACK team, faces right (angle = 0)
-    // World X = BASELINE_X_WEST - offset - body_length (further left so torso extends inward)
-    // Y = 0 (centered)
+    // West seat (left) - BLACK team, faces right (angle = 0) toward board center
+    // Figure extends RIGHTWARD from head. Head center should be LEFT of cushion by margin.
     float halo_pulse_w = 0.0f;
     if (current_turn_seat == SEAT_WEST) {
         halo_pulse_w = (sinf(current_time * 2.0f) * 0.5f + 0.5f);
     }
-    Vec2 west_world = { BASELINE_X_WEST - offset_world - body_length_world, 0.0f };
-    draw_human_figure(vp, L, west_world, M_PI, TEAM_BLACK, current_turn_seat == SEAT_WEST, halo_pulse_w);
+    // Head center at CUSHION_X_WEST - margin_world - body_length_world (left of cushion)
+    Vec2 west_baseline = { CUSHION_X_WEST - margin_world - body_length_world, 0.0f };
+    Vec2 west_world = west_baseline;
+    if (is_aim_preview && has_aim_preview_target && current_turn_seat == SEAT_WEST) {
+        west_world = vec2_lerp(west_baseline, aim_preview_target_pos, aim_preview_progress);
+    }
+    draw_human_figure(vp, L, west_world, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_WEST, halo_pulse_w, figure_alpha);
     
     // Pockets
     float pocket_r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM);

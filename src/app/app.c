@@ -47,6 +47,12 @@ struct AppContext {
     int max_candidates;  // Max candidates for current mode (R5)
     ShotPlan pending_shot_plan;  // Shot plan decided during THINKING phase
     bool pending_shot_valid;     // Whether pending_shot_plan is valid
+    
+    /* AIM_PREVIEW phase */
+    double aim_preview_timer;        // Wall-time timer for aim preview (5 seconds)
+    bool aim_preview_active;         // Whether we're in the aim preview phase
+    double aim_preview_start_wall;   // Wall time when aim preview started (for figure animation)
+    double thinking_min_wall;        // Minimum wall time for THINKING phase visualization
 };
 
 /* -----------------------------------------------------------------------------
@@ -77,8 +83,15 @@ static void app_init_match(AppContext* ctx) {
     ctx->shot_count = 0;
     
     // Set max candidates based on mode (R5)
+    // For capture/rendered mode, scale candidates with ai_budget_ms to make THINKING phase visible
     if (ctx->config.mode == APP_MODE_RENDERED || ctx->config.mode == APP_MODE_CAPTURE) {
-        ctx->max_candidates = 3;  // Reduced for rendered mode
+        if (ctx->config.ai_budget_ms >= 1000) {
+            ctx->max_candidates = 12;  // More candidates for visualization
+        } else if (ctx->config.ai_budget_ms >= 500) {
+            ctx->max_candidates = 6;
+        } else {
+            ctx->max_candidates = 3;  // Reduced for fast mode
+        }
     } else {
         ctx->max_candidates = MAX_CANDIDATES;  // Full for soak/diagnostic
     }
@@ -86,6 +99,10 @@ static void app_init_match(AppContext* ctx) {
     ctx->thinking_phase_active = false;
     ctx->thinking_timer = 0.0;
     ctx->candidates_evaluated = 0;
+    ctx->aim_preview_active = false;
+    ctx->aim_preview_timer = 0.0;
+    ctx->aim_preview_start_wall = 0.0;
+    ctx->thinking_min_wall = 0.0;
 }
 
 static void app_setup_trace(AppContext* ctx) {
@@ -220,6 +237,11 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
             ctx->thinking_timer = 0.0;
             ctx->candidates_evaluated = 0;
             ctx->pending_shot_valid = false;
+            // Minimum thinking time for visualization
+            double budget_sec = (ctx->config.ai_budget_ms > 0) ? (ctx->config.ai_budget_ms / 1000.0) : 0.15;
+            ctx->thinking_min_wall = budget_sec * 0.2;
+            if (ctx->thinking_min_wall < 2.0) ctx->thinking_min_wall = 2.0;  // At least 2 seconds for verification
+            ctx->thinking_min_wall += platform_time_now();
             break;
         case TURN_BOARD_OVER:
             // match_start_board will set PHASE_THINKING for new board
@@ -277,6 +299,8 @@ int app_run_simulation(AppContext* ctx) {
     ctx->thinking_timer = 0.0;
     ctx->candidates_evaluated = 0;
     ctx->pending_shot_valid = false;
+    ctx->aim_preview_active = false;
+    ctx->aim_preview_timer = 0.0;
     uint64_t debug_frame = 0;
     
     // Wall-time budget for capture mode (hard timeout to prevent hangs)
@@ -293,6 +317,12 @@ int app_run_simulation(AppContext* ctx) {
     ctx->game.phase = PHASE_THINKING;
     ctx->thinking_phase_active = true;
     ctx->thinking_timer = 0.0;
+    // Minimum thinking time for visualization (flash animation visibility)
+    // Use 2 seconds for verification, or 20% of ai_budget_ms, whichever is larger
+    double budget_sec = (ctx->config.ai_budget_ms > 0) ? (ctx->config.ai_budget_ms / 1000.0) : 0.15;
+    ctx->thinking_min_wall = budget_sec * 0.2;
+    if (ctx->thinking_min_wall < 2.0) ctx->thinking_min_wall = 2.0;  // At least 2 seconds for verification
+    ctx->thinking_min_wall += platform_time_now();  // Absolute wall time when min thinking ends
     
     if (ctx->config.verbose) {
         printf("[DEBUG] Starting simulation, seed=%llu\n", (unsigned long long)ctx->rng.master_seed);
@@ -343,6 +373,16 @@ int app_run_simulation(AppContext* ctx) {
                     if (ctx->thinking_phase_active) {
                         ctx->thinking_timer += dt;
                         
+                        // Check for transition at START of frame (deferred from previous frame)
+                        double wall_now = platform_time_now();
+                        if (ctx->pending_shot_valid && wall_now >= ctx->thinking_min_wall) {
+                            ctx->thinking_phase_active = false;
+                            ctx->game.phase = PHASE_PLACEMENT;
+                            ctx->placement_phase_active = false;
+                            ctx->thinking_timer = 0.0;
+                            break;  // Exit switch, will re-enter with new phase next frame
+                        }
+                        
                         // Run AI decision (this may take multiple frames due to budget)
                         if (!ctx->pending_shot_valid) {
                             Seat seat = ctx->game.turn_seat;
@@ -382,14 +422,6 @@ int app_run_simulation(AppContext* ctx) {
                         if (ctx->candidates_evaluated > ctx->max_candidates) {
                             ctx->candidates_evaluated = ctx->max_candidates;
                         }
-                        
-                        // Transition to PLACEMENT when AI decision is ready
-                        if (ctx->pending_shot_valid) {
-                            ctx->thinking_phase_active = false;
-                            ctx->game.phase = PHASE_PLACEMENT;
-                            ctx->placement_phase_active = false;
-                            ctx->thinking_timer = 0.0;
-                        }
                     }
                     break;
                     
@@ -412,28 +444,63 @@ int app_run_simulation(AppContext* ctx) {
                         ctx->placement_timer -= dt;
                     }
                     
-                    // Timer expired - execute the pre-computed shot
+                    // Timer expired - transition to AIM_PREVIEW with the pre-computed shot plan
                     if (ctx->placement_timer <= 0.0) {
                         ctx->placement_phase_active = false;
                         if (ctx->config.verbose) {
-                            printf("[DEBUG] Frame %llu: Placement complete, executing shot for seat %d\n", 
+                            printf("[DEBUG] Frame %llu: Placement complete, entering AIM_PREVIEW for seat %d\n", 
                                    (unsigned long long)ctx->frame_count, ctx->game.turn_seat);
                             fflush(stdout);
                         }
                         
-                        // Execute the pre-computed shot plan
-                        Seat seat = ctx->game.turn_seat;
-                        physics_place_striker(ctx->physics, seat, ctx->pending_shot_plan.placement);
-                        physics_apply_shot(ctx->physics, ctx->pending_shot_plan.aim_angle, ctx->pending_shot_plan.power);
-                        ctx->game.phase = PHASE_SHOT_EXECUTION;
+                        // Store the computed shot plan in GameState for renderer access
+                        ctx->game.computed_shot_plan = ctx->pending_shot_plan;
+                        ctx->game.computed_shot_valid = true;
                         
-                        // Log shot plan
-                        if (ctx->trace) {
-                            trace_write_shot_start(ctx->trace, &ctx->match, &ctx->game, 
-                                                   ctx->shot_count, seat, &ctx->pending_shot_plan);
-                        }
-                        ctx->shot_count++;
+                        // Start AIM_PREVIEW phase (5 seconds wall time, unaffected by playback_speed)
+                        ctx->aim_preview_timer = 5.0;
+                        ctx->aim_preview_active = true;
+                        ctx->aim_preview_start_wall = platform_time_now();  // Record start for figure animation
+                        ctx->game.phase = PHASE_AIM_PREVIEW;
                         ctx->pending_shot_valid = false;
+                    }
+                    break;
+                    
+                case PHASE_AIM_PREVIEW:
+                    // AIM_PREVIEW phase: 5 seconds wall time (unaffected by playback_speed)
+                    if (ctx->aim_preview_active) {
+                        // Use wall time (GetTime() equivalent) - not simulation time
+                        double wall_now = platform_time_now();
+                        double elapsed_wall = wall_now - ctx->aim_preview_start_wall;
+                        
+                        // Store progress in game state for renderer (0.0 to 1.0 over 0.3s)
+                        ctx->game.aim_preview_progress = (float)(elapsed_wall / 0.3);
+                        if (ctx->game.aim_preview_progress > 1.0f) ctx->game.aim_preview_progress = 1.0f;
+                        
+                        if (elapsed_wall >= 5.0) {
+                            // 5 seconds elapsed - execute the shot
+                            ctx->aim_preview_active = false;
+                            if (ctx->config.verbose) {
+                                printf("[DEBUG] Frame %llu: AIM_PREVIEW complete, executing shot for seat %d\n", 
+                                       (unsigned long long)ctx->frame_count, ctx->game.turn_seat);
+                                fflush(stdout);
+                            }
+                            
+                            // Execute the pre-computed shot plan
+                            Seat seat = ctx->game.turn_seat;
+                            physics_place_striker(ctx->physics, seat, ctx->game.computed_shot_plan.placement);
+                            physics_apply_shot(ctx->physics, ctx->game.computed_shot_plan.aim_angle, ctx->game.computed_shot_plan.power);
+                            ctx->game.phase = PHASE_SHOT_EXECUTION;
+                            
+                            // Log shot plan
+                            if (ctx->trace) {
+                                trace_write_shot_start(ctx->trace, &ctx->match, &ctx->game, 
+                                                       ctx->shot_count, seat, &ctx->game.computed_shot_plan);
+                            }
+                            ctx->shot_count++;
+                            ctx->game.computed_shot_valid = false;
+                            ctx->game.aim_preview_progress = 0.0f;
+                        }
                     }
                     break;
                     
@@ -476,7 +543,7 @@ int app_run_simulation(AppContext* ctx) {
             renderer_begin_board(ctx->renderer);
             float alpha = (float)(ctx->accumulator / PHYSICS_DT);
             if (alpha > 1.0f) alpha = 1.0f;
-            renderer_draw_board(ctx->renderer, &ctx->game.board, ctx->physics, alpha, &L);
+            renderer_draw_board(ctx->renderer, &ctx->game.board, ctx->physics, alpha, &L, ctx->game.phase, &ctx->game);
             renderer_draw_effects(ctx->renderer, &ctx->game, ctx->placement_timer, &L);
             renderer_end_board(ctx->renderer);
             renderer_draw_placement_banner(ctx->renderer, &ctx->game, ctx->placement_timer, &L);
@@ -563,6 +630,8 @@ AppContext* app_create(const AppConfig* config) {
     ctx->speed_paused = false;
     ctx->placement_timer = 0.0;
     ctx->placement_phase_active = false;
+    ctx->aim_preview_timer = 0.0;
+    ctx->aim_preview_active = false;
     
     // Initialize RNG
     uint64_t seed = config->seed;

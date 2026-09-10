@@ -8,6 +8,7 @@
 
 #define MAX_POCKET_FADE_TIME 0.2f  // 200ms fade
 #define PLACEMENT_HOLD_TIME 1.0f   // 1 second at 1x playback
+#define AIM_PREVIEW_LINE_LENGTH 0.333f  // ~1/3 of board diagonal
 
 typedef struct {
     Vec2 pocket_center;
@@ -17,19 +18,27 @@ typedef struct {
 
 static PocketFadeEffect pocket_fades[4] = {0};
 
+/* Shared flash alpha computation for syncing figure and striker */
+static inline float compute_flash_alpha(double wall_time) {
+    // alpha = 0.4 + 0.6 * (0.5 + 0.5 * sin(2π * t)) where t = wall time in seconds, ~1Hz
+    float t = (float)wall_time;
+    return 0.4f + 0.6f * (0.5f + 0.5f * sinf(t * 2.0f * M_PI));
+}
+
 void effects_draw(Viewport vp, const GameState* game, double placement_timer, const Layout* L) {
-    // Thinking phase animation: striker sliding + pulse
+    double wall_time = GetTime();  // Wall time for animations
+    
+    // Thinking phase animation: striker sliding + pulse (synced with figure flash)
     if (game->phase == PHASE_THINKING) {
         // Draw thinking striker animation for current turn seat
         Seat seat = game->turn_seat;
-        float think_time = (float)GetTime();  // Wall time for animation
         
         // Striker baseline position
         if (game->board.striker.on_baseline && !game->board.striker.pocketed && game->board.striker.owner_seat == seat) {
             
             // Slide back and forth along baseline: one full pass every 1.5s
             float slide_period = 1.5f;
-            float slide_phase = fmodf(think_time, slide_period) / slide_period;
+            float slide_phase = fmodf((float)wall_time, slide_period) / slide_period;
             float slide_t = slide_phase <= 0.5f ? slide_phase * 2.0f : (1.0f - slide_phase) * 2.0f;
             
             float min_offset = BASELINE_MIN_OFFSET;
@@ -59,10 +68,8 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
             
             Vec2 screen = math_world_to_screen(vp, striker_world);
             
-            // Fade pulse: 40% to 100% alpha
-            float fade_period = 1.0f;
-            float fade_phase = fmodf(think_time, fade_period) / fade_period;
-            float alpha = 0.4f + 0.6f * (0.5f + 0.5f * sinf(fade_phase * 2.0f * M_PI));
+            // Synced flash pulse: alpha = 0.4 + 0.6 * (0.5 + 0.5 * sin(2π * t))
+            float alpha = compute_flash_alpha(wall_time);
             
             Color striker_color = (Color){ 255, 215, 0, (unsigned char)(alpha * 255) };
             Color line_color = (Color){ 255, 255, 255, (unsigned char)(alpha * 100) };
@@ -72,6 +79,40 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
         }
     }
     
+    // AIM_PREVIEW phase: draw aim line from striker in computed direction
+    if (game->phase == PHASE_AIM_PREVIEW && game->computed_shot_valid) {
+        Vec2 striker_pos = game->board.striker.position;
+        Vec2 screen = math_world_to_screen(vp, striker_pos);
+        
+        float aim_angle = game->computed_shot_plan.aim_angle;
+        float power = game->computed_shot_plan.power;
+        
+        // Line length: ~1/3 of board diagonal (board is 1.0 x 1.0 normalized, diagonal = sqrt(2))
+        float line_len_world = AIM_PREVIEW_LINE_LENGTH * sqrtf(2.0f);
+        float line_len_screen = math_world_to_screen_dist(vp, line_len_world);
+        
+        Vec2 end = {
+            screen.x + cosf(aim_angle) * line_len_screen,
+            screen.y + sinf(aim_angle) * line_len_screen
+        };
+        
+        // Synced flash pulse for aim line
+        float alpha = compute_flash_alpha(wall_time);
+        
+        Color line_color = (Color){ 255, 255, 0, (unsigned char)(alpha * 200) };
+        DrawLine((int)screen.x, (int)screen.y, (int)end.x, (int)end.y, line_color);
+        
+        // Also draw power indicator
+        float bar_w = math_world_to_screen_dist(vp, 0.2f);
+        float bar_h = math_world_to_screen_dist(vp, 0.02f);
+        Vec2 bar_pos = { screen.x - bar_w * 0.5f, screen.y - bar_h - math_world_to_screen_dist(vp, 0.03f) };
+        Color bar_color = (Color){ 0, 255, 0, (unsigned char)(alpha * 200) };
+        Color bar_bg = (Color){ 100, 100, 100, (unsigned char)(alpha * 100) };
+        DrawRectangle((int)bar_pos.x, (int)bar_pos.y, (int)bar_w, (int)bar_h, bar_bg);
+        DrawRectangle((int)bar_pos.x, (int)bar_pos.y, (int)(bar_w * power), (int)bar_h, bar_color);
+        DrawRectangleLines((int)bar_pos.x, (int)bar_pos.y, (int)bar_w, (int)bar_h, (Color){255, 255, 255, (unsigned char)(alpha * 255)});
+    }
+    
     // Striker placement phase: draw pulsing halo and countdown banner
     if (game->phase == PHASE_PLACEMENT && game->board.striker.on_baseline && !game->board.striker.pocketed && placement_timer > 0.0) {
         Vec2 striker_pos = game->board.striker.position;
@@ -79,7 +120,7 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
         float striker_r = math_world_to_screen_dist(vp, STRIKER_RADIUS_NORM);
         
         // Pulsing halo: 3 concentric rings fading out, animated with time
-        float time = (float)GetTime();
+        float time = (float)wall_time;
         for (int ring = 0; ring < 3; ring++) {
             float ring_f = (float)ring;
             float ring_phase = time * 3.0f + ring_f * 2.0f;

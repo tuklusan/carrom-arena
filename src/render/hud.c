@@ -2,6 +2,18 @@
 #include "common/types.h"
 #include <raylib.h>
 #include <stdio.h>
+#include <math.h>
+
+/* Helper to convert radians to degrees+minutes string */
+static void format_angle_deg_min(float rad, char* buf, size_t buf_size) {
+    float deg_f = rad * 180.0f / M_PI;
+    if (deg_f < 0) deg_f += 360.0f;
+    int deg = (int)deg_f;
+    float min_f = (deg_f - (float)deg) * 60.0f;
+    int min = (int)(min_f + 0.5f);  // Round to nearest minute
+    if (min >= 60) { min -= 60; deg = (deg + 1) % 360; }
+    snprintf(buf, buf_size, "Angle: %d°%02d'", deg, min);
+}
 
 void hud_draw(Viewport vp, const MatchState* match, const GameState* game, float playback_speed, const Layout* L, int candidates_evaluated) {
     (void)vp;
@@ -31,7 +43,7 @@ void hud_draw(Viewport vp, const MatchState* match, const GameState* game, float
     y += lh;
     
     const char* phase_names[] = {
-        "IDLE", "THINKING", "PLACEMENT", "AIMING", "SHOT", "SETTLING", "RESOLVING",
+        "IDLE", "THINKING", "PLACEMENT", "AIM_PREVIEW", "AIMING", "SHOT", "SETTLING", "RESOLVING",
         "BOARD_OVER", "GAME_OVER", "MATCH_OVER"
     };
     
@@ -41,6 +53,21 @@ void hud_draw(Viewport vp, const MatchState* match, const GameState* game, float
         DrawText(TextFormat("Phase: %s", phase_names[game->phase]), (int)x, (int)y, font, GREEN);
     }
     y += lh;
+    
+    // AIM_PREVIEW commentary text block
+    if (game->phase == PHASE_AIM_PREVIEW && game->computed_shot_valid) {
+        float aim_angle = game->computed_shot_plan.aim_angle;
+        float power = game->computed_shot_plan.power;
+        
+        char angle_deg_min[64];
+        format_angle_deg_min(aim_angle, angle_deg_min, sizeof(angle_deg_min));
+        
+        DrawText(TextFormat("%s  (%.3f rad)", angle_deg_min, aim_angle), (int)x, (int)y, font, YELLOW);
+        y += lh;
+        
+        DrawText(TextFormat("Power: %d%%", (int)(power * 100.0f + 0.5f)), (int)x, (int)y, font, YELLOW);
+        y += lh;
+    }
     
     Color speed_color = (playback_speed <= 0.0f) ? RED : WHITE;
     DrawText(TextFormat("Speed: %.2fx", playback_speed), (int)x, (int)y, font, speed_color);
