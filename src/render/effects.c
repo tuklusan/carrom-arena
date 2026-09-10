@@ -1,14 +1,13 @@
 #include "effects.h"
 #include "common/types.h"
-#include "common/math.h"
 #include <math.h>
 #define __USE_MINGW_ANSI_STDIO 1
 #include <raylib.h>
 #include <stdio.h>
+#include "common/math.h"
 
 #define MAX_POCKET_FADE_TIME 0.2f  // 200ms fade
 #define PLACEMENT_HOLD_TIME 1.0f   // 1 second at 1x playback
-#define AIM_PREVIEW_LINE_LENGTH 0.333f  // ~1/3 of board diagonal
 
 typedef struct {
     Vec2 pocket_center;
@@ -77,40 +76,6 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
             DrawCircle((int)screen.x, (int)screen.y, L->striker_r_px, striker_color);
             DrawCircleLines((int)screen.x, (int)screen.y, L->striker_r_px, line_color);
         }
-    }
-    
-    // AIM_PREVIEW phase: draw aim line from striker in computed direction
-    if (game->phase == PHASE_AIM_PREVIEW && game->computed_shot_valid) {
-        Vec2 striker_pos = game->board.striker.position;
-        Vec2 screen = math_world_to_screen(vp, striker_pos);
-        
-        float aim_angle = game->computed_shot_plan.aim_angle;
-        float power = game->computed_shot_plan.power;
-        
-        // Line length: ~1/3 of board diagonal (board is 1.0 x 1.0 normalized, diagonal = sqrt(2))
-        float line_len_world = AIM_PREVIEW_LINE_LENGTH * sqrtf(2.0f);
-        float line_len_screen = math_world_to_screen_dist(vp, line_len_world);
-        
-        Vec2 end = {
-            screen.x + cosf(aim_angle) * line_len_screen,
-            screen.y + sinf(aim_angle) * line_len_screen
-        };
-        
-        // Synced flash pulse for aim line
-        float alpha = compute_flash_alpha(wall_time);
-        
-        Color line_color = (Color){ 255, 255, 0, (unsigned char)(alpha * 200) };
-        DrawLine((int)screen.x, (int)screen.y, (int)end.x, (int)end.y, line_color);
-        
-        // Also draw power indicator
-        float bar_w = math_world_to_screen_dist(vp, 0.2f);
-        float bar_h = math_world_to_screen_dist(vp, 0.02f);
-        Vec2 bar_pos = { screen.x - bar_w * 0.5f, screen.y - bar_h - math_world_to_screen_dist(vp, 0.03f) };
-        Color bar_color = (Color){ 0, 255, 0, (unsigned char)(alpha * 200) };
-        Color bar_bg = (Color){ 100, 100, 100, (unsigned char)(alpha * 100) };
-        DrawRectangle((int)bar_pos.x, (int)bar_pos.y, (int)bar_w, (int)bar_h, bar_bg);
-        DrawRectangle((int)bar_pos.x, (int)bar_pos.y, (int)(bar_w * power), (int)bar_h, bar_color);
-        DrawRectangleLines((int)bar_pos.x, (int)bar_pos.y, (int)bar_w, (int)bar_h, (Color){255, 255, 255, (unsigned char)(alpha * 255)});
     }
     
     // Striker placement phase: draw pulsing halo and countdown banner
