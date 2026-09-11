@@ -16,6 +16,7 @@
 #include <string.h>
 #include <time.h>
 #include <assert.h>
+#include <math.h>
 
 /* -----------------------------------------------------------------------------
  * Application Context
@@ -120,12 +121,12 @@ static void app_setup_renderer(AppContext* ctx) {
     if (ctx->config.mode == APP_MODE_RENDERED) {
         if (!ctx->config.headless) {
             ctx->renderer = renderer_create(ctx->config.window_width, ctx->config.window_height, 
-                                             "Carrom Arena", false, false);
+                                             "Carrom Arena", false, false, ctx->config.debug_phase);
         }
     } else if (ctx->config.mode == APP_MODE_CAPTURE) {
         // Capture mode always needs a renderer (windowed or hidden)
         ctx->renderer = renderer_create(ctx->config.window_width, ctx->config.window_height, 
-                                         "Carrom Arena", true, ctx->config.headless);
+                                         "Carrom Arena", true, ctx->config.headless, ctx->config.debug_phase);
     }
 }
 
@@ -548,7 +549,7 @@ int app_run_simulation(AppContext* ctx) {
             renderer_begin_board(ctx->renderer);
             float alpha = (float)(ctx->accumulator / PHYSICS_DT);
             if (alpha > 1.0f) alpha = 1.0f;
-            renderer_draw_board(ctx->renderer, &ctx->game.board, ctx->physics, alpha, ctx->game.phase, &ctx->game);
+            renderer_draw_board(ctx->renderer, &ctx->game.board, ctx->physics, alpha, ctx->game.phase, &ctx->game, ctx->placement_timer);
             renderer_draw_effects(ctx->renderer, &ctx->game, ctx->placement_timer);
             renderer_end_board(ctx->renderer);
             renderer_draw_placement_banner(ctx->renderer, &ctx->game, ctx->placement_timer);
@@ -556,7 +557,8 @@ int app_run_simulation(AppContext* ctx) {
             
             // Capture frames if in capture mode
             if (ctx->config.mode == APP_MODE_CAPTURE && ctx->capture_frame_count < ctx->config.frames) {
-                renderer_capture_frame(ctx->renderer, ctx->config.capture_dir, ctx->capture_frame_count);
+                renderer_capture_frame(ctx->renderer, ctx->config.capture_dir, ctx->capture_frame_count,
+                                       ctx->game.phase, ctx->placement_timer, ctx->playback_speed);
                 ctx->capture_frame_count++;
                 
                 // Check if we've captured enough frames - exit simulation loop
@@ -834,6 +836,8 @@ AppConfig app_parse_args(int argc, char* argv[]) {
             config.verbose = true;
         } else if (strcmp(argv[i], "--headless") == 0) {
             config.headless = true;
+        } else if (strcmp(argv[i], "--debug-phase") == 0) {
+            config.debug_phase = true;
         }
     }
     
@@ -856,6 +860,7 @@ void app_print_usage(const char* prog_name) {
     printf("  --ai-budget-ms <n>    AI decision time budget in ms (default: 150, range: 10-10000)\n");
     printf("  --verbose             Verbose logging\n");
     printf("  --headless            Force headless mode\n");
+    printf("  --debug-phase         Enable per-frame phase debug logging in capture mode\n");
     printf("  --width <n>           Window width (default: 1280)\n");
     printf("  --height <n>          Window height (default: 720)\n");
     printf("  --replay <file>       Replay trace file\n");

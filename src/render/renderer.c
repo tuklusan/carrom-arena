@@ -26,6 +26,7 @@ struct Renderer {
     bool hidden_window;
     bool paused;
     float playback_speed;
+    bool debug_phase;           // Enable per-frame phase debug logging
     Viewport viewport;
     Camera2D camera;
     RenderTexture2D capture_texture;
@@ -249,7 +250,7 @@ void renderer_draw_placement_banner(Renderer* r, const GameState* game, double p
     draw_placement_banner(r, game, placement_timer, L);
 }
 
-Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window) {
+Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window, bool debug_phase) {
     (void)title;
     
     Renderer* r = calloc(1, sizeof(Renderer));
@@ -259,6 +260,7 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     r->hidden_window = hidden_window;
     r->paused = false;
     r->playback_speed = 0.05f;  // R3: 1/10th speed default
+    r->debug_phase = debug_phase;
     r->width = width;
     r->height = height;
     
@@ -382,7 +384,8 @@ void renderer_begin_board(Renderer* r) {
     r->camera.offset = (Vector2){ (float)L->board_x, (float)L->board_y };
     r->camera.target = (Vector2){ 0, 0 };
     r->camera.rotation = 0.0f;
-    r->camera.zoom = 1.0f;
+    /* Zoom out further to include figure bands (0.7 shows 1.43 world units = board ±0.5 + figure bands ±0.215) */
+    r->camera.zoom = 0.7f;
     
     BeginMode2D(r->camera);
 }
@@ -401,9 +404,9 @@ void renderer_end(Renderer* r) {
     }
 }
 
-void renderer_draw_board(Renderer* r, const BoardState* board, const PhysicsWorld* physics, float alpha, int game_phase, const GameState* game) {
+void renderer_draw_board(Renderer* r, const BoardState* board, const PhysicsWorld* physics, float alpha, int game_phase, const GameState* game, double placement_timer) {
     Layout* L = &r->current_layout;
-    board_view_draw(r->viewport, board, physics, alpha, L, game_phase, game);
+    board_view_draw(r->viewport, board, physics, alpha, L, game_phase, game, placement_timer);
 }
 
 void renderer_draw_effects(Renderer* r, const GameState* game, double placement_timer) {
@@ -411,7 +414,7 @@ void renderer_draw_effects(Renderer* r, const GameState* game, double placement_
     effects_draw(r->viewport, game, placement_timer, L);
 }
 
-void renderer_capture_frame(Renderer* r, const char* dir, uint64_t frame_num) {
+void renderer_capture_frame(Renderer* r, const char* dir, uint64_t frame_num, int game_phase, double placement_timer, float playback_speed) {
     if (!r->capture_mode) return;
     
     char path[512];
@@ -421,4 +424,10 @@ void renderer_capture_frame(Renderer* r, const char* dir, uint64_t frame_num) {
     ImageFlipVertical(&img);
     ExportImage(img, path);
     UnloadImage(img);
+    
+    // Debug phase logging
+    if (r->debug_phase) {
+        fprintf(stderr, "frame=%llu phase=%d placement_timer=%.3f playback_speed=%.2f\n",
+                (unsigned long long)frame_num, game_phase, placement_timer, playback_speed);
+    }
 }
