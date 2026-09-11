@@ -277,7 +277,7 @@ static void draw_aim_preview_line(Viewport vp, const GameState* game, const Layo
     );
 }
 
-void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* L, int game_phase, const GameState* game) {
+void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* L, int game_phase, const GameState* game, double placement_timer) {
     // Determine current turn seat from striker owner
     Seat current_turn_seat = board->striker.owner_seat;
     if (board->striker.on_baseline) {
@@ -359,30 +359,42 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     
     // Compute figure height in screen pixels: head_radius + gap + torso_height
     // Figure faces toward board center, so extends from head toward board
-    // Margin from cushion = figure_height + required_margin, where required_margin = max(board_size/10, 24px)
-    float figure_height_px = (float)L->board_size * (1.0f/25.0f + 1.0f/12.0f) + 2.0f;
+    // Margin from board boundary = required_margin, where required_margin = max(board_size/10, 24px)
+    // The figure's NEAREST point (bottom of torso for N/S) should be at board_boundary + required_margin
+    // Head center is at board_boundary + required_margin + body_length
     float required_margin_px = my_fmaxf((float)L->board_size / 10.0f, 24.0f);
-    float margin_px = figure_height_px + required_margin_px;
+    float margin_world = required_margin_px / vp.world_to_screen;
     
-    // Convert pixel offsets to world units - this is the FIXED perpendicular offset per seat
-    float margin_world = margin_px / vp.world_to_screen;
+    // Figure body length in world units (head_radius + gap + torso_height)
+    float head_radius = (float)L->board_size / 25.0f;
+    float torso_height = (float)L->board_size / 12.0f;
+    float gap = 2.0f; // pixels
+    float body_length_world = (head_radius + gap + torso_height) / vp.world_to_screen;
+    
+    // Figure perpendicular offset: distance from cushion INNER edge to figure's nearest point
+    // Figure faces toward board, so nearest point is bottom of torso (N/S) or side of torso (E/W)
+    // Head center must be at: cushion_inner + margin + body_length
+    // Board boundaries (where the playing area ends, at ±0.5)
+    // The figure must stay entirely OUTSIDE the board boundaries (±0.5)
+    const float BOARD_BOUNDARY_Y_NORTH = 0.5f;
+    const float BOARD_BOUNDARY_Y_SOUTH = -0.5f;
+    const float BOARD_BOUNDARY_X_EAST = 0.5f;
+    const float BOARD_BOUNDARY_X_WEST = -0.5f;
+    
+    // Figure perpendicular offset: distance from board boundary to figure's nearest point
+    // Figure faces toward board, so nearest point is bottom of torso (N/S) or side of torso (E/W)
+    // Head center is at: board_boundary + margin + body_length
+    // The fixed offset for head center = margin + body_length
+    float figure_head_offset = margin_world + body_length_world;
     
     // Store fixed perpendicular offset per seat (world units) - NEVER changes
-    // Figure is OUTSIDE the board: NORTH is above (+Y), SOUTH is below (-Y)
-    // EAST is to the right (+X), WEST is to the left (-X)
+    // Figure head center at board_boundary + margin + body_length
     float figure_fixed_offset_world[4] = {
-        margin_world,  // SEAT_NORTH: y = CUSHION_Y_NORTH + margin_world (outside north)
-        margin_world,  // SEAT_EAST:  x = CUSHION_X_EAST + margin_world (outside east)
-        margin_world,  // SEAT_SOUTH: y = CUSHION_Y_SOUTH - margin_world (outside south)
-        margin_world   // SEAT_WEST:  x = CUSHION_X_WEST - margin_world (outside west)
+        figure_head_offset,  // SEAT_NORTH: head at BOARD_BOUNDARY_Y_NORTH + margin + body_length
+        figure_head_offset,  // SEAT_EAST:  head at BOARD_BOUNDARY_X_EAST + margin + body_length
+        figure_head_offset,  // SEAT_SOUTH: head at BOARD_BOUNDARY_Y_SOUTH - margin - body_length
+        figure_head_offset   // SEAT_WEST:  head at BOARD_BOUNDARY_X_WEST - margin - body_length
     };
-    
-    // Cushion edges in normalized coords
-    // World coordinates: North is +Y (0.5), South is -Y (-0.5), East is +X (0.5), West is -X (-0.5)
-    const float CUSHION_Y_NORTH = 0.5f;
-    const float CUSHION_Y_SOUTH = -0.5f;
-    const float CUSHION_X_EAST = 0.5f;
-    const float CUSHION_X_WEST = -0.5f;
     
     // Figure alpha: pulsing 40-100% during THINKING and AIM_PREVIEW phases (synced with striker flash), 100% otherwise
     double wall_time = GetTime();
@@ -394,12 +406,6 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     
     // Current time for halo pulse animation
     float current_time = (float)wall_time;
-    
-    // Compute figure body length in world units (for E/W seat head center offset)
-    float head_radius = (float)L->board_size / 25.0f;
-    float torso_height = (float)L->board_size / 12.0f;
-    float gap = 2.0f; // pixels
-    float body_length_world = (head_radius + gap + torso_height) / vp.world_to_screen;
     
     // Per-seat figure world positions
     Vec2 north_world = {0, 0};
@@ -413,61 +419,63 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     bool is_aim_preview = (game_phase == PHASE_AIM_PREVIEW);
     
     // For PLACEMENT phase: ease from THINKING-end position to final position
-    // placement_timer goes from PLACEMENT_HOLD_TIME down to 0
+    // placement_timer goes from PLACEMENT_HOLD_TIME (1.0s) down to 0
     // Progress = 1 - (placement_timer / PLACEMENT_HOLD_TIME), so 0 at start, 1 at end
+    const float PLACEMENT_HOLD_TIME = 1.0f;
     float placement_progress = 0.0f;
-    if (is_placement && game) {
-        // placement_timer is passed via effects, but we can read from game if available
-        // GameState doesn't have placement_timer directly; use a reasonable default
-        // The placement hold is 1.0s at 1x playback (PLACEMENT_HOLD_TIME from effects.h)
-        // We'll compute progress based on striker state transition
-        // For now, assume placement_progress goes 0->1 during PLACEMENT phase
-        // The actual progress should come from AppContext, but we'll approximate
-        placement_progress = 1.0f; // Will be overridden if we have better data
-        // TODO: Ideally get placement_timer from GameState or pass it in
+    if (is_placement && placement_timer > 0.0) {
+        placement_progress = 1.0f - (float)(placement_timer / PLACEMENT_HOLD_TIME);
+        if (placement_progress < 0.0f) placement_progress = 0.0f;
+        if (placement_progress > 1.0f) placement_progress = 1.0f;
+    } else if (is_aim_preview) {
+        // During AIM_PREVIEW, hold figure at final position (progress = 1.0)
+        placement_progress = 1.0f;
     }
     
     // NORTH seat (top) - WHITE team, faces down (angle = -PI/2) toward board center
-    // Figure extends DOWNWARD from head. Head center should be ABOVE cushion by margin.
+    // Figure extends DOWNWARD from head. Head center at CUSHION_INNER_Y_NORTH + margin + body_length.
     float halo_pulse_n = 0.0f;
     if (current_turn_seat == SEAT_NORTH) {
         halo_pulse_n = (sinf(current_time * 2.0f) * 0.5f + 0.5f); // 0-1 pulse
     }
     
-    // Fixed perpendicular coordinate (y) for NORTH: CUSHION_Y_NORTH + margin_world (outside north)
-    float north_fixed_y = CUSHION_Y_NORTH + figure_fixed_offset_world[SEAT_NORTH];
+    // Fixed perpendicular coordinate (y) for NORTH: head at BOARD_BOUNDARY_Y_NORTH + figure_fixed_offset_world
+    // figure_fixed_offset_world already includes margin + body_length
+    float north_fixed_y = BOARD_BOUNDARY_Y_NORTH + figure_fixed_offset_world[SEAT_NORTH];
     
     // Baseline-axis coordinate (x) varies by phase
     float north_baseline_x;
     if (is_thinking && game && game->turn_seat == SEAT_NORTH) {
         // THINKING: mirror striker's oscillating baseline coordinate
         north_baseline_x = compute_thinking_striker_baseline_coord(SEAT_NORTH, wall_time);
-    } else if (is_placement && game && game->turn_seat == SEAT_NORTH) {
+    } else if ((is_placement || is_aim_preview) && game && game->turn_seat == SEAT_NORTH) {
         // PLACEMENT: ease from THINKING-end position to final striker position
+        // AIM_PREVIEW: hold at final position
         float thinking_x = compute_thinking_striker_baseline_coord(SEAT_NORTH, wall_time);
         float final_x = board->striker.position.x;  // striker already placed
         north_baseline_x = thinking_x + placement_progress * (final_x - thinking_x);
     } else {
-        // IDLE, AIM_PREVIEW, or not current turn: rest at center of baseline (0.0)
+        // IDLE, or not current turn: rest at center of baseline (0.0)
         north_baseline_x = 0.0f;
     }
     north_world = (Vec2){ north_baseline_x, north_fixed_y };
     
     // SOUTH seat (bottom) - WHITE team, faces up (angle = PI/2) toward board center
-    // Figure extends UPWARD from head. Head center should be BELOW cushion by margin.
+    // Figure extends UPWARD from head. Head center at BOARD_BOUNDARY_Y_SOUTH - margin - body_length.
     float halo_pulse_s = 0.0f;
     if (current_turn_seat == SEAT_SOUTH) {
         halo_pulse_s = (sinf(current_time * 2.0f) * 0.5f + 0.5f);
     }
     
-    // Fixed perpendicular coordinate (y) for SOUTH: CUSHION_Y_SOUTH - margin_world (outside south)
-    float south_fixed_y = CUSHION_Y_SOUTH - figure_fixed_offset_world[SEAT_SOUTH];
+    // Fixed perpendicular coordinate (y) for SOUTH: head at BOARD_BOUNDARY_Y_SOUTH - figure_fixed_offset_world
+    // figure_fixed_offset_world already includes margin + body_length
+    float south_fixed_y = BOARD_BOUNDARY_Y_SOUTH - figure_fixed_offset_world[SEAT_SOUTH];
     
     // Baseline-axis coordinate (x) varies by phase
     float south_baseline_x;
     if (is_thinking && game && game->turn_seat == SEAT_SOUTH) {
         south_baseline_x = compute_thinking_striker_baseline_coord(SEAT_SOUTH, wall_time);
-    } else if (is_placement && game && game->turn_seat == SEAT_SOUTH) {
+    } else if ((is_placement || is_aim_preview) && game && game->turn_seat == SEAT_SOUTH) {
         float thinking_x = compute_thinking_striker_baseline_coord(SEAT_SOUTH, wall_time);
         float final_x = board->striker.position.x;
         south_baseline_x = thinking_x + placement_progress * (final_x - thinking_x);
@@ -477,20 +485,21 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     south_world = (Vec2){ south_baseline_x, south_fixed_y };
     
     // EAST seat (right) - BLACK team, faces left (angle = PI) toward board center
-    // Figure extends LEFTWARD from head. Head center should be RIGHT of cushion by margin + body_length.
+    // Figure extends LEFTWARD from head. Head center should be RIGHT of board boundary by margin + body_length.
     float halo_pulse_e = 0.0f;
     if (current_turn_seat == SEAT_EAST) {
         halo_pulse_e = (sinf(current_time * 2.0f) * 0.5f + 0.5f);
     }
     
-    // Fixed perpendicular coordinate (x) for EAST: CUSHION_X_EAST + margin_world + body_length_world
-    float east_fixed_x = CUSHION_X_EAST + figure_fixed_offset_world[SEAT_EAST] + body_length_world;
+    // Fixed perpendicular coordinate (x) for EAST: head at BOARD_BOUNDARY_X_EAST + figure_fixed_offset_world
+    // figure_fixed_offset_world already includes margin + body_length
+    float east_fixed_x = BOARD_BOUNDARY_X_EAST + figure_fixed_offset_world[SEAT_EAST];
     
     // Baseline-axis coordinate (y) varies by phase
     float east_baseline_y;
     if (is_thinking && game && game->turn_seat == SEAT_EAST) {
         east_baseline_y = compute_thinking_striker_baseline_coord(SEAT_EAST, wall_time);
-    } else if (is_placement && game && game->turn_seat == SEAT_EAST) {
+    } else if ((is_placement || is_aim_preview) && game && game->turn_seat == SEAT_EAST) {
         float thinking_y = compute_thinking_striker_baseline_coord(SEAT_EAST, wall_time);
         float final_y = board->striker.position.y;
         east_baseline_y = thinking_y + placement_progress * (final_y - thinking_y);
@@ -500,20 +509,21 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     east_world = (Vec2){ east_fixed_x, east_baseline_y };
     
     // WEST seat (left) - BLACK team, faces right (angle = 0) toward board center
-    // Figure extends RIGHTWARD from head. Head center should be LEFT of cushion by margin + body_length.
+    // Figure extends RIGHTWARD from head. Head center should be LEFT of board boundary by margin + body_length.
     float halo_pulse_w = 0.0f;
     if (current_turn_seat == SEAT_WEST) {
         halo_pulse_w = (sinf(current_time * 2.0f) * 0.5f + 0.5f);
     }
     
-    // Fixed perpendicular coordinate (x) for WEST: CUSHION_X_WEST - margin_world - body_length_world
-    float west_fixed_x = CUSHION_X_WEST - figure_fixed_offset_world[SEAT_WEST] - body_length_world;
+    // Fixed perpendicular coordinate (x) for WEST: head at BOARD_BOUNDARY_X_WEST - figure_fixed_offset_world
+    // figure_fixed_offset_world already includes margin + body_length
+    float west_fixed_x = BOARD_BOUNDARY_X_WEST - figure_fixed_offset_world[SEAT_WEST];
     
     // Baseline-axis coordinate (y) varies by phase
     float west_baseline_y;
     if (is_thinking && game && game->turn_seat == SEAT_WEST) {
         west_baseline_y = compute_thinking_striker_baseline_coord(SEAT_WEST, wall_time);
-    } else if (is_placement && game && game->turn_seat == SEAT_WEST) {
+    } else if ((is_placement || is_aim_preview) && game && game->turn_seat == SEAT_WEST) {
         float thinking_y = compute_thinking_striker_baseline_coord(SEAT_WEST, wall_time);
         float final_y = board->striker.position.y;
         west_baseline_y = thinking_y + placement_progress * (final_y - thinking_y);
@@ -577,7 +587,8 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     }
     
     // AIM_PREVIEW phase: draw aim preview line (INSIDE camera, AFTER striker draw)
-    if (is_aim_preview) {
+    // Only draw when in AIM_PREVIEW phase AND computed shot is valid (phase gate)
+    if (is_aim_preview && game && game->computed_shot_valid) {
         draw_aim_preview_line(vp, game, L, alpha, use_physics, curr_striker_pos, prev_striker_pos);
     }
 }

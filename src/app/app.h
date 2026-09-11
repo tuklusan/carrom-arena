@@ -36,6 +36,7 @@ typedef struct {
     const char* replay_file;    // Trace file to replay
     float playback_speed;       // Simulation speed multiplier (0.05-4.0)
     uint32_t ai_budget_ms;      // AI decision time budget in milliseconds (default 250)
+    bool debug_phase;           // Enable per-frame phase debug logging in capture mode
 } AppConfig;
 
 /* Default configuration */
@@ -55,7 +56,8 @@ static inline AppConfig app_config_default(void) {
         .window_height = 720,
         .replay_file = NULL,
         .playback_speed = 0.05f,  // R3: 1/10th speed default for rendered/capture modes
-        .ai_budget_ms = 150      // R5: Default AI budget: 150ms (lowered from 250)
+        .ai_budget_ms = 150,      // R5: Default AI budget: 150ms (lowered from 250)
+        .debug_phase = false      // Per-frame phase debug logging in capture mode
     };
 }
 

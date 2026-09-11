@@ -1,9 +1,9 @@
 #include "effects.h"
 #include "common/types.h"
-#include <math.h>
 #define __USE_MINGW_ANSI_STDIO 1
 #include <raylib.h>
 #include <stdio.h>
+#include <math.h>
 #include "common/math.h"
 
 #define MAX_POCKET_FADE_TIME 0.2f  // 200ms fade
