@@ -50,8 +50,13 @@ extern const Vec2 POCKET_CENTERS[4];
 #define BASELINE_X_EAST   (0.5f - CUSHION_THICKNESS - STRIKER_RADIUS_NORM)
 #define BASELINE_X_WEST   (-0.5f + CUSHION_THICKNESS + STRIKER_RADIUS_NORM)
 
-#define BASELINE_MIN_OFFSET 0.15f
-#define BASELINE_MAX_OFFSET 0.35f
+/* Full baseline span: striker center can go from pocket_center - striker_radius
+ * Pocket centers at ±(0.5 - POCKET_RADIUS_NORM) = ±0.47
+ * Striker radius = STRIKER_RADIUS_NORM = 0.028
+ * Max offset = 0.47 - 0.028 = 0.442
+ */
+#define BASELINE_MAX_OFFSET (0.5f - POCKET_RADIUS_NORM - STRIKER_RADIUS_NORM)
+#define BASELINE_MIN_OFFSET (-BASELINE_MAX_OFFSET)
 
 #define MAX_PIECES 19
 #define QUEEN_ID 18
