@@ -27,8 +27,8 @@ struct Renderer {
     bool paused;
     float playback_speed;
     bool debug_phase;           // Enable per-frame phase debug logging
+    int debug_frame_count;      // Frame counter for debug logging (first 30 frames)
     Viewport viewport;
-    Camera2D camera;
     RenderTexture2D capture_texture;
     char capture_dir[256];
     Layout current_layout;
@@ -261,17 +261,11 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     r->paused = false;
     r->playback_speed = 0.05f;  // R3: 1/10th speed default
     r->debug_phase = debug_phase;
+    r->debug_frame_count = 0;
     r->width = width;
     r->height = height;
     
-    /* Initial viewport - will be updated each frame in renderer_begin_board */
     r->viewport = (Viewport){0};
-    
-    r->camera = (Camera2D){ 0 };
-    r->camera.offset = (Vector2){ 0, 0 };
-    r->camera.target = (Vector2){ 0, 0 };
-    r->camera.rotation = 0.0f;
-    r->camera.zoom = 1.0f;
     
     unsigned int flags = FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT;
     if (hidden_window) {
@@ -351,6 +345,14 @@ void renderer_begin(Renderer* r) {
     layout_compute(sw, sh, &r->current_layout);
     Layout* L = &r->current_layout;
     
+    // Debug phase logging for first 30 frames
+    if (r->debug_phase && r->debug_frame_count < 30) {
+        fprintf(stderr, "[DEBUG-PHASE] frame=%d sw=%d sh=%d board_size=%d board_x=%d board_y=%d board_region_w=%d hud_w=%d title_band_h=%d footer_band_h=%d figure_band_h=%d\n",
+                r->debug_frame_count, sw, sh, L->board_size, L->board_x, L->board_y,
+                L->board_region_w, L->hud_w, L->title_band_h, L->footer_band_h, L->figure_band_h);
+        r->debug_frame_count++;
+    }
+    
     if (r->capture_mode && r->hidden_window) {
         // Headless capture: render directly to texture, no main window drawing
         BeginTextureMode(r->capture_texture);
@@ -373,25 +375,17 @@ void renderer_draw_hud_sidebar(Renderer* r, const MatchState* match, const GameS
 void renderer_begin_board(Renderer* r) {
     Layout* L = &r->current_layout;
     
-    /* Update viewport for board drawing */
+    /* Update viewport for board drawing - using window coordinates directly */
     r->viewport.screen_width = L->board_size;
     r->viewport.screen_height = L->board_size;
     r->viewport.board_size_px = (float)L->board_size;
-    r->viewport.board_center_px = (Vec2){ (float)L->board_size * 0.5f, (float)L->board_size * 0.5f };
+    r->viewport.board_center_px = (Vec2){ (float)L->board_x + (float)L->board_size * 0.5f, (float)L->board_y + (float)L->board_size * 0.5f };
     r->viewport.world_to_screen = (float)L->board_size / BOARD_SIDE_NORM;
-    
-    /* Camera maps world (board surface pixels, origin at top-left) to window coords */
-    r->camera.offset = (Vector2){ (float)L->board_x, (float)L->board_y };
-    r->camera.target = (Vector2){ 0, 0 };
-    r->camera.rotation = 0.0f;
-    /* Zoom out further to include figure bands (0.7 shows 1.43 world units = board ±0.5 + figure bands ±0.215) */
-    r->camera.zoom = 0.7f;
-    
-    BeginMode2D(r->camera);
 }
 
 void renderer_end_board(Renderer* r) {
-    EndMode2D();
+    // No camera mode to end - using viewport-only rendering
+    (void)r;
 }
 
 void renderer_end(Renderer* r) {
@@ -406,12 +400,32 @@ void renderer_end(Renderer* r) {
 
 void renderer_draw_board(Renderer* r, const BoardState* board, const PhysicsWorld* physics, float alpha, int game_phase, const GameState* game, double placement_timer) {
     Layout* L = &r->current_layout;
-    board_view_draw(r->viewport, board, physics, alpha, L, game_phase, game, placement_timer);
+    
+    /* Create viewport that maps world coordinates directly to window coordinates */
+    Viewport vp = (Viewport){
+        .screen_width = L->board_size,
+        .screen_height = L->board_size,
+        .board_size_px = (float)L->board_size,
+        .board_center_px = (Vec2){ (float)L->board_x + (float)L->board_size * 0.5f, (float)L->board_y + (float)L->board_size * 0.5f },
+        .world_to_screen = (float)L->board_size / BOARD_SIDE_NORM
+    };
+    
+    board_view_draw(vp, board, physics, alpha, L, game_phase, game, placement_timer);
 }
 
 void renderer_draw_effects(Renderer* r, const GameState* game, double placement_timer) {
     Layout* L = &r->current_layout;
-    effects_draw(r->viewport, game, placement_timer, L);
+    
+    /* Create viewport that maps world coordinates directly to window coordinates */
+    Viewport vp = (Viewport){
+        .screen_width = L->board_size,
+        .screen_height = L->board_size,
+        .board_size_px = (float)L->board_size,
+        .board_center_px = (Vec2){ (float)L->board_x + (float)L->board_size * 0.5f, (float)L->board_y + (float)L->board_size * 0.5f },
+        .world_to_screen = (float)L->board_size / BOARD_SIDE_NORM
+    };
+    
+    effects_draw(vp, game, placement_timer, L);
 }
 
 void renderer_capture_frame(Renderer* r, const char* dir, uint64_t frame_num, int game_phase, double placement_timer, float playback_speed) {
