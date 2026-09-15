@@ -28,7 +28,7 @@ extern "C" {
 #define SETTLE_CONFIRM_STEPS 5      // Consecutive steps below threshold (increased for reliability)
 
 // Pocket capture
-#define POCKET_CAPTURE_RADIUS_NORM (POCKET_RADIUS_NORM + PIECE_RADIUS_NORM * 1.5f)  // ~0.0615, more generous than sensor
+#define POCKET_CAPTURE_RADIUS_NORM (POCKET_RADIUS_NORM + PIECE_RADIUS_NORM)  // 0.051, original sensor radius
 
 // Opaque physics world
 typedef struct PhysicsWorld PhysicsWorld;
