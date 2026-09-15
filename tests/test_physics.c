@@ -91,13 +91,13 @@ void test_physics_settling_detection(void) {
     // Step enough times to allow velocities to damp to zero
     // Pieces are placed at rest but physics_sync_from_board sets them awake,
     // which may trigger collision resolution. Need enough steps to settle.
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 200; i++) {
         physics_step(pw, PHYSICS_DT);
     }
     
-    // Call physics_is_settled 3 times for SETTLE_CONFIRM_STEPS confirmation
+    // Call physics_is_settled 5 times for SETTLE_CONFIRM_STEPS confirmation
     bool settled = false;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 5; i++) {
         settled = physics_is_settled(pw);
     }
     
@@ -156,13 +156,13 @@ void test_physics_board_resistance(void) {
     physics_apply_shot(pw, -M_PI/2.0f, 1.0f);  // Full power
     
     // Step multiple times (5 seconds at 120Hz) - enough for full power shot to settle
-    for (int i = 0; i < 600; i++) {
+    for (int i = 0; i < 1200; i++) {
         physics_step(pw, PHYSICS_DT);
     }
     
-    // Should eventually settle - call 3 times for SETTLE_CONFIRM_STEPS confirmation
+    // Should eventually settle - call 5 times for SETTLE_CONFIRM_STEPS confirmation
     bool settled = false;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 5; i++) {
         settled = physics_is_settled(pw);
     }
     

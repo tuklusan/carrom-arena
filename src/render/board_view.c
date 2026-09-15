@@ -588,7 +588,13 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     
     // AIM_PREVIEW phase: draw aim preview line (INSIDE camera, AFTER striker draw)
     // Only draw when in AIM_PREVIEW phase AND computed shot is valid (phase gate)
+    // Also ensure striker is stationary (velocity near zero) to prevent aim line during movement
     if (is_aim_preview && game && game->computed_shot_valid) {
-        draw_aim_preview_line(vp, game, L, alpha, use_physics, curr_striker_pos, prev_striker_pos);
+        // Check striker velocity is near zero (aim line should not show during movement)
+        float striker_speed = math_sqrtf(game->board.striker.velocity.x * game->board.striker.velocity.x + 
+                                         game->board.striker.velocity.y * game->board.striker.velocity.y);
+        if (striker_speed <= SETTLE_SPEED_EPS) {
+            draw_aim_preview_line(vp, game, L, alpha, use_physics, curr_striker_pos, prev_striker_pos);
+        }
     }
 }
