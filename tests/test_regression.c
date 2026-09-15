@@ -456,9 +456,9 @@ void test_physics_settles_from_rest(void) {
         physics_step(pw, PHYSICS_DT);
     }
     
-    // Call physics_is_settled 3 times for SETTLE_CONFIRM_STEPS confirmation
+    // Call physics_is_settled 5 times for SETTLE_CONFIRM_STEPS confirmation
     bool settled = false;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 5; i++) {
         settled = physics_is_settled(pw);
     }
     

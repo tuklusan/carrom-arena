@@ -24,8 +24,11 @@ extern "C" {
 #define BOARD_VISCOUS     2.00f    // Viscous damping coefficient (stronger speed-dependent drag)
 #define SETTLE_SPEED_EPS  1e-3f    // Speed threshold for settling (practical visible stop)
 #define SETTLE_ACCEL_EPS  0.60f    // Acceleration threshold for settling (must exceed COULOMB)
-#define SETTLE_TIMEOUT_SECONDS 8.0f   // Max simulation time before forced settle (reduced from 30s)
-#define SETTLE_CONFIRM_STEPS 3      // Consecutive steps below threshold
+#define SETTLE_TIMEOUT_SECONDS 30.0f   // Max simulation time before forced settle (restored for pocket capture)
+#define SETTLE_CONFIRM_STEPS 5      // Consecutive steps below threshold (increased for reliability)
+
+// Pocket capture
+#define POCKET_CAPTURE_RADIUS_NORM (POCKET_RADIUS_NORM + PIECE_RADIUS_NORM * 1.5f)  // ~0.0615, more generous than sensor
 
 // Opaque physics world
 typedef struct PhysicsWorld PhysicsWorld;

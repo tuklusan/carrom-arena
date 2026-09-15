@@ -464,7 +464,7 @@ int app_run_simulation(AppContext* ctx) {
                         
                         // Store the computed shot plan in GameState for renderer access
                         ctx->game.computed_shot_plan = ctx->pending_shot_plan;
-                        ctx->game.computed_shot_valid = true;
+                        // computed_shot_valid will be set to true when AIM_PREVIEW phase starts
                         
                         // Start AIM_PREVIEW phase (5 seconds wall time, unaffected by playback_speed)
                         ctx->aim_preview_timer = 5.0;
@@ -481,6 +481,11 @@ int app_run_simulation(AppContext* ctx) {
                         // Use wall time (GetTime() equivalent) - not simulation time
                         double wall_now = platform_time_now();
                         double elapsed_wall = wall_now - ctx->aim_preview_start_wall;
+                        
+                        // Set computed_shot_valid true on first frame of AIM_PREVIEW
+                        if (!ctx->game.computed_shot_valid) {
+                            ctx->game.computed_shot_valid = true;
+                        }
                         
                         // Store progress in game state for renderer (0.0 to 1.0 over 0.3s)
                         ctx->game.aim_preview_progress = (float)(elapsed_wall / 0.3);

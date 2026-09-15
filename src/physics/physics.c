@@ -149,11 +149,12 @@ static void physics_create_board_geometry(PhysicsWorld* pw) {
     pw->cushion_bodies[3] = b2CreateBody(pw->world_id, &right_def);
     b2CreatePolygonShape(pw->cushion_bodies[3], &cushion_shape, &box_v);
     
-    // Pocket sensors (kinematic sensors at corners)
+    // Pocket sensors (static sensors at corners - static sensors fire events more reliably)
     b2BodyDef sensor_def = b2DefaultBodyDef();
-    sensor_def.type = b2_kinematicBody;
+    sensor_def.type = b2_staticBody;
     
-    b2Circle circle = { .radius = POCKET_RADIUS_NORM + PIECE_RADIUS_NORM };
+    // Increased radius for more generous capture zone (pocket + 1.5x piece radius)
+    b2Circle circle = { .radius = POCKET_CAPTURE_RADIUS_NORM };
     
     for (int i = 0; i < 4; i++) {
         sensor_def.position = (b2Vec2){ POCKET_CENTERS[i].x, POCKET_CENTERS[i].y };
@@ -236,6 +237,9 @@ void physics_step(PhysicsWorld* pw, float dt) {
         
         // Check pocket captures using Box2D v3 sensor events
         physics_check_pocket_events(pw);
+        
+        // Fallback: distance-based pocket detection (safety net for sensor event failures)
+        physics_check_pockets(pw);
     }
     
     pw->substeps = 0;
@@ -455,11 +459,28 @@ void physics_get_final_positions(PhysicsWorld* pw, Vec2* positions) {
  * Striker Placement & Shot
  * --------------------------------------------------------------------------- */
 void physics_place_striker(PhysicsWorld* pw, Seat seat, Vec2 placement) {
-    if (b2Body_IsValid(pw->striker_body)) {
-        b2Body_SetTransform(pw->striker_body, (b2Vec2){placement.x, placement.y}, b2Rot_identity);
-        b2Body_SetLinearVelocity(pw->striker_body, (b2Vec2){0, 0});
-        b2Body_SetAwake(pw->striker_body, true);
+    // Recreate striker body if it was pocketed and destroyed
+    if (!b2Body_IsValid(pw->striker_body)) {
+        b2BodyDef body_def = b2DefaultBodyDef();
+        body_def.type = b2_dynamicBody;
+        body_def.linearDamping = 0.0f;
+        body_def.angularDamping = 0.0f;
+        body_def.fixedRotation = true;
+        body_def.position = (b2Vec2){placement.x, placement.y};
+        
+        b2ShapeDef shape_def = physics_make_shape_def(0.95f, 0.1f);
+        shape_def.density = 1.0f;
+        
+        b2Circle circle = { .radius = STRIKER_RADIUS_NORM };
+        
+        pw->striker_body = b2CreateBody(pw->world_id, &body_def);
+        b2CreateCircleShape(pw->striker_body, &shape_def, &circle);
+        pw->striker_pocketed = false;
     }
+    
+    b2Body_SetTransform(pw->striker_body, (b2Vec2){placement.x, placement.y}, b2Rot_identity);
+    b2Body_SetLinearVelocity(pw->striker_body, (b2Vec2){0, 0});
+    b2Body_SetAwake(pw->striker_body, true);
 }
 
 void physics_apply_shot(PhysicsWorld* pw, float aim_angle, float power) {
