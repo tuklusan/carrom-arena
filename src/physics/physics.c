@@ -367,6 +367,9 @@ static void physics_check_pockets(PhysicsWorld* pw) {
     float capture_radius = POCKET_RADIUS_NORM + PIECE_RADIUS_NORM;
     float capture_radius_sq = capture_radius * capture_radius;
     
+    // Cushion inner edges (where pieces must cross to be pocketed)
+    const float CUSHION_INNER = 0.5f - CUSHION_THICKNESS;  // 0.475
+    
     // Check pieces
     for (int i = 0; i < MAX_PIECES; i++) {
         if (pw->piece_pocketed[i] || !b2Body_IsValid(pw->piece_bodies[i])) continue;
@@ -382,21 +385,35 @@ static void physics_check_pockets(PhysicsWorld* pw) {
             float dist_sq = dx*dx + dy*dy;
             
             if (dist_sq < capture_radius_sq) {
-                pw->piece_pocketed[i] = true;
-                pw->pocketed_ids[pw->pocketed_count] = (uint8_t)i;
-                
-                if (i == QUEEN_ID) {
-                    pw->pocketed_colors[pw->pocketed_count] = PIECE_QUEEN;
-                } else if (i < 9) {
-                    pw->pocketed_colors[pw->pocketed_count] = PIECE_WHITE;
-                } else {
-                    pw->pocketed_colors[pw->pocketed_count] = PIECE_BLACK;
+                // Only pocket if piece has crossed the cushion line (past the cushion inner edge)
+                bool past_cushion = false;
+                if (pocket_pos.y > 0 && pos.y > CUSHION_INNER) {
+                    past_cushion = true;  // North pockets
+                } else if (pocket_pos.y < 0 && pos.y < -CUSHION_INNER) {
+                    past_cushion = true;  // South pockets
+                } else if (pocket_pos.x > 0 && pos.x > CUSHION_INNER) {
+                    past_cushion = true;  // East pockets
+                } else if (pocket_pos.x < 0 && pos.x < -CUSHION_INNER) {
+                    past_cushion = true;  // West pockets
                 }
-                pw->pocketed_count++;
                 
-                b2DestroyBody(pw->piece_bodies[i]);
-                pw->piece_bodies[i] = (b2BodyId){0};
-                break;
+                if (past_cushion && dist_sq < capture_radius_sq) {
+                    pw->piece_pocketed[i] = true;
+                    pw->pocketed_ids[pw->pocketed_count] = (uint8_t)i;
+                    
+                    if (i == QUEEN_ID) {
+                        pw->pocketed_colors[pw->pocketed_count] = PIECE_QUEEN;
+                    } else if (i < 9) {
+                        pw->pocketed_colors[pw->pocketed_count] = PIECE_WHITE;
+                    } else {
+                        pw->pocketed_colors[pw->pocketed_count] = PIECE_BLACK;
+                    }
+                    pw->pocketed_count++;
+                    
+                    b2DestroyBody(pw->piece_bodies[i]);
+                    pw->piece_bodies[i] = (b2BodyId){0};
+                    break;
+                }
             }
         }
     }
@@ -413,7 +430,19 @@ static void physics_check_pockets(PhysicsWorld* pw) {
             float dy = pos.y - pocket_pos.y;
             float dist_sq = dx*dx + dy*dy;
             
-            if (dist_sq < capture_radius_sq) {
+            // Only pocket striker if it has crossed the cushion line
+            bool past_cushion = false;
+            if (pocket_pos.y > 0 && pos.y > CUSHION_INNER) {
+                past_cushion = true;
+            } else if (pocket_pos.y < 0 && pos.y < -CUSHION_INNER) {
+                past_cushion = true;
+            } else if (pocket_pos.x > 0 && pos.x > CUSHION_INNER) {
+                past_cushion = true;
+            } else if (pocket_pos.x < 0 && pos.x < -CUSHION_INNER) {
+                past_cushion = true;
+            }
+            
+            if (past_cushion && dist_sq < capture_radius_sq) {
                 pw->striker_pocketed = true;
                 b2DestroyBody(pw->striker_body);
                 pw->striker_body = (b2BodyId){0};
