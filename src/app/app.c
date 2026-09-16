@@ -226,6 +226,53 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Resolve through rules engine
     RulesOutcome outcome = rules_resolve(&ctx->match, &ctx->game, &facts);
     
+    // Handle pocketed pieces: update board state and compute pocketed positions
+    for (int i = 0; i < result->pocketed_count; i++) {
+        uint8_t piece_id = result->pocketed_ids[i];
+        uint8_t pocket_idx = result->pocketed_pocket_indices[i];
+        
+        // Remove piece from board
+        ctx->game.board.pieces[piece_id].on_board = false;
+        ctx->game.board.pieces[piece_id].pocketed = true;
+        
+        // Compute pocketed slot position: 3x3 grid per corner
+        // Grid starts at POCKET_CENTERS[pocket_idx] + (0.06, 0.06) outward, 0.025 spacing
+        // Pockets: 0=top-left (NW), 1=top-right (NE), 2=bottom-left (SW), 3=bottom-right (SE)
+        // Outward direction depends on corner
+        Vec2 base = POCKET_CENTERS[pocket_idx];
+        Vec2 offset = {0.06f, 0.06f};
+        Vec2 spacing = {0.025f, 0.025f};
+        
+        // Adjust offset direction based on pocket corner
+        if (pocket_idx == 1) { // NE (top-right)
+            offset.x = -0.06f;
+        } else if (pocket_idx == 2) { // SW (bottom-left)
+            offset.y = -0.06f;
+        } else if (pocket_idx == 3) { // SE (bottom-right)
+            offset.x = -0.06f;
+            offset.y = -0.06f;
+        }
+        // Pocket 0 (NW) uses positive offset as-is
+        
+        int pocketed_idx = ctx->game.board.pocketed_count;
+        if (pocketed_idx < MAX_PIECES) {
+            int row = pocketed_idx / 3;
+            int col = pocketed_idx % 3;
+            Vec2 pocketed_pos = {
+                base.x + offset.x + col * spacing.x,
+                base.y + offset.y + row * spacing.y
+            };
+            
+            // Update the piece's pocketed position and index
+            ctx->game.board.pieces[piece_id].pocketed_position = pocketed_pos;
+            ctx->game.board.pieces[piece_id].pocket_index = pocket_idx;
+            
+            // Copy to pocketed_pieces array for rendering
+            ctx->game.board.pocketed_pieces[pocketed_idx] = ctx->game.board.pieces[piece_id];
+            ctx->game.board.pocketed_count++;
+        }
+    }
+    
     // Apply outcome
     ctx->game = outcome.next_game_state;
     ctx->match = outcome.next_match_state;
@@ -234,12 +281,14 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     switch (outcome.turn_decision) {
         case TURN_CONTINUE:
         case TURN_ADVANCE:
+            // Reset physics turn timer so settle detection starts fresh for next turn
+            physics_reset_turn_timer(ctx->physics);
             ctx->game.phase = PHASE_THINKING;
             ctx->thinking_phase_active = true;
             ctx->thinking_timer = 0.0;
             ctx->candidates_evaluated = 0;
             ctx->pending_shot_valid = false;
-            // Minimum thinking time for visualization
+            // Minimum thinking time for visualization (2s for verification on subsequent turns)
             double budget_sec = (ctx->config.ai_budget_ms > 0) ? (ctx->config.ai_budget_ms / 1000.0) : 0.15;
             ctx->thinking_min_wall = budget_sec * 0.2;
             if (ctx->thinking_min_wall < 2.0) ctx->thinking_min_wall = 2.0;  // At least 2 seconds for verification
@@ -272,11 +321,18 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Trigger pocket fade effects
     if (ctx->renderer) {
         for (int i = 0; i < result->pocketed_count; i++) {
-            // Find which pocket the piece went into (simplified - use first pocket for now)
-            effects_trigger_pocket_fade(0);
+            // Use the actual pocket index for effects
+            uint8_t pocket_idx = result->pocketed_pocket_indices[i];
+            effects_trigger_pocket_fade(pocket_idx);
         }
         if (result->queen_pocketed) {
-            effects_trigger_pocket_fade(0);
+            // Find queen's pocket index
+            for (int i = 0; i < result->pocketed_count; i++) {
+                if (result->pocketed_ids[i] == QUEEN_ID) {
+                    effects_trigger_pocket_fade(result->pocketed_pocket_indices[i]);
+                    break;
+                }
+            }
         }
     }
     
@@ -320,10 +376,10 @@ int app_run_simulation(AppContext* ctx) {
     ctx->thinking_phase_active = true;
     ctx->thinking_timer = 0.0;
     // Minimum thinking time for visualization (flash animation visibility)
-    // Use 2 seconds for verification, or 20% of ai_budget_ms, whichever is larger
+    // First turn: 0.5s for figure flash sync; subsequent turns use 2.0s for verification
     double budget_sec = (ctx->config.ai_budget_ms > 0) ? (ctx->config.ai_budget_ms / 1000.0) : 0.15;
     ctx->thinking_min_wall = budget_sec * 0.2;
-    if (ctx->thinking_min_wall < 2.0) ctx->thinking_min_wall = 2.0;  // At least 2 seconds for verification
+    if (ctx->thinking_min_wall < 0.5) ctx->thinking_min_wall = 0.5;  // First turn: at least 0.5s for figure flash sync
     ctx->thinking_min_wall += platform_time_now();  // Absolute wall time when min thinking ends
     
     if (ctx->config.verbose) {
@@ -364,6 +420,17 @@ int app_run_simulation(AppContext* ctx) {
             
             // Fixed timestep physics
             app_simulation_step(ctx, dt);
+            
+            // Diagnostic: trace physics state during shot execution and settling
+            if (ctx->trace && ctx->config.verbose && 
+                (ctx->game.phase == PHASE_SHOT_EXECUTION || ctx->game.phase == PHASE_SETTLING)) {
+                Vec2 striker_vel, striker_pos;
+                physics_get_striker_velocity(ctx->physics, &striker_vel);
+                physics_get_striker_position(ctx->physics, &striker_pos);
+                trace_write_physics_state(ctx->trace, ctx->frame_count, ctx->shot_count,
+                                          physics_get_sim_time(ctx->physics), &striker_vel, &striker_pos,
+                                          ctx->game.phase == PHASE_SHOT_EXECUTION ? "SHOT_EXECUTION" : "SETTLING");
+            }
             
             // State machine
             // Phase invariants (debug assertions)
@@ -532,6 +599,8 @@ int app_run_simulation(AppContext* ctx) {
                         ctx->game.phase = PHASE_RESOLVING;
                         ShotResult result = app_collect_shot_result(ctx);
                         app_resolve_shot(ctx, &result);
+                        // Consume pocketed pieces so physics doesn't accumulate them across shots
+                        physics_consume_pocketed(ctx->physics);
                     } else {
                         // Re-entered motion (rare) — go back to SHOT_EXECUTION
                         ctx->game.phase = PHASE_SHOT_EXECUTION;

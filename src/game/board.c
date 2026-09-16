@@ -16,6 +16,18 @@ void board_state_init(BoardState* board) {
         board->pieces[i].velocity = (Vec2){0, 0};
         board->pieces[i].on_board = false;
         board->pieces[i].pocketed = false;
+        board->pieces[i].pocketed_position = (Vec2){0, 0};
+        board->pieces[i].pocket_index = 255;
+    }
+    for (int i = 0; i < MAX_PIECES; i++) {
+        board->pocketed_pieces[i].id = (uint8_t)i;
+        board->pocketed_pieces[i].color = PIECE_WHITE;
+        board->pocketed_pieces[i].position = (Vec2){0, 0};
+        board->pocketed_pieces[i].velocity = (Vec2){0, 0};
+        board->pocketed_pieces[i].on_board = false;
+        board->pocketed_pieces[i].pocketed = false;
+        board->pocketed_pieces[i].pocketed_position = (Vec2){0, 0};
+        board->pocketed_pieces[i].pocket_index = 255;
     }
     board->striker.position = (Vec2){0, 0};
     board->striker.velocity = (Vec2){0, 0};
@@ -29,6 +41,7 @@ void board_state_init(BoardState* board) {
     board->white_dues = 0;
     board->black_dues = 0;
     board->queen_dues = 0;
+    board->pocketed_count = 0;
 }
 
 void striker_state_init(StrikerState* striker, Seat seat) {
@@ -75,6 +88,8 @@ void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
     board->pieces[QUEEN_ID].velocity = (Vec2){0.0f, 0.0f};
     board->pieces[QUEEN_ID].on_board = true;
     board->pieces[QUEEN_ID].pocketed = false;
+    board->pieces[QUEEN_ID].pocketed_position = (Vec2){0, 0};
+    board->pieces[QUEEN_ID].pocket_index = 255;
     board->queen_on_board = true;
     
     // Place white pieces (IDs 0-8)
@@ -83,6 +98,8 @@ void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
         board->pieces[i].velocity = (Vec2){0.0f, 0.0f};
         board->pieces[i].on_board = true;
         board->pieces[i].pocketed = false;
+        board->pieces[i].pocketed_position = (Vec2){0, 0};
+        board->pieces[i].pocket_index = 255;
     }
     // Fix: white piece 0 should not be at center (queen is there)
     // Shift it slightly
@@ -95,11 +112,14 @@ void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
         board->pieces[i].velocity = (Vec2){0.0f, 0.0f};
         board->pieces[i].on_board = true;
         board->pieces[i].pocketed = false;
+        board->pieces[i].pocketed_position = (Vec2){0, 0};
+        board->pieces[i].pocket_index = 255;
     }
     
     board->white_on_board = 9;
     board->black_on_board = 9;
     board->queen_state = QUEEN_STATE_ON_BOARD;
+    board->pocketed_count = 0;
 }
 
 void board_place_striker_on_baseline(StrikerState* striker, Seat seat) {

@@ -27,6 +27,7 @@ struct PhysicsWorld {
     int pocketed_count;
     uint8_t pocketed_ids[19];
     PieceColor pocketed_colors[19];
+    uint8_t pocketed_pocket_indices[19];  // Which pocket each piece went into (0-3)
     
     // Previous-frame positions for render interpolation
     Vec2 prev_piece_positions[MAX_PIECES];
@@ -335,6 +336,7 @@ static void physics_check_pocket_events(PhysicsWorld* pw) {
                 // Pocket the piece immediately
                 pw->piece_pocketed[p] = true;
                 pw->pocketed_ids[pw->pocketed_count] = (uint8_t)p;
+                pw->pocketed_pocket_indices[pw->pocketed_count] = (uint8_t)pocket_idx;
                 
                 if (p == QUEEN_ID) {
                     pw->pocketed_colors[pw->pocketed_count] = PIECE_QUEEN;
@@ -384,22 +386,57 @@ static void physics_check_pockets(PhysicsWorld* pw) {
             float dy = pos.y - pocket_pos.y;
             float dist_sq = dx*dx + dy*dy;
             
-            if (dist_sq < capture_radius_sq) {
-                // Only pocket if piece has crossed the cushion line (past the cushion inner edge)
-                bool past_cushion = false;
-                if (pocket_pos.y > 0 && pos.y > CUSHION_INNER) {
-                    past_cushion = true;  // North pockets
-                } else if (pocket_pos.y < 0 && pos.y < -CUSHION_INNER) {
-                    past_cushion = true;  // South pockets
-                } else if (pocket_pos.x > 0 && pos.x > CUSHION_INNER) {
-                    past_cushion = true;  // East pockets
-                } else if (pocket_pos.x < 0 && pos.x < -CUSHION_INNER) {
-                    past_cushion = true;  // West pockets
-                }
-                
-                if (past_cushion && dist_sq < capture_radius_sq) {
+            // Check if piece is in pocket zone (near pocket center, within pocket radius)
+            // AND pressed against the cushion (within cushion thickness of inner edge)
+            // Pocket centers are at (±0.47, ±0.47), pocket radius = 0.03
+            // Cushion inner edge at 0.475, so pocket spans from 0.44 to 0.50 (for north)
+            // Piece is pocketed if: within pocket radius of center AND pressed against cushion
+            
+            bool in_pocket_zone = false;
+            bool pressed_against_cushion = false;
+            
+            // North pockets (p=0,1): pocket_pos.y ≈ 0.47, cushion at y=0.475
+            if (pocket_pos.y > 0) {
+                float pocket_x = pocket_pos.x;
+                float pocket_x_min = pocket_x - POCKET_RADIUS_NORM;
+                float pocket_x_max = pocket_x + POCKET_RADIUS_NORM;
+                // Piece is in pocket x-range
+                in_pocket_zone = (pos.x >= pocket_x_min && pos.x <= pocket_x_max);
+                // Piece is pressed against north cushion (y close to cushion inner edge)
+                pressed_against_cushion = (pos.y >= CUSHION_INNER - 0.005f);  // Within 0.5mm of cushion
+            }
+            // South pockets (p=2,3): pocket_pos.y ≈ -0.47
+            else if (pocket_pos.y < 0) {
+                float pocket_x = pocket_pos.x;
+                float pocket_x_min = pocket_x - POCKET_RADIUS_NORM;
+                float pocket_x_max = pocket_x + POCKET_RADIUS_NORM;
+                in_pocket_zone = (pos.x >= pocket_x_min && pos.x <= pocket_x_max);
+                pressed_against_cushion = (pos.y <= -CUSHION_INNER + 0.005f);
+            }
+            // East pockets (p=1): pocket_pos.x ≈ 0.47
+            else if (pocket_pos.x > 0) {
+                float pocket_y = pocket_pos.y;
+                float pocket_y_min = pocket_y - POCKET_RADIUS_NORM;
+                float pocket_y_max = pocket_y + POCKET_RADIUS_NORM;
+                in_pocket_zone = (pos.y >= pocket_y_min && pos.y <= pocket_y_max);
+                pressed_against_cushion = (pos.x >= CUSHION_INNER - 0.005f);
+            }
+            // West pockets (p=0): pocket_pos.x ≈ -0.47
+            else {  // pocket_pos.x < 0
+                float pocket_y = pocket_pos.y;
+                float pocket_y_min = pocket_y - POCKET_RADIUS_NORM;
+                float pocket_y_max = pocket_y + POCKET_RADIUS_NORM;
+                in_pocket_zone = (pos.y >= pocket_y_min && pos.y <= pocket_y_max);
+                pressed_against_cushion = (pos.x <= -CUSHION_INNER + 0.005f);
+            }
+            
+            // Only pocket if piece is in pocket zone AND pressed against cushion
+            if (in_pocket_zone && pressed_against_cushion) {
+                // Also check distance to pocket center as backup
+                if (dist_sq < capture_radius_sq) {
                     pw->piece_pocketed[i] = true;
                     pw->pocketed_ids[pw->pocketed_count] = (uint8_t)i;
+                    pw->pocketed_pocket_indices[pw->pocketed_count] = (uint8_t)p;
                     
                     if (i == QUEEN_ID) {
                         pw->pocketed_colors[pw->pocketed_count] = PIECE_QUEEN;
@@ -457,6 +494,7 @@ void physics_collect_pocketed(PhysicsWorld* pw, ShotResult* result) {
     for (int i = 0; i < pw->pocketed_count; i++) {
         result->pocketed_ids[i] = pw->pocketed_ids[i];
         result->pocketed_colors[i] = (uint8_t)pw->pocketed_colors[i];
+        result->pocketed_pocket_indices[i] = pw->pocketed_pocket_indices[i];
     }
     result->queen_pocketed = false;
     result->striker_pocketed = pw->striker_pocketed;
@@ -468,7 +506,10 @@ void physics_collect_pocketed(PhysicsWorld* pw, ShotResult* result) {
         }
     }
     
-    // Reset for next shot
+    // Do NOT reset pocketed_count here - let app layer consume and clear via physics_consume_pocketed()
+}
+
+void physics_consume_pocketed(PhysicsWorld* pw) {
     pw->pocketed_count = 0;
     pw->striker_pocketed = false;
 }
@@ -571,6 +612,13 @@ bool physics_is_settled(PhysicsWorld* pw) {
 
 float physics_get_sim_time(PhysicsWorld* pw) {
     return pw->sim_time;
+}
+
+// Reset turn timer (sim_time and settle_confirm_steps) at turn transitions
+void physics_reset_turn_timer(PhysicsWorld* pw) {
+    if (!pw) return;
+    pw->sim_time = 0.0f;
+    pw->settle_confirm_steps = 0;
 }
 
 /* -----------------------------------------------------------------------------
@@ -702,6 +750,15 @@ void physics_get_prev_positions(const PhysicsWorld* pw, Vec2* positions) {
 
 void physics_get_prev_striker_position(const PhysicsWorld* pw, Vec2* pos) {
     *pos = pw->prev_striker_position;
+}
+
+void physics_get_striker_velocity(const PhysicsWorld* pw, Vec2* vel) {
+    if (!pw->striker_pocketed && b2Body_IsValid(pw->striker_body)) {
+        b2Vec2 v = b2Body_GetLinearVelocity(pw->striker_body);
+        *vel = (Vec2){ v.x, v.y };
+    } else {
+        *vel = (Vec2){ 0, 0 };
+    }
 }
 
 float physics_get_accumulator(const PhysicsWorld* pw) {

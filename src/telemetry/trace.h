@@ -34,6 +34,11 @@ void trace_write_shot_start(TraceWriter* writer, const MatchState* match, const 
 void trace_write_shot_end(TraceWriter* writer, const ShotResult* result, const RulesOutcome* outcome);
 void trace_write_event(TraceWriter* writer, const GameEvent* evt);
 
+/* Diagnostic: write per-frame physics state (striker velocity) */
+void trace_write_physics_state(TraceWriter* writer, uint64_t frame, uint64_t shot_number, 
+                               float sim_time, const Vec2* striker_vel, const Vec2* striker_pos,
+                               const char* phase);
+
 /* Flush any buffered data to disk */
 void trace_flush(TraceWriter* writer);
 

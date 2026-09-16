@@ -47,12 +47,16 @@ void physics_apply_board_resistance(PhysicsWorld* pw);
 bool physics_is_settled(PhysicsWorld* pw);
 float physics_get_sim_time(PhysicsWorld* pw);
 
+// Reset turn timer (sim_time and settle_confirm_steps) at turn transitions
+void physics_reset_turn_timer(PhysicsWorld* pw);
+
 // Striker placement and shot execution
 void physics_place_striker(PhysicsWorld* pw, Seat seat, Vec2 placement);
 void physics_apply_shot(PhysicsWorld* pw, float aim_angle, float power);
 
 // Pocket capture queries
 void physics_collect_pocketed(PhysicsWorld* pw, ShotResult* result);
+void physics_consume_pocketed(PhysicsWorld* pw);
 void physics_get_final_positions(PhysicsWorld* pw, Vec2* positions);
 
 // Snapshot for AI scratch simulation
@@ -67,6 +71,9 @@ b2BodyId* physics_get_bodies(PhysicsWorld* pw, int* out_count);
 // Get current positions for rendering (read-only)
 void physics_get_positions(const PhysicsWorld* pw, Vec2* positions);
 void physics_get_striker_position(const PhysicsWorld* pw, Vec2* pos);
+
+// Get striker velocity for diagnostics
+void physics_get_striker_velocity(const PhysicsWorld* pw, Vec2* vel);
 
 // Get previous positions for interpolation (read-only)
 void physics_get_prev_positions(const PhysicsWorld* pw, Vec2* positions);
