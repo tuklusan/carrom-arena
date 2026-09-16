@@ -78,27 +78,6 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
         }
     }
     
-    // Striker placement phase: draw pulsing halo and countdown banner
-    if (game->phase == PHASE_PLACEMENT && game->board.striker.on_baseline && !game->board.striker.pocketed && placement_timer > 0.0) {
-        Vec2 striker_pos = game->board.striker.position;
-        Vec2 screen = math_world_to_screen(vp, striker_pos);
-        float striker_r = math_world_to_screen_dist(vp, STRIKER_RADIUS_NORM);
-        
-        // Pulsing halo: 3 concentric rings fading out, animated with time
-        float time = (float)wall_time;
-        for (int ring = 0; ring < 3; ring++) {
-            float ring_f = (float)ring;
-            float ring_phase = time * 3.0f + ring_f * 2.0f;
-            float ring_radius = striker_r * 1.5f + ring_f * striker_r * 0.8f + sinf(ring_phase) * striker_r * 0.3f;
-            float ring_alpha = 0.6f - ring_f * 0.15f + 0.2f * sinf(ring_phase);
-            if (ring_alpha < 0.1f) ring_alpha = 0.1f;
-            if (ring_alpha > 0.8f) ring_alpha = 0.8f;
-            
-            Color halo_color = (Color){ 255, 215, 0, (unsigned char)(ring_alpha * 255) };
-            DrawCircleLines((int)screen.x, (int)screen.y, ring_radius, halo_color);
-        }
-    }
-    
     // Aim line and power bar during aiming/placement phase (when not in placement hold)
     if (game->phase == PHASE_AIMING) {
         Vec2 striker_pos = game->board.striker.position;

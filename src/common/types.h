@@ -119,6 +119,8 @@ typedef struct {
     PieceColor color;
     Vec2 position, velocity;
     bool pocketed, on_board;
+    Vec2 pocketed_position;
+    uint8_t pocket_index;
 } PieceState;
 
 typedef struct {
@@ -134,6 +136,9 @@ typedef struct {
     uint8_t white_on_board, black_on_board;
     bool queen_on_board;
     uint8_t white_dues, black_dues, queen_dues;
+    // Pocketed pieces for rendering
+    PieceState pocketed_pieces[MAX_PIECES];
+    int pocketed_count;
     // Previous-frame positions for render interpolation
     Vec2 prev_piece_positions[MAX_PIECES];
     Vec2 prev_striker_position;
@@ -175,6 +180,7 @@ typedef struct {
 
 typedef struct {
     uint8_t pocketed_ids[19], pocketed_count, pocketed_colors[19];
+    uint8_t pocketed_pocket_indices[19];  // Which pocket each piece went into (0-3)
     bool queen_pocketed, striker_pocketed; FoulFlags fouls;
     Vec2 final_positions[19]; float sim_time;
 } ShotResult;

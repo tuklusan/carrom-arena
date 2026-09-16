@@ -278,11 +278,8 @@ static void draw_aim_preview_line(Viewport vp, const GameState* game, const Layo
 }
 
 void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* L, int game_phase, const GameState* game, double placement_timer) {
-    // Determine current turn seat from striker owner
-    Seat current_turn_seat = board->striker.owner_seat;
-    if (board->striker.on_baseline) {
-        current_turn_seat = board->striker.owner_seat;
-    }
+    // Determine current turn seat from game turn (not striker owner, which is stale during THINKING/PLACEMENT/AIM_PREVIEW)
+    Seat current_turn_seat = game ? game->turn_seat : board->striker.owner_seat;
     
     // Clamp alpha to [0, 1]
     if (alpha < 0.0f) alpha = 0.0f;
@@ -564,6 +561,23 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         Color c;
         if (board->pieces[i].color == PIECE_WHITE) c = COLOR_WHITE_PIECE;
         else if (board->pieces[i].color == PIECE_BLACK) c = COLOR_BLACK_PIECE;
+        else c = COLOR_QUEEN;
+        
+        DrawCircle((int)screen.x, (int)screen.y, piece_r, c);
+        DrawCircleLines((int)screen.x, (int)screen.y, piece_r, COLOR_LINE);
+    }
+    
+    // Pocketed pieces (drawn at their pocketed positions near corners)
+    for (int i = 0; i < board->pocketed_count; i++) {
+        if (!board->pocketed_pieces[i].pocketed) continue;
+        
+        Vec2 pos = board->pocketed_pieces[i].pocketed_position;
+        Vec2 screen = math_world_to_screen(vp, pos);
+        float piece_r = math_world_to_screen_dist(vp, PIECE_RADIUS_NORM);
+        
+        Color c;
+        if (board->pocketed_pieces[i].color == PIECE_WHITE) c = COLOR_WHITE_PIECE;
+        else if (board->pocketed_pieces[i].color == PIECE_BLACK) c = COLOR_BLACK_PIECE;
         else c = COLOR_QUEEN;
         
         DrawCircle((int)screen.x, (int)screen.y, piece_r, c);

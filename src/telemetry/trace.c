@@ -417,6 +417,37 @@ void trace_write_event(TraceWriter* writer, const GameEvent* evt) {
     }
 }
 
+void trace_write_physics_state(TraceWriter* writer, uint64_t frame, uint64_t shot_number, 
+                               float sim_time, const Vec2* striker_vel, const Vec2* striker_pos,
+                               const char* phase) {
+    if (!writer || !writer->jsonl_file) return;
+    
+    float speed = sqrtf(striker_vel->x * striker_vel->x + striker_vel->y * striker_vel->y);
+    float angle = atan2f(striker_vel->y, striker_vel->x);
+    
+    char json[512];
+    snprintf(json, sizeof(json),
+        "{"
+        "\"type\":\"PHYSICS_STATE\","
+        "\"frame\":%" PRIu64 ","
+        "\"shot_number\":%" PRIu64 ","
+        "\"sim_time\":%.6f,"
+        "\"phase\":\"%s\","
+        "\"striker\":{"
+        "\"pos\":{\"x\":%.6f,\"y\":%.6f},"
+        "\"vel\":{\"x\":%.6f,\"y\":%.6f},"
+        "\"speed\":%.6f,"
+        "\"angle\":%.6f"
+        "}"
+        "}",
+        frame, shot_number, sim_time, phase,
+        striker_pos->x, striker_pos->y,
+        striker_vel->x, striker_vel->y,
+        speed, angle);
+    
+    trace_write_line_internal(writer, json, strlen(json));
+}
+
 /* -----------------------------------------------------------------------------
  * Validation & Reading
  * --------------------------------------------------------------------------- */
