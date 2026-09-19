@@ -563,8 +563,7 @@ void physics_apply_shot(PhysicsWorld* pw, float aim_angle, float power) {
     float speed = power * MAX_SPEED;
     
     Vec2 dir = math_vec2_from_angle(aim_angle);
-    Vec2 impulse = vec2_mul(dir, speed);
-    b2Body_ApplyLinearImpulseToCenter(pw->striker_body, (b2Vec2){impulse.x, impulse.y}, true);
+    b2Body_SetLinearVelocity(pw->striker_body, (b2Vec2){dir.x * speed, dir.y * speed});
 }
 
 /* -----------------------------------------------------------------------------

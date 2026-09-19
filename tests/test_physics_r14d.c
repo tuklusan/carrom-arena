@@ -41,15 +41,20 @@ void test_momentum_transfer(void) {
         PhysicsWorld* pw = physics_create();
         BoardState board;
         board_state_init(&board);
+        
+        // Place piece at center
         board.pieces[0].position = (Vec2){0.0f, 0.0f};
         board.pieces[0].on_board = true;
+        board.pieces[0].pocketed = false;
         board.white_on_board = 1;
         physics_sync_from_board(pw, &board, SEAT_NORTH);
         
-        physics_place_striker(pw, SEAT_NORTH, (Vec2){-0.1f, 0.0f});
+        // Place striker to the west and shoot east
+        physics_place_striker(pw, SEAT_NORTH, (Vec2){-0.2f, 0.0f});
         physics_apply_shot(pw, 0.0f, speeds[s] / 5.0f);
         
-        for (int i = 0; i < 500; i++) physics_step(pw, PHYSICS_DT);
+        // Simulate enough time for collision (0.2 units / 0.3 units/s approx 0.6s)
+        for (int i = 0; i < 120; i++) physics_step(pw, PHYSICS_DT);
         
         Vec2 pos[MAX_PIECES];
         physics_get_positions(pw, pos);
@@ -105,12 +110,18 @@ void test_rack_stability(void) {
 
 void test_cushion_bounce(void) {
     PhysicsWorld* pw = physics_create();
+    
+    // We must sync from a board state to ensure piece/striker bodies are correctly updated
+    BoardState board;
+    board_state_init(&board);
+    physics_sync_from_board(pw, &board, SEAT_NORTH);
+    
     // Place striker and shoot East
-    physics_place_striker(pw, SEAT_NORTH, (Vec2){0.0f, 0.0f});
+    physics_place_striker(pw, SEAT_NORTH, (Vec2){0.3f, 0.0f});
     physics_apply_shot(pw, 0.0f, 1.0f); // East (Max speed 5.0)
     
-    // Step until it hits the cushion (at x=0.5)
-    for (int i = 0; i < 100; i++) physics_step(pw, PHYSICS_DT);
+    // Step until it hits the cushion (at x=0.5). Dist = 0.5, speed = 5.0 -> time = 0.1s (12 steps)
+    for (int i = 0; i < 200; i++) physics_step(pw, PHYSICS_DT);
     
     Vec2 vel;
     physics_get_striker_velocity(pw, &vel);

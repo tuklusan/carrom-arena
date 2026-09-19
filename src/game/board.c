@@ -116,14 +116,14 @@ void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
     for (int i = 0; i < 18; i++) {
         PieceColor color;
         if (i < 6) {
-            // Inner ring: alternate B, W, B, W, B, W
-            color = (i % 2 == 0) ? PIECE_BLACK : PIECE_WHITE;
+            // Inner ring: alternate W, B, W, B, W, B
+            color = (i % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
         } else if (i < 12) {
-            // Outer ring tips: alternate B, W, B, W, B, W
-            color = ((i - 6) % 2 == 0) ? PIECE_BLACK : PIECE_WHITE;
+            // Outer ring tips: alternate W, B, W, B, W, B
+            color = ((i - 6) % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
         } else {
-            // Outer ring notches: alternate B, W, B, W, B, W
-            color = ((i - 12) % 2 == 0) ? PIECE_BLACK : PIECE_WHITE;
+            // Outer ring notches: alternate W, B, W, B, W, B
+            color = ((i - 12) % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
         }
 
         int piece_id;

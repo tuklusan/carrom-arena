@@ -20,8 +20,8 @@ extern "C" {
 #define MAX_SUBSTEPS 4
 
 // Physics constants
-#define BOARD_COULOMB     0.50f    // Coulomb friction coefficient (stronger dry friction)
-#define BOARD_VISCOUS     2.00f    // Viscous damping coefficient (stronger speed-dependent drag)
+#define BOARD_COULOMB     0.10f    // Coulomb friction coefficient (stronger dry friction)
+#define BOARD_VISCOUS     0.20f    // Viscous damping coefficient (stronger speed-dependent drag)
 #define SETTLE_SPEED_EPS  1e-3f    // Speed threshold for settling (practical visible stop)
 #define SETTLE_ACCEL_EPS  0.60f    // Acceleration threshold for settling (must exceed COULOMB)
 #define SETTLE_TIMEOUT_SECONDS 30.0f   // Max simulation time before forced settle (restored for pocket capture)
