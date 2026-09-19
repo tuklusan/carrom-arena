@@ -133,10 +133,10 @@ void test_ICF_Layout_Color_Alternation(void) {
     qsort(notches, 6, sizeof(PieceInfo), compare_piece_info);
 
     for (int i = 0; i < 6; i++) {
-        // We don't know if the first one is W or B, but they must alternate
-        TEST_ASSERT_NOT_EQUAL(inner[i].color, inner[(i + 1) % 6].color);
-        TEST_ASSERT_NOT_EQUAL(tips[i].color, tips[(i + 1) % 6].color);
-        TEST_ASSERT_NOT_EQUAL(notches[i].color, notches[(i + 1) % 6].color);
+        // All rings should now start with PIECE_WHITE when sorted by angle
+        TEST_ASSERT_EQUAL_MESSAGE(i % 2 == 0 ? PIECE_WHITE : PIECE_BLACK, inner[i].color, "Inner ring alternation failed");
+        TEST_ASSERT_EQUAL_MESSAGE(i % 2 == 0 ? PIECE_WHITE : PIECE_BLACK, tips[i].color, "Tips ring alternation failed");
+        TEST_ASSERT_EQUAL_MESSAGE(i % 2 == 0 ? PIECE_WHITE : PIECE_BLACK, notches[i].color, "Notches ring alternation failed");
     }
 }
 
