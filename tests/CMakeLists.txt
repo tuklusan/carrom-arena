@@ -189,6 +189,19 @@ add_test(NAME snapshot_rotation_test COMMAND test_snapshot_rotation)
 set_tests_properties(icf_layout_test PROPERTIES LABELS "unit")
 set_tests_properties(snapshot_rotation_test PROPERTIES LABELS "unit")
 
+# R14d Physics Tests
+add_executable(test_physics_r14d
+    test_physics_r14d.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_physics_r14d)
+target_link_libraries(test_physics_r14d carrom_core box2d ${PLATFORM_LIBS})
+target_include_directories(test_physics_r14d PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME physics_r14d_test COMMAND test_physics_r14d)
+
 # Capture regression test (spawns carrom_arena binary in capture mode)
 # Catches: capture-mode hang (Gap-2 renderer rewrite regression)
 add_executable(test_capture
