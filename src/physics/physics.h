@@ -80,7 +80,8 @@ void physics_get_prev_positions(const PhysicsWorld* pw, Vec2* positions);
 void physics_get_prev_striker_position(const PhysicsWorld* pw, Vec2* pos);
 
 // Get accumulator for interpolation alpha
-float physics_get_accumulator(const PhysicsWorld* pw);
+// Removed as accumulator is now managed in app layer
+// float physics_get_accumulator(const PhysicsWorld* pw);
 
 // Sync physics bodies from board state (initial placement)
 void physics_sync_from_board(PhysicsWorld* pw, const BoardState* board, Seat striker_seat);

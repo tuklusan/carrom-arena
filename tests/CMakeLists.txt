@@ -185,6 +185,22 @@ target_include_directories(test_snapshot_rotation PRIVATE
 )
 add_test(NAME snapshot_rotation_test COMMAND test_snapshot_rotation)
 
+# Test executable for frame timing independence
+add_executable(test_frame_timing
+    test_frame_timing.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+
+apply_test_warnings(test_frame_timing)
+
+target_link_libraries(test_frame_timing carrom_core box2d ${PLATFORM_LIBS})
+target_include_directories(test_frame_timing PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+
+add_test(NAME frame_timing_test COMMAND test_frame_timing)
+
 # Set test labels
 set_tests_properties(icf_layout_test PROPERTIES LABELS "unit")
 set_tests_properties(snapshot_rotation_test PROPERTIES LABELS "unit")

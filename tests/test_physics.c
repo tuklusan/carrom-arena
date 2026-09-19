@@ -120,6 +120,27 @@ void test_physics_place_striker(void) {
     TEST_ASSERT_TRUE(ok);
 }
 
+void test_physics_launch_speed(void) {
+    PhysicsWorld* pw = physics_create();
+    
+    Vec2 placement = {0.0f, BASELINE_Y_NORTH};
+    physics_place_striker(pw, SEAT_NORTH, placement);
+    
+    float power = 0.6f;
+    float expected_speed = power * 5.0f; // MAX_SPEED = 5.0
+    float aim_angle = -M_PI/2.0f;
+    
+    physics_apply_shot(pw, aim_angle, power);
+    
+    // Measure velocity IMMEDIATELY after apply_shot, before any physics_step
+    Vec2 vel;
+    physics_get_striker_velocity(pw, &vel);
+    float actual_speed = math_sqrtf(vel.x * vel.x + vel.y * vel.y);
+    
+    physics_destroy(pw);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, expected_speed, actual_speed);
+}
+
 void test_physics_apply_shot(void) {
     PhysicsWorld* pw = physics_create();
     
@@ -175,12 +196,123 @@ void test_physics_pocket_capture(void) {
     
     // We can't directly manipulate body positions since PhysicsWorld is opaque
     // Instead test that pocket capture works by shooting a piece toward a pocket
-    // This is more of an integration test
     // Just ensure it doesn't crash
     physics_step(pw, PHYSICS_DT);
     
     physics_destroy(pw);
     TEST_ASSERT_TRUE(true);
+}
+
+void test_physics_restitution_low_speed(void) {
+    PhysicsWorld* pw = physics_create();
+    BoardState board;
+    board_state_init(&board);
+    
+    // Place two pieces facing each other
+    board.pieces[0].position = (Vec2){-0.1f, 0.0f};
+    board.pieces[0].velocity = (Vec2){0.5f, 0.0f}; // Low speed: 0.5 units/s
+    board.pieces[0].on_board = true;
+    board.pieces[0].pocketed = false;
+    
+    board.pieces[1].position = (Vec2){0.1f, 0.0f};
+    board.pieces[1].velocity = (Vec2){0.0f, 0.0f};
+    board.pieces[1].on_board = true;
+    board.pieces[1].pocketed = false;
+    
+    board.white_on_board = 2;
+    board.queen_on_board = false;
+    
+    physics_sync_from_board(pw, &board, SEAT_NORTH);
+    
+    // Step until collision and bounce
+    for (int i = 0; i < 200; i++) {
+        physics_step(pw, PHYSICS_DT);
+    }
+    
+    Vec2 positions[MAX_PIECES];
+    physics_get_positions(pw, positions);
+    
+    // If restitution is working at 0.5 units/s, piece 0 should have bounced back
+    // and be to the left of piece 1.
+    bool bounced = (positions[0].x < positions[1].x);
+    
+    physics_destroy(pw);
+    TEST_ASSERT_TRUE_MESSAGE(bounced, "Piece 0 did not bounce back at 0.5 units/s (restitutionThreshold too high)");
+}
+
+void test_physics_tunnelling_high_speed(void) {
+    PhysicsWorld* pw = physics_create();
+    BoardState board;
+    board_state_init(&board);
+    
+    // Place a piece at center
+    board.pieces[0].position = (Vec2){0.0f, 0.0f};
+    board.pieces[0].on_board = true;
+    board.pieces[0].pocketed = false;
+    board.white_on_board = 1;
+    
+    physics_sync_from_board(pw, &board, SEAT_NORTH);
+    
+    // Place striker far away and give it EXTREME velocity
+    Vec2 placement = {-0.4f, 0.0f};
+    physics_place_striker(pw, SEAT_NORTH, placement);
+    
+    // Manually set extreme velocity if we had API, but we use physics_apply_shot
+    // physics_apply_shot limits power to 1.0 * 5.0 = 5.0 units/s.
+    // Let's see if 5.0 units/s is enough to tunnel given PIECE_RADIUS_NORM.
+    physics_apply_shot(pw, 0.0f, 1.0f); // Shot straight East
+    
+    for (int i = 0; i < 200; i++) {
+        physics_step(pw, PHYSICS_DT);
+    }
+    
+    Vec2 s_pos;
+    physics_get_striker_position(pw, &s_pos);
+    
+    // If it tunneled, it would be at x > 0.
+    // If it collided, it should be at x < 0 (or at least not have passed through completely)
+    bool tunneled = (s_pos.x > 0.1f);
+    
+    physics_destroy(pw);
+    TEST_ASSERT_FALSE_MESSAGE(tunneled, "Striker tunneled through piece at high speed");
+}
+
+void test_physics_momentum_transfer(void) {
+    float speeds[] = {0.3f, 1.0f, 3.0f};
+    for (int s = 0; s < 3; s++) {
+        PhysicsWorld* pw = physics_create();
+        BoardState board;
+        board_state_init(&board);
+        
+        board.pieces[0].position = (Vec2){0.0f, 0.0f};
+        board.pieces[0].on_board = true;
+        board.pieces[0].pocketed = false;
+        board.white_on_board = 1;
+        
+        physics_sync_from_board(pw, &board, SEAT_NORTH);
+        
+        // Striker shot head-on
+        Vec2 placement = {-0.2f, 0.0f};
+        physics_place_striker(pw, SEAT_NORTH, placement);
+        
+        // We need a way to set specific speed. physics_apply_shot is power * 5.0.
+        // For 0.3, 1.0, 3.0, we can use power = speed / 5.0.
+        physics_apply_shot(pw, 0.0f, speeds[s] / 5.0f);
+        
+        // Step until collision occurs and resolves
+        for (int i = 0; i < 500; i++) {
+            physics_step(pw, PHYSICS_DT);
+        }
+        
+        Vec2 p_pos[MAX_PIECES];
+        physics_get_positions(pw, p_pos);
+        
+        // Piece 0 should have moved East
+        bool moved = (p_pos[0].x > 0.01f);
+        
+        physics_destroy(pw);
+        TEST_ASSERT_TRUE_MESSAGE(moved, "Piece 0 did not receive momentum transfer");
+    }
 }
 
 void test_physics_snapshot_create_restore(void) {
@@ -298,11 +430,15 @@ int main(void) {
     RUN_TEST(test_physics_accumulator);
     RUN_TEST(test_physics_settling_detection);
     RUN_TEST(test_physics_place_striker);
+    RUN_TEST(test_physics_launch_speed);
     RUN_TEST(test_physics_apply_shot);
     RUN_TEST(test_physics_board_resistance);
     RUN_TEST(test_physics_pocket_capture);
     RUN_TEST(test_physics_snapshot_create_restore);
     RUN_TEST(test_physics_world_from_snapshot);
+    RUN_TEST(test_physics_restitution_low_speed);
+    RUN_TEST(test_physics_tunnelling_high_speed);
+    RUN_TEST(test_physics_momentum_transfer);
     
     return UNITY_END();
 }

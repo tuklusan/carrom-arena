@@ -12,7 +12,6 @@
  * --------------------------------------------------------------------------- */
 struct PhysicsWorld {
     b2WorldId world_id;
-    float accumulator;
     uint64_t step_count;
     int substeps;
     
@@ -63,6 +62,8 @@ PhysicsWorld* physics_create(void) {
     // Box2D world definition
     b2WorldDef world_def = b2DefaultWorldDef();
     world_def.gravity = (b2Vec2){0.0f, 0.0f};  // Top-down, no gravity
+    world_def.restitutionThreshold = 0.05f;
+    world_def.maxContactPushSpeed = 0.3f;
     
     pw->world_id = b2CreateWorld(&world_def);
     if (b2World_IsValid(pw->world_id) == false) {
@@ -79,7 +80,6 @@ PhysicsWorld* physics_create(void) {
     // Create striker
     physics_create_striker(pw);
     
-    pw->accumulator = 0.0f;
     pw->step_count = 0;
     pw->substeps = 0;
     pw->sim_time = 0.0f;
@@ -199,6 +199,7 @@ static void physics_create_striker(PhysicsWorld* pw) {
     body_def.linearDamping = 0.0f;
     body_def.angularDamping = 0.0f;
     body_def.fixedRotation = true;
+    body_def.isBullet = true;
     body_def.position = (b2Vec2){0, 0};
     
     // Striker shape: restitution=0.95, friction=0.1
@@ -216,39 +217,30 @@ static void physics_create_striker(PhysicsWorld* pw) {
  * Fixed Timestep Step
  * --------------------------------------------------------------------------- */
 void physics_step(PhysicsWorld* pw, float dt) {
-    pw->accumulator += dt;
-    pw->substeps = 0;
-    
-    while (pw->accumulator >= PHYSICS_DT && pw->substeps < MAX_SUBSTEPS) {
-        // Store previous positions for render interpolation (before stepping)
-        for (int i = 0; i < MAX_PIECES; i++) {
-            if (!pw->piece_pocketed[i] && b2Body_IsValid(pw->piece_bodies[i])) {
-                b2Vec2 p = b2Body_GetPosition(pw->piece_bodies[i]);
-                pw->prev_piece_positions[i] = (Vec2){ p.x, p.y };
-            }
+    // Store previous positions for render interpolation (before stepping)
+    for (int i = 0; i < MAX_PIECES; i++) {
+        if (!pw->piece_pocketed[i] && b2Body_IsValid(pw->piece_bodies[i])) {
+            b2Vec2 p = b2Body_GetPosition(pw->piece_bodies[i]);
+            pw->prev_piece_positions[i] = (Vec2){ p.x, p.y };
         }
-        if (!pw->striker_pocketed && b2Body_IsValid(pw->striker_body)) {
-            b2Vec2 p = b2Body_GetPosition(pw->striker_body);
-            pw->prev_striker_position = (Vec2){ p.x, p.y };
-        }
-        
-        b2World_Step(pw->world_id, PHYSICS_DT, 4);
-        pw->accumulator -= PHYSICS_DT;
-        pw->step_count++;
-        pw->substeps++;
-        pw->sim_time += PHYSICS_DT;
-        
-        // Apply board resistance after each substep
-        physics_apply_board_resistance(pw);
-        
-        // Check pocket captures using Box2D v3 sensor events
-        physics_check_pocket_events(pw);
-        
-        // Fallback: distance-based pocket detection (safety net for sensor event failures)
-        physics_check_pockets(pw);
+    }
+    if (!pw->striker_pocketed && b2Body_IsValid(pw->striker_body)) {
+        b2Vec2 p = b2Body_GetPosition(pw->striker_body);
+        pw->prev_striker_position = (Vec2){ p.x, p.y };
     }
     
-    pw->substeps = 0;
+    b2World_Step(pw->world_id, dt, 4);
+    pw->step_count++;
+    pw->sim_time += dt;
+    
+    // Apply board resistance after each substep
+    physics_apply_board_resistance(pw);
+    
+    // Check pocket captures using Box2D v3 sensor events
+    physics_check_pocket_events(pw);
+    
+    // Fallback: distance-based pocket detection (safety net for sensor event failures)
+    physics_check_pockets(pw);
 }
 
 /* -----------------------------------------------------------------------------
@@ -538,6 +530,7 @@ void physics_place_striker(PhysicsWorld* pw, Seat seat, Vec2 placement) {
         body_def.linearDamping = 0.0f;
         body_def.angularDamping = 0.0f;
         body_def.fixedRotation = true;
+        body_def.isBullet = true;
         body_def.position = (b2Vec2){placement.x, placement.y};
         
         b2ShapeDef shape_def = physics_make_shape_def(0.95f, 0.1f);
@@ -560,8 +553,7 @@ void physics_apply_shot(PhysicsWorld* pw, float aim_angle, float power) {
     float speed = power * MAX_SPEED;
     
     Vec2 dir = math_vec2_from_angle(aim_angle);
-    Vec2 impulse = vec2_mul(dir, speed);
-    b2Body_ApplyLinearImpulseToCenter(pw->striker_body, (b2Vec2){impulse.x, impulse.y}, true);
+    b2Body_SetLinearVelocity(pw->striker_body, (b2Vec2){dir.x * speed, dir.y * speed});
 }
 
 /* -----------------------------------------------------------------------------
@@ -689,7 +681,7 @@ void physics_sync_from_board(PhysicsWorld* pw, const BoardState* board, Seat str
                 b2Body_SetTransform(pw->piece_bodies[i], 
                     (b2Vec2){ board->pieces[i].position.x, board->pieces[i].position.y },
                     b2Rot_identity);
-                b2Body_SetLinearVelocity(pw->piece_bodies[i], (b2Vec2){ 0, 0 });
+                b2Body_SetLinearVelocity(pw->piece_bodies[i], (b2Vec2){ board->pieces[i].velocity.x, board->pieces[i].velocity.y });
                 b2Body_SetAwake(pw->piece_bodies[i], true);
             }
             pw->piece_pocketed[i] = false;
@@ -765,5 +757,5 @@ void physics_get_striker_velocity(const PhysicsWorld* pw, Vec2* vel) {
 }
 
 float physics_get_accumulator(const PhysicsWorld* pw) {
-    return pw->accumulator;
+    return 0.0f; // Deprecated: accumulator now managed in app layer
 }
