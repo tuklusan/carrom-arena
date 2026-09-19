@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include "common/vecmath.h"
 #include "physics.h"
 #include "types.h"
 
@@ -21,6 +22,9 @@ struct PhysicsWorld {
     b2BodyId cushion_bodies[4];
     b2BodyId pocket_sensors[4];
     
+    // Piece colors for pocketing (must match board->pieces[i].color)
+    PieceColor piece_colors[MAX_PIECES];
+
     // Pocketed tracking
     bool piece_pocketed[MAX_PIECES];
     bool striker_pocketed;
@@ -185,6 +189,7 @@ static void physics_create_pieces(PhysicsWorld* pw) {
         pw->piece_bodies[i] = b2CreateBody(pw->world_id, &body_def);
         b2CreateCircleShape(pw->piece_bodies[i], &shape_def, &circle);
         pw->piece_pocketed[i] = false;
+        pw->piece_colors[i] = PIECE_WHITE; // Default, will be overwritten by sync_from_board
     }
 }
 
@@ -340,10 +345,9 @@ static void physics_check_pocket_events(PhysicsWorld* pw) {
                 
                 if (p == QUEEN_ID) {
                     pw->pocketed_colors[pw->pocketed_count] = PIECE_QUEEN;
-                } else if (p < 9) {
-                    pw->pocketed_colors[pw->pocketed_count] = PIECE_WHITE;
                 } else {
-                    pw->pocketed_colors[pw->pocketed_count] = PIECE_BLACK;
+                    // Use the color stored in the physics world
+                    pw->pocketed_colors[pw->pocketed_count] = pw->piece_colors[p];
                 }
                 pw->pocketed_count++;
                 
@@ -440,10 +444,8 @@ static void physics_check_pockets(PhysicsWorld* pw) {
                     
                     if (i == QUEEN_ID) {
                         pw->pocketed_colors[pw->pocketed_count] = PIECE_QUEEN;
-                    } else if (i < 9) {
-                        pw->pocketed_colors[pw->pocketed_count] = PIECE_WHITE;
                     } else {
-                        pw->pocketed_colors[pw->pocketed_count] = PIECE_BLACK;
+                        pw->pocketed_colors[pw->pocketed_count] = pw->piece_colors[i];
                     }
                     pw->pocketed_count++;
                     
@@ -681,6 +683,7 @@ void physics_get_striker_position(const PhysicsWorld* pw, Vec2* pos) {
 void physics_sync_from_board(PhysicsWorld* pw, const BoardState* board, Seat striker_seat) {
     // Sync all pieces
     for (int i = 0; i < MAX_PIECES; i++) {
+        pw->piece_colors[i] = board->pieces[i].color;
         if (board->pieces[i].on_board && !board->pieces[i].pocketed) {
             if (b2Body_IsValid(pw->piece_bodies[i])) {
                 b2Body_SetTransform(pw->piece_bodies[i], 
