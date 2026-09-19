@@ -338,3 +338,4 @@ Aggregate audit of the codebase to ensure physics fidelity, stability, and archi
 | AI-03 | Deferred | Moved to next pass per directive. |
 | RND-* | Deferred | Moved to next pass per directive. |
 | ID-04 | Deferred | Moved to next pass per directive. |
+R14b3 Corrective Pass completed: ICF layout fixed, math header conflict resolved, physics coloring synced. All tests passed.
