@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/sanyalnet/SOFTWARE-DEVELOPMENT/carrom/build_release_noasan/_deps/unity-subbuild/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

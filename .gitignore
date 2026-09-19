@@ -32,9 +32,10 @@ yarn-debug.log*
 coverage/
 .nyc_output/
 # Operator-run artefacts (kimi + local build trees)
-build_asan/
-build_rel/
-build_release/
+build*/
+carrom_capture_test_*/
+Testing/
+wip_*.patch
 .kimi_run/
 traces/
 captures/
