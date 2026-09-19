@@ -295,7 +295,18 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
             ctx->thinking_min_wall += platform_time_now();
             break;
         case TURN_BOARD_OVER:
-            // match_start_board will set PHASE_THINKING for new board
+            // Set to THINKING for the new board immediately to avoid a frame hole
+            ctx->game.phase = PHASE_THINKING;
+            ctx->thinking_phase_active = true;
+            ctx->thinking_timer = 0.0;
+            ctx->candidates_evaluated = 0;
+            ctx->pending_shot_valid = false;
+            
+            // Set minimum thinking time for new board visualization
+            double budget_sec_new = (ctx->config.ai_budget_ms > 0) ? (ctx->config.ai_budget_ms / 1000.0) : 0.15;
+            ctx->thinking_min_wall = budget_sec_new * 0.2;
+            if (ctx->thinking_min_wall < 0.5) ctx->thinking_min_wall = 0.5; 
+            ctx->thinking_min_wall += platform_time_now();
             break;
         case TURN_GAME_OVER:
         case TURN_MATCH_OVER:

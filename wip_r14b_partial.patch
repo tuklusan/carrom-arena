@@ -1,0 +1,436 @@
+diff --git a/src/ai/shot_candidates.c b/src/ai/shot_candidates.c
+index 806c2c0..0225125 100644
+--- a/src/ai/shot_candidates.c
++++ b/src/ai/shot_candidates.c
+@@ -35,7 +35,7 @@ int shot_candidates_tactical(const DecisionSnapshot* snap, Vec2 placement, ShotC
+     Team team = (seat == SEAT_NORTH || seat == SEAT_SOUTH) ? TEAM_WHITE : TEAM_BLACK;
+     
+     // Find target pieces (own color)
+-    Vec2 targets[19];
++    Vec2 targets[MAX_PIECES];
+     int target_count = 0;
+     for (int i = 0; i < MAX_PIECES; i++) {
+         if (board->pieces[i].on_board && board->pieces[i].color == (team == TEAM_WHITE ? PIECE_WHITE : PIECE_BLACK)) {
+@@ -299,6 +299,7 @@ int shot_candidates_variants(const DecisionSnapshot* snap, ShotCandidate* base,
+             count++;
+         }
+     }
++
+     
+     return count;
+ }
+diff --git a/src/game/board.c b/src/game/board.c
+index d64ae14..f8ac891 100644
+--- a/src/game/board.c
++++ b/src/game/board.c
+@@ -3,6 +3,7 @@
+ #include "math.h"
+ #include <stdlib.h>
+ #include <string.h>
++#include <math.h>
+ 
+ /* -----------------------------------------------------------------------------
+  * Board State Initialization
+@@ -55,34 +56,12 @@ void striker_state_init(StrikerState* striker, Seat seat) {
+ /* -----------------------------------------------------------------------------
+  * Initial Piece Formation (Center Circle)
+  * --------------------------------------------------------------------------- */
+-#define INITIAL_RADIUS 0.08f  // Radius of center circle formation
+-#define QUEEN_CENTER_OFFSET 0.0f  // Queen at exact center
+-
+-static const Vec2 INITIAL_POSITIONS_WHITE[9] = {
+-    { 0.00f,  0.00f },  // Will be replaced by queen
+-    {  INITIAL_RADIUS,  0.00f },
+-    { -INITIAL_RADIUS,  0.00f },
+-    {  0.00f,  INITIAL_RADIUS },
+-    {  0.00f, -INITIAL_RADIUS },
+-    {  INITIAL_RADIUS * 0.707f,  INITIAL_RADIUS * 0.707f },
+-    { -INITIAL_RADIUS * 0.707f,  INITIAL_RADIUS * 0.707f },
+-    {  INITIAL_RADIUS * 0.707f, -INITIAL_RADIUS * 0.707f },
+-    { -INITIAL_RADIUS * 0.707f, -INITIAL_RADIUS * 0.707f }
+-};
+-
+-static const Vec2 INITIAL_POSITIONS_BLACK[9] = {
+-    {  INITIAL_RADIUS * 1.5f,  0.00f },
+-    { -INITIAL_RADIUS * 1.5f,  0.00f },
+-    {  0.00f,  INITIAL_RADIUS * 1.5f },
+-    {  0.00f, -INITIAL_RADIUS * 1.5f },
+-    {  INITIAL_RADIUS * 1.06f,  INITIAL_RADIUS * 1.06f },
+-    { -INITIAL_RADIUS * 1.06f,  INITIAL_RADIUS * 1.06f },
+-    {  INITIAL_RADIUS * 1.06f, -INITIAL_RADIUS * 1.06f },
+-    { -INITIAL_RADIUS * 1.06f, -INITIAL_RADIUS * 1.06f },
+-    {  0.00f,  0.00f }  // Placeholder
+-};
++#define INNER_RING_RADIUS 0.04f
++#define OUTER_RING_RADIUS 0.08f
+ 
+ void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
++    (void)rng;
++
+     // Place queen at center
+     board->pieces[QUEEN_ID].position = (Vec2){0.0f, 0.0f};
+     board->pieces[QUEEN_ID].velocity = (Vec2){0.0f, 0.0f};
+@@ -91,31 +70,43 @@ void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
+     board->pieces[QUEEN_ID].pocketed_position = (Vec2){0, 0};
+     board->pieces[QUEEN_ID].pocket_index = 255;
+     board->queen_on_board = true;
+-    
+-    // Place white pieces (IDs 0-8)
+-    for (int i = 0; i < 9; i++) {
+-        board->pieces[i].position = INITIAL_POSITIONS_WHITE[i];
+-        board->pieces[i].velocity = (Vec2){0.0f, 0.0f};
+-        board->pieces[i].on_board = true;
+-        board->pieces[i].pocketed = false;
+-        board->pieces[i].pocketed_position = (Vec2){0, 0};
+-        board->pieces[i].pocket_index = 255;
++
++    // Inner Ring: 6 pieces (alternating White/Black)
++    // IDs 0-5: 0,2,4 = White; 1,3,5 = Black
++    for (int i = 0; i < 6; i++) {
++        float angle = (float)i * (M_PI / 3.0f);
++        Vec2 pos = { INNER_RING_RADIUS * cosf(angle), INNER_RING_RADIUS * sinf(angle) };
++        
++        int piece_id = i;
++        PieceColor color = (i % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
++        
++        board->pieces[piece_id].position = pos;
++        board->pieces[piece_id].velocity = (Vec2){0.0f, 0.0f};
++        board->pieces[piece_id].on_board = true;
++        board->pieces[piece_id].pocketed = false;
++        board->pieces[piece_id].pocketed_position = (Vec2){0, 0};
++        board->pieces[piece_id].pocket_index = 255;
++        board->pieces[piece_id].color = color;
+     }
+-    // Fix: white piece 0 should not be at center (queen is there)
+-    // Shift it slightly
+-    board->pieces[0].position = (Vec2){ INITIAL_RADIUS * 0.5f, INITIAL_RADIUS * 0.5f };
+-    
+-    // Place black pieces (IDs 9-17)
+-    for (int i = 9; i < 18; i++) {
+-        int idx = i - 9;
+-        board->pieces[i].position = INITIAL_POSITIONS_BLACK[idx];
+-        board->pieces[i].velocity = (Vec2){0.0f, 0.0f};
+-        board->pieces[i].on_board = true;
+-        board->pieces[i].pocketed = false;
+-        board->pieces[i].pocketed_position = (Vec2){0, 0};
+-        board->pieces[i].pocket_index = 255;
++
++    // Outer Ring: 12 pieces (alternating White/Black)
++    // IDs 6-17: 6,8... = White; 7,9... = Black
++    for (int i = 0; i < 12; i++) {
++        float angle = (float)i * (M_PI / 6.0f);
++        Vec2 pos = { OUTER_RING_RADIUS * cosf(angle), OUTER_RING_RADIUS * sinf(angle) };
++        
++        int piece_id = i + 6;
++        PieceColor color = (i % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
++        
++        board->pieces[piece_id].position = pos;
++        board->pieces[piece_id].velocity = (Vec2){0.0f, 0.0f};
++        board->pieces[piece_id].on_board = true;
++        board->pieces[piece_id].pocketed = false;
++        board->pieces[piece_id].pocketed_position = (Vec2){0, 0};
++        board->pieces[piece_id].pocket_index = 255;
++        board->pieces[piece_id].color = color;
+     }
+-    
++
+     board->white_on_board = 9;
+     board->black_on_board = 9;
+     board->queen_state = QUEEN_STATE_ON_BOARD;
+diff --git a/src/game/rules.c b/src/game/rules.c
+index d886c0d..6d656de 100644
+--- a/src/game/rules.c
++++ b/src/game/rules.c
+@@ -72,7 +72,7 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
+     int black_pocketed = 0;
+     bool queen_pocketed = facts->queen_pocketed;
+     
+-    for (int i = 0; i < facts->pocketed_count; i++) {
++    for (int i = 0; i < facts->pocketed_count && i < MAX_PIECES; i++) {
+         if (facts->pocketed_colors[i] == PIECE_WHITE) white_pocketed++;
+         else if (facts->pocketed_colors[i] == PIECE_BLACK) black_pocketed++;
+     }
+@@ -228,8 +228,7 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
+     game->scores.white += white_score_delta;
+     game->scores.black += black_score_delta;
+     
+-    // Pocket events for regular pieces
+-    for (int i = 0; i < facts->pocketed_count; i++) {
++    for (int i = 0; i < facts->pocketed_count && i < MAX_PIECES; i++) {
+         if (outcome.event_count < 16) {
+             outcome.events[outcome.event_count++] = (GameEvent){
+                 .type = EVENT_POCKET,
+diff --git a/src/physics/physics_snapshot.c b/src/physics/physics_snapshot.c
+index f299bec..af3b577 100644
+--- a/src/physics/physics_snapshot.c
++++ b/src/physics/physics_snapshot.c
+@@ -91,7 +91,7 @@ void physics_snapshot_restore(PhysicsWorld* pw, const PhysicsSnapshot* snap) {
+         if (b2Body_IsValid(pw->piece_bodies[i]) && !snap->pieces[i].pocketed) {
+             b2Body_SetTransform(pw->piece_bodies[i], 
+                 (b2Vec2){ snap->pieces[i].position.x, snap->pieces[i].position.y },
+-                (b2Rot){ cosf(snap->pieces[i].angle * 0.5f), sinf(snap->pieces[i].angle * 0.5f) });
++                (b2Rot){ cosf(snap->pieces[i].angle), sinf(snap->pieces[i].angle) });
+             b2Body_SetLinearVelocity(pw->piece_bodies[i], 
+                 (b2Vec2){ snap->pieces[i].velocity.x, snap->pieces[i].velocity.y });
+             b2Body_SetAngularVelocity(pw->piece_bodies[i], snap->pieces[i].angular_velocity);
+@@ -106,7 +106,7 @@ void physics_snapshot_restore(PhysicsWorld* pw, const PhysicsSnapshot* snap) {
+     if (b2Body_IsValid(pw->striker_body) && !snap->striker.pocketed) {
+         b2Body_SetTransform(pw->striker_body,
+             (b2Vec2){ snap->striker.position.x, snap->striker.position.y },
+-            (b2Rot){ cosf(snap->striker.angle * 0.5f), sinf(snap->striker.angle * 0.5f) });
++            (b2Rot){ cosf(snap->striker.angle), sinf(snap->striker.angle) });
+         b2Body_SetLinearVelocity(pw->striker_body,
+             (b2Vec2){ snap->striker.velocity.x, snap->striker.velocity.y });
+         b2Body_SetAngularVelocity(pw->striker_body, snap->striker.angular_velocity);
+diff --git a/src/telemetry/replay.c b/src/telemetry/replay.c
+index d763211..85fac58 100644
+--- a/src/telemetry/replay.c
++++ b/src/telemetry/replay.c
+@@ -81,12 +81,12 @@ int trace_replay_and_verify(const char* trace_file, uint64_t seed) {
+         Controller* controller = arena_controller_create(seat, profile, &rng.streams[seat]);
+         
+         ShotPlan plan = controller_decide(controller, &snap, &rng.streams[seat]);
+-        controller_destroy(controller);
+         
+         // Validate and execute
+         if (!match_validate_shot(&game, &plan)) {
+             plan = controller_fallback_shot(controller, &snap, &rng.streams[seat]);
+         }
++        controller_destroy(controller);
+         
+         physics_place_striker(physics, seat, plan.placement);
+         physics_apply_shot(physics, plan.aim_angle, plan.power);
+diff --git a/src/telemetry/trace.c b/src/telemetry/trace.c
+index 43e4124..2bffa16 100644
+--- a/src/telemetry/trace.c
++++ b/src/telemetry/trace.c
+@@ -7,6 +7,7 @@
+ #include <string.h>
+ #include <time.h>
+ #include <inttypes.h>
++#include <math.h>
+ 
+ /* -----------------------------------------------------------------------------
+  * Internal Structures
+@@ -549,7 +550,13 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
+         return arr;
+     }
+     
+-    /* Read entire data area - TRACE_MAX_SIZE is compile-time constant (8 MiB), fits in size_t */
++    /* Determine if wrapped by checking file size */
++    fseek(f, 0, SEEK_END);
++    long actual_file_size = ftell(f);
++    bool is_wrapped = (actual_file_size >= (long)(TRACE_INDEX_SIZE + TRACE_MAX_SIZE));
++    
++    /* Read entire data area */
++    fseek(f, TRACE_INDEX_SIZE, SEEK_SET);
+     char* data = malloc(TRACE_MAX_SIZE);
+     if (!data) {
+         fclose(f);
+@@ -558,8 +565,6 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
+         arr.capacity = 0;
+         return arr;
+     }
+-    
+-    fseek(f, TRACE_INDEX_SIZE, SEEK_SET);
+     size_t read_bytes = fread(data, 1, TRACE_MAX_SIZE, f);
+     fclose(f);
+     
+@@ -571,74 +576,95 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
+         return arr;
+     }
+     
+-    /* Determine valid data range - for non-wrapped files, valid data ends at write_offset */
+-    /* For wrapped files, valid data wraps around. For simplicity, we scan the entire */
+-    /* read buffer but the zero-filled portion has no newlines so won't create false lines. */
+-    (void)write_offset;
+-    
+-    /* First pass: count actual number of lines */
++    /* Create a linear buffer of the logical data */
++    char* logical_buf = malloc(TRACE_MAX_SIZE + 1);
++    if (!logical_buf) {
++        free(data);
++        free(arr.lines);
++        arr.lines = NULL;
++        arr.capacity = 0;
++        return arr;
++    }
++
++    size_t logical_data_len = 0;
++    if (is_wrapped) {
++        size_t part1_len = TRACE_MAX_SIZE - write_offset;
++        memcpy(logical_buf, data + write_offset, part1_len);
++        memcpy(logical_buf + part1_len, data, write_offset);
++        logical_data_len = TRACE_MAX_SIZE;
++    } else {
++        memcpy(logical_buf, data, write_offset);
++        logical_data_len = write_offset;
++    }
++    logical_buf[logical_data_len] = '\0';
++
++    /* Now extract last N lines from the linear logical_buf */
+     size_t line_count = 0;
+-    for (size_t i = 0; i < read_bytes; i++) {
+-        if (data[i] == '\n') {
++    for (size_t i = 0; i < logical_data_len; i++) {
++        if (logical_buf[i] == '\n') {
+             line_count++;
+         }
+     }
+     
+-    /* We need line_count + 1 entries to include position 0 as first line start */
+     size_t line_starts_capacity = line_count + 1;
+-    
+-    /* Integer overflow check for line_starts allocation */
+     if (line_starts_capacity > 0 && sizeof(size_t) > SIZE_MAX / line_starts_capacity) {
+         free(data);
++        free(logical_buf);
+         free(arr.lines);
+         arr.lines = NULL;
+         arr.capacity = 0;
+         return arr;
+     }
+     
+-    /* Allocate line_starts array with exact size needed (includes position 0) */
+     size_t* line_starts = calloc(line_starts_capacity, sizeof(size_t));
+     if (!line_starts) {
+         free(data);
++        free(logical_buf);
+         free(arr.lines);
+         arr.lines = NULL;
+         arr.capacity = 0;
+         return arr;
+     }
+     
+-    /* Fill in line start positions: position 0, then after each newline */
+     line_starts[0] = 0;
+     size_t current_line = 1;
+-    for (size_t i = 0; i < read_bytes && current_line < line_starts_capacity; i++) {
+-        if (data[i] == '\n') {
+-            line_starts[current_line++] = i + 1;  /* Next char after newline */
++    for (size_t i = 0; i < logical_data_len && current_line < line_starts_capacity; i++) {
++        if (logical_buf[i] == '\n') {
++            line_starts[current_line++] = i + 1;
+         }
+     }
+-    /* total_lines = number of valid lines = number of newlines (line_count) */
+-    /* The last line_start (at index line_count) points to after the last newline, */
+-    /* which is end of valid data - not a real line with content */
+     size_t total_lines = line_count;
+     
+-    /* Now extract last N lines in logical order (oldest first) */
+-    /* Lines are indexed 0..total_lines-1, where line 0 starts at position 0 */
+-    size_t lines_to_read = (total_lines > max_records) ? max_records : total_lines;
+-    size_t start_idx = (total_lines > lines_to_read) ? total_lines - lines_to_read : 0;
+-    
++    /* Determine range of complete lines */
++    size_t start_line_idx = is_wrapped ? 1 : 0;
++    /* If wrapped, the first segment [0, nl[0]] is a fragment of the newest record.
++       Wait, if wrapped, the logical buffer is [write_offset, END] then [0, write_offset].
++       The first segment [0, nl[0]] in logical_buf is the start of the oldest record.
++       But that record was partially overwritten by the newest record.
++       Actually, the record that ends at write_offset is the newest.
++       The record that starts at write_offset is the oldest.
++       If write_offset is not at a record boundary, the first segment is a fragment.
++       Similarly, the last segment (after the last newline) is a fragment. */
++    
++    size_t lines_to_read = (total_lines >= start_line_idx) ? (total_lines - start_line_idx) : 0;
++    if (lines_to_read > max_records) lines_to_read = max_records;
++    
++    size_t actual_start_idx = (total_lines > (start_line_idx + lines_to_read)) ? (total_lines - (start_line_idx + lines_to_read)) : start_line_idx;
++    if (actual_start_idx < start_line_idx) actual_start_idx = start_line_idx;
++
+     bool allocation_failed = false;
+-    for (size_t i = start_idx; i < total_lines && arr.count < arr.capacity; i++) {
++    for (size_t i = actual_start_idx; i < total_lines && arr.count < arr.capacity; i++) {
+         size_t line_start = line_starts[i];
+-        size_t line_end = (i + 1 < total_lines) ? line_starts[i + 1] - 1 : read_bytes;
++        size_t line_end = (i + 1 < total_lines) ? line_starts[i + 1] - 1 : logical_data_len;
+         
+-        if (line_end > read_bytes) line_end = read_bytes;
++        if (line_end > logical_data_len) line_end = logical_data_len;
+         if (line_start >= line_end) continue;
+         
+         size_t line_len = line_end - line_start;
+         if (line_len == 0) continue;
+         
+-        /* Skip comment lines */
+-        if (data[line_start] == '#') continue;
++        if (logical_buf[line_start] == '#') continue;
+         
+-        /* Integer overflow check for line allocation */
+         if (line_len > SIZE_MAX - 1) {
+             allocation_failed = true;
+             break;
+@@ -649,13 +675,12 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
+             break;
+         }
+         
+-        memcpy(line, data + line_start, line_len);
++        memcpy(line, logical_buf + line_start, line_len);
+         line[line_len] = '\0';
+         
+         arr.lines[arr.count++] = line;
+     }
+     
+-    /* If allocation failed partway, clean up partially allocated lines and the lines array */
+     if (allocation_failed) {
+         for (size_t i = 0; i < arr.count; i++) {
+             free(arr.lines[i]);
+@@ -669,6 +694,7 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
+     
+     free(line_starts);
+     free(data);
++    free(logical_buf);
+     return arr;
+ }
+ 
+diff --git a/tests/test_trace_circular.c b/tests/test_trace_circular.c
+index edfffd3..9c345e7 100644
+--- a/tests/test_trace_circular.c
++++ b/tests/test_trace_circular.c
+@@ -230,7 +230,8 @@ void test_trace_wrap_preserves_recent_data(void) {
+     MatchState match;
+     GameState game;
+     
+-    /* Write enough to force wrap */
++    /* Write enough to force wrap. Each shot is ~500-1000 bytes. 
++       8MiB / 500B = 16000. 20000 should wrap. */
+     const int NUM_SHOTS = 20000;
+     for (int i = 1; i <= NUM_SHOTS; i++) {
+         create_dummy_shot_data(&plan, &result, &outcome, &match, &game, i);
+@@ -241,20 +242,24 @@ void test_trace_wrap_preserves_recent_data(void) {
+     trace_flush(writer);
+     trace_close(writer);
+     
+-    /* Read last 100 records - should be from the end of the sequence */
+-    TraceRecordArray arr = trace_read_last_records(test_trace_path, 100);
+-    TEST_ASSERT_GREATER_THAN(0, arr.count);
++    /* Read last 10 records - should be exactly the last 10 shots in order */
++    TraceRecordArray arr = trace_read_last_records(test_trace_path, 10);
++    TEST_ASSERT_EQUAL_INT(10, arr.count);
++    
++    /* The last record in the array should be the very last shot written (shot 20000) */
++    /* We check if the last record contains "20000" */
++    TEST_ASSERT_NOT_NULL(strstr(arr.lines[arr.count - 1], "20000"));
+     
+-    /* Verify shot numbers are from the end of our sequence */
+-    bool found_high_numbers = false;
++    /* Verify logical order: each subsequent record should have a higher shot number */
++    int last_shot_num = -1;
+     for (size_t i = 0; i < arr.count; i++) {
+-        /* Look for shot numbers near NUM_SHOTS */
+-        if (strstr(arr.lines[i], "199") || strstr(arr.lines[i], "2000")) {
+-            found_high_numbers = true;
+-            break;
++        char* shot_num_ptr = strstr(arr.lines[i], "\"shot_number\":");
++        if (shot_num_ptr) {
++            int current_shot_num = atoi(shot_num_ptr + 14);
++            TEST_ASSERT_TRUE(current_shot_num > last_shot_num);
++            last_shot_num = current_shot_num;
+         }
+     }
+-    TEST_ASSERT_TRUE(found_high_numbers);
+     
+     trace_record_array_free(&arr);
+ }

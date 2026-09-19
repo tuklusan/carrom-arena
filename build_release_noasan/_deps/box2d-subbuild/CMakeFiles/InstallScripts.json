@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/sanyalnet/SOFTWARE-DEVELOPMENT/carrom/build_release_noasan/_deps/box2d-subbuild/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

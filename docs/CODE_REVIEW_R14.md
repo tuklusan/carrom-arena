@@ -317,3 +317,24 @@ Aggregate audit of the codebase to ensure physics fidelity, stability, and archi
    - Fix [RND-01, RND-02] Code duplication in Renderer.
    - Fix [RND-03, RND-04, RND-05] Render precision and waste.
    - Fix [PH-03] Actual acceleration measurement.
+
+## Operator Disposition (R14b)
+
+| Finding | Status | Evidence/Rationale |
+| :--- | :--- | :--- |
+| GL-001 | Rejected | Normalized radii match ICF spec on 74cm board: Piece 0.0216, Striker 0.028, Pocket 0.030. |
+| GL-002 | Fixed | Replaced manual tables with generated ICF ring formation; verified by tests. |
+| PH-01 | Fixed | Removed 0.5f multiplier in snapshot restore; rotation now reconstructs exactly. |
+| TEL-04 | Fixed | Moved controller_destroy after fallback path in replay.c. |
+| TEL-01/02| Fixed | Implemented logical buffer linearization and tail-zeroing in trace.c. |
+| TEL-03 | Fixed | Replaced strcat with snprintf/length checks in telemetry JSON. |
+| AI-02/04 | Fixed | Sized targets array with MAX_PIECES and clamped max_variants. |
+| MA-04 | Fixed | Implemented board_sync_from_physics to map snapshot to board state. |
+| DEF-005 | Fixed | Eliminated phase gap; transition to PHASE_THINKING is now immediate. |
+| ID-01/02/03| Fixed | Replaced stubs with real pocketing/striker baseline assertions. |
+| AI-01 | Not-a-Defect| Verified RNG snapshot/restore does not break trace determinism. |
+| PH-02/03 | Deferred | Moved to next pass per directive. |
+| DEF-001-04| Deferred | Moved to next pass per directive. |
+| AI-03 | Deferred | Moved to next pass per directive. |
+| RND-* | Deferred | Moved to next pass per directive. |
+| ID-04 | Deferred | Moved to next pass per directive. |

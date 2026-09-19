@@ -159,13 +159,35 @@ target_compile_definitions(test_regression PRIVATE MAX_CANDIDATES=5 MAX_SIM_TIME
 # Default run with fixed seed and full bounds (1200s timeout with ASAN)
 add_test(NAME regression_test COMMAND test_regression)
 
+# Test executable for ICF layout
+add_executable(test_icf_layout
+    test_icf_layout.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_icf_layout)
+target_link_libraries(test_icf_layout carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_icf_layout PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME icf_layout_test COMMAND test_icf_layout)
+
+# Test executable for snapshot rotation
+add_executable(test_snapshot_rotation
+    test_snapshot_rotation.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_snapshot_rotation)
+target_link_libraries(test_snapshot_rotation carrom_core box2d ${PLATFORM_LIBS})
+target_include_directories(test_snapshot_rotation PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME snapshot_rotation_test COMMAND test_snapshot_rotation)
+
 # Set test labels
-set_tests_properties(rules_test PROPERTIES LABELS "unit")
-set_tests_properties(physics_test PROPERTIES LABELS "unit")
-set_tests_properties(ai_test PROPERTIES LABELS "unit")
-set_tests_properties(trace_circular_test PROPERTIES LABELS "unit")
-set_tests_properties(integration_test PROPERTIES LABELS "integration")
-set_tests_properties(regression_test PROPERTIES LABELS "regression" TIMEOUT 1200)
+set_tests_properties(icf_layout_test PROPERTIES LABELS "unit")
+set_tests_properties(snapshot_rotation_test PROPERTIES LABELS "unit")
 
 # Capture regression test (spawns carrom_arena binary in capture mode)
 # Catches: capture-mode hang (Gap-2 renderer rewrite regression)

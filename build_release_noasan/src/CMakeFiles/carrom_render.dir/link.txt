@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcarrom_render.a CMakeFiles/carrom_render.dir/render/renderer.c.o CMakeFiles/carrom_render.dir/render/board_view.c.o CMakeFiles/carrom_render.dir/render/hud.c.o CMakeFiles/carrom_render.dir/render/effects.c.o
+/usr/bin/ranlib libcarrom_render.a

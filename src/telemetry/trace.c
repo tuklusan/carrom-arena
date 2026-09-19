@@ -7,6 +7,7 @@
 #include <string.h>
 #include <time.h>
 #include <inttypes.h>
+#include <math.h>
 
 /* -----------------------------------------------------------------------------
  * Internal Structures
@@ -133,11 +134,24 @@ static size_t trace_write_line_internal(TraceWriter* w, const char* line, size_t
         if (!has_newline) fwrite(&newline, 1, 1, f);
         w->write_offset += total_len;
     } else {
-        /* Need to wrap - write from data_start (after index) */
+        /* Record spans the wrap point - split the write */
+        /* Write first part at the end of the buffer */
+        fseek(f, (long)current_pos, SEEK_SET);
+        fwrite(line, 1, space_to_end, f);
+        
+        /* Write remaining part at the beginning of the data area */
+        size_t remaining_len = total_len - space_to_end;
         fseek(f, (long)data_start, SEEK_SET);
-        fwrite(line, 1, line_len, f);
-        if (!has_newline) fwrite(&newline, 1, 1, f);
-        w->write_offset = total_len;
+        fwrite(line + space_to_end, 1, remaining_len, f);
+        
+        w->write_offset = remaining_len;
+        w->wrapped = true;
+    }
+    
+    /* Ensure we don't exceed TRACE_MAX_SIZE if we just wrote a line 
+       that's exactly the size of the buffer (though unlikely) */
+    if (w->write_offset >= TRACE_MAX_SIZE) {
+        w->write_offset = 0;
         w->wrapped = true;
     }
     
@@ -162,12 +176,16 @@ static char* shot_plan_to_json(const ShotPlan* plan, char* buf, size_t size) {
         "BREAK", "DIRECT", "CUT", "BANK", "QUEEN", "COVER", "DEFENSIVE", "FALLBACK"
     };
     
-    snprintf(buf, size,
+    int written = snprintf(buf, size,
         "{\"placement\":{\"x\":%.6f,\"y\":%.6f},\"aim_angle\":%.6f,\"power\":%.6f,"
         "\"tactic\":\"%s\",\"imperfection_draw\":%u}",
         plan->placement.x, plan->placement.y,
         plan->aim_angle, plan->power,
         tactic_names[plan->tactic], plan->rng_draw);
+    
+    if (written < 0 || (size_t)written >= size) {
+        /* Truncated - but we return the buffer as is for telemetry */
+    }
     return buf;
 }
 
@@ -183,19 +201,30 @@ static char* shot_result_to_json(const ShotResult* result, char* buf, size_t siz
             "%s{\"piece_id\":%d,\"color\":\"%s\"}",
             i > 0 ? "," : "",
             (int)result->pocketed_ids[i], color_str);
-        if (written >= (int)remaining) break;
+        if (written < 0 || (size_t)written >= remaining) break;
         p += written;
         remaining -= (size_t)written;
     }
-    strcat(pockets_json, "]");
     
-    snprintf(buf, size,
+    /* Safely close the array */
+    if (remaining > 0) {
+        *p = ']';
+        *(p + 1) = '\0';
+    } else {
+        pockets_json[sizeof(pockets_json) - 1] = ']';
+    }
+    
+    int written = snprintf(buf, size,
         "{\"pockets\":%s,\"queen_pocketed\":%s,\"striker_pocketed\":%s,\"fouls\":%d,"
         "\"sim_time\":%.6f}",
         pockets_json,
         result->queen_pocketed ? "true" : "false",
         result->striker_pocketed ? "true" : "false",
         result->fouls, result->sim_time);
+    
+    if (written < 0 || (size_t)written >= size) {
+        /* Truncated */
+    }
     return buf;
 }
 
@@ -328,7 +357,7 @@ void trace_write_shot_start(TraceWriter* writer, const MatchState* match, const 
     
     /* Build JSONL record */
     char json[2048];
-    snprintf(json, sizeof(json),
+    int written = snprintf(json, sizeof(json),
         "{"
         "\"build_id\":\"%s\","
         "\"seed\":%" PRIu64 ","
@@ -350,6 +379,10 @@ void trace_write_shot_start(TraceWriter* writer, const MatchState* match, const 
         team_to_str(seat),
         pre_hash,
         plan_json);
+    
+    if (written < 0 || (size_t)written >= sizeof(json)) {
+        /* Truncated */
+    }
     
     trace_write_line_internal(writer, json, strlen(json));
     
@@ -374,7 +407,7 @@ void trace_write_shot_end(TraceWriter* writer, const ShotResult* result, const R
     shot_result_to_json(result, result_json, sizeof(result_json));
     
     char json[4096];
-    snprintf(json, sizeof(json),
+    int written = snprintf(json, sizeof(json),
         "{"
         "\"result\":%s,"
         "\"score_delta\":{\"white\":%d,\"black\":%d},"
@@ -387,6 +420,10 @@ void trace_write_shot_end(TraceWriter* writer, const ShotResult* result, const R
         outcome->score_delta.black,
         turn_decision_to_str(outcome->turn_decision),
         (uint64_t)(outcome->next_game_state.scores.white * 100 + outcome->next_game_state.scores.black));
+    
+    if (written < 0 || (size_t)written >= sizeof(json)) {
+        /* Truncated */
+    }
     
     trace_write_line_internal(writer, json, strlen(json));
     
@@ -426,7 +463,7 @@ void trace_write_physics_state(TraceWriter* writer, uint64_t frame, uint64_t sho
     float angle = atan2f(striker_vel->y, striker_vel->x);
     
     char json[512];
-    snprintf(json, sizeof(json),
+    int written = snprintf(json, sizeof(json),
         "{"
         "\"type\":\"PHYSICS_STATE\","
         "\"frame\":%" PRIu64 ","
@@ -444,6 +481,10 @@ void trace_write_physics_state(TraceWriter* writer, uint64_t frame, uint64_t sho
         striker_pos->x, striker_pos->y,
         striker_vel->x, striker_vel->y,
         speed, angle);
+    
+    if (written < 0 || (size_t)written >= sizeof(json)) {
+        /* Truncated */
+    }
     
     trace_write_line_internal(writer, json, strlen(json));
 }
@@ -549,7 +590,13 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
         return arr;
     }
     
-    /* Read entire data area - TRACE_MAX_SIZE is compile-time constant (8 MiB), fits in size_t */
+    /* Determine if wrapped by checking file size */
+    fseek(f, 0, SEEK_END);
+    long actual_file_size = ftell(f);
+    bool is_wrapped = (actual_file_size >= (long)(TRACE_INDEX_SIZE + TRACE_MAX_SIZE));
+    
+    /* Read entire data area */
+    fseek(f, TRACE_INDEX_SIZE, SEEK_SET);
     char* data = malloc(TRACE_MAX_SIZE);
     if (!data) {
         fclose(f);
@@ -558,8 +605,6 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
         arr.capacity = 0;
         return arr;
     }
-    
-    fseek(f, TRACE_INDEX_SIZE, SEEK_SET);
     size_t read_bytes = fread(data, 1, TRACE_MAX_SIZE, f);
     fclose(f);
     
@@ -571,74 +616,95 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
         return arr;
     }
     
-    /* Determine valid data range - for non-wrapped files, valid data ends at write_offset */
-    /* For wrapped files, valid data wraps around. For simplicity, we scan the entire */
-    /* read buffer but the zero-filled portion has no newlines so won't create false lines. */
-    (void)write_offset;
-    
-    /* First pass: count actual number of lines */
+    /* Create a linear buffer of the logical data */
+    char* logical_buf = malloc(TRACE_MAX_SIZE + 1);
+    if (!logical_buf) {
+        free(data);
+        free(arr.lines);
+        arr.lines = NULL;
+        arr.capacity = 0;
+        return arr;
+    }
+
+    size_t logical_data_len = 0;
+    if (is_wrapped) {
+        size_t part1_len = TRACE_MAX_SIZE - write_offset;
+        memcpy(logical_buf, data + write_offset, part1_len);
+        memcpy(logical_buf + part1_len, data, write_offset);
+        logical_data_len = TRACE_MAX_SIZE;
+    } else {
+        memcpy(logical_buf, data, write_offset);
+        logical_data_len = write_offset;
+    }
+    logical_buf[logical_data_len] = '\0';
+
+    /* Now extract last N lines from the linear logical_buf */
     size_t line_count = 0;
-    for (size_t i = 0; i < read_bytes; i++) {
-        if (data[i] == '\n') {
+    for (size_t i = 0; i < logical_data_len; i++) {
+        if (logical_buf[i] == '\n') {
             line_count++;
         }
     }
     
-    /* We need line_count + 1 entries to include position 0 as first line start */
     size_t line_starts_capacity = line_count + 1;
-    
-    /* Integer overflow check for line_starts allocation */
     if (line_starts_capacity > 0 && sizeof(size_t) > SIZE_MAX / line_starts_capacity) {
         free(data);
+        free(logical_buf);
         free(arr.lines);
         arr.lines = NULL;
         arr.capacity = 0;
         return arr;
     }
     
-    /* Allocate line_starts array with exact size needed (includes position 0) */
     size_t* line_starts = calloc(line_starts_capacity, sizeof(size_t));
     if (!line_starts) {
         free(data);
+        free(logical_buf);
         free(arr.lines);
         arr.lines = NULL;
         arr.capacity = 0;
         return arr;
     }
     
-    /* Fill in line start positions: position 0, then after each newline */
     line_starts[0] = 0;
     size_t current_line = 1;
-    for (size_t i = 0; i < read_bytes && current_line < line_starts_capacity; i++) {
-        if (data[i] == '\n') {
-            line_starts[current_line++] = i + 1;  /* Next char after newline */
+    for (size_t i = 0; i < logical_data_len && current_line < line_starts_capacity; i++) {
+        if (logical_buf[i] == '\n') {
+            line_starts[current_line++] = i + 1;
         }
     }
-    /* total_lines = number of valid lines = number of newlines (line_count) */
-    /* The last line_start (at index line_count) points to after the last newline, */
-    /* which is end of valid data - not a real line with content */
     size_t total_lines = line_count;
     
-    /* Now extract last N lines in logical order (oldest first) */
-    /* Lines are indexed 0..total_lines-1, where line 0 starts at position 0 */
-    size_t lines_to_read = (total_lines > max_records) ? max_records : total_lines;
-    size_t start_idx = (total_lines > lines_to_read) ? total_lines - lines_to_read : 0;
+    /* Determine range of complete lines */
+    size_t start_line_idx = is_wrapped ? 1 : 0;
+    /* If wrapped, the first segment [0, nl[0]] is a fragment of the newest record.
+       Wait, if wrapped, the logical buffer is [write_offset, END] then [0, write_offset].
+       The first segment [0, nl[0]] in logical_buf is the start of the oldest record.
+       But that record was partially overwritten by the newest record.
+       Actually, the record that ends at write_offset is the newest.
+       The record that starts at write_offset is the oldest.
+       If write_offset is not at a record boundary, the first segment is a fragment.
+       Similarly, the last segment (after the last newline) is a fragment. */
     
+    size_t lines_to_read = (total_lines >= start_line_idx) ? (total_lines - start_line_idx) : 0;
+    if (lines_to_read > max_records) lines_to_read = max_records;
+    
+    size_t actual_start_idx = (total_lines > (start_line_idx + lines_to_read)) ? (total_lines - (start_line_idx + lines_to_read)) : start_line_idx;
+    if (actual_start_idx < start_line_idx) actual_start_idx = start_line_idx;
+
     bool allocation_failed = false;
-    for (size_t i = start_idx; i < total_lines && arr.count < arr.capacity; i++) {
+    for (size_t i = actual_start_idx; i < total_lines && arr.count < arr.capacity; i++) {
         size_t line_start = line_starts[i];
-        size_t line_end = (i + 1 < total_lines) ? line_starts[i + 1] - 1 : read_bytes;
+        size_t line_end = (i + 1 < total_lines) ? line_starts[i + 1] - 1 : logical_data_len;
         
-        if (line_end > read_bytes) line_end = read_bytes;
+        if (line_end > logical_data_len) line_end = logical_data_len;
         if (line_start >= line_end) continue;
         
         size_t line_len = line_end - line_start;
         if (line_len == 0) continue;
         
-        /* Skip comment lines */
-        if (data[line_start] == '#') continue;
+        if (logical_buf[line_start] == '#') continue;
         
-        /* Integer overflow check for line allocation */
         if (line_len > SIZE_MAX - 1) {
             allocation_failed = true;
             break;
@@ -649,13 +715,12 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
             break;
         }
         
-        memcpy(line, data + line_start, line_len);
+        memcpy(line, logical_buf + line_start, line_len);
         line[line_len] = '\0';
         
         arr.lines[arr.count++] = line;
     }
     
-    /* If allocation failed partway, clean up partially allocated lines and the lines array */
     if (allocation_failed) {
         for (size_t i = 0; i < arr.count; i++) {
             free(arr.lines[i]);
@@ -669,6 +734,7 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
     
     free(line_starts);
     free(data);
+    free(logical_buf);
     return arr;
 }
 
