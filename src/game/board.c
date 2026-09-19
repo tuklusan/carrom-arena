@@ -119,12 +119,10 @@ void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
             // Inner ring: alternate W, B, W, B, W, B
             color = (i % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
         } else if (i < 12) {
-            // Outer tips: alternate B, W, B, W, B, W 
-            // (Offset from inner to maintain global alternation if needed, 
-            // but here we just ensure internal ring alternation)
-            color = ((i - 6) % 2 == 0) ? PIECE_BLACK : PIECE_WHITE;
+            // Outer ring tips: alternate W, B, W, B, W, B
+            color = ((i - 6) % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
         } else {
-            // Outer notches: alternate W, B, W, B, W, B
+            // Outer ring notches: alternate W, B, W, B, W, B
             color = ((i - 12) % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
         }
 
