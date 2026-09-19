@@ -1,9 +1,8 @@
 #include "board.h"
 #include "types.h"
-#include "math.h"
+#include "common/vecmath.h"
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 
 /* -----------------------------------------------------------------------------
  * Board State Initialization
@@ -78,40 +77,65 @@ void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
     board->pieces[QUEEN_ID].color = PIECE_QUEEN;
     board->queen_on_board = true;
 
-    // 3. Inner Ring: 6 pieces (alternating White/Black)
-    // We use IDs 0-5 for inner ring.
+    // 3. Generate ICF hexagonal positions
+    Vec2 positions[18];
+    float r = PIECE_RADIUS_NORM;
+    int pos_idx = 0;
+
+    // Inner ring: R = 2r, 6 pieces, 60deg increments
     for (int i = 0; i < 6; i++) {
         float angle = (float)i * (M_PI / 3.0f);
-        Vec2 pos = { INNER_RING_RADIUS * cosf(angle), INNER_RING_RADIUS * sinf(angle) };
-        
-        int piece_id = i;
-        // If i is QUEEN_ID, we skip it or offset it. 
-        // Since QUEEN_ID is typically 18 or something similar, we can just use i.
-        // But wait, if QUEEN_ID is between 0-5, we'd overwrite.
-        // Let's check QUEEN_ID. If QUEEN_ID is in [0, 5], we need to handle it.
-        // Assuming QUEEN_ID is not in [0, 5] and [6, 17].
-        
-        PieceColor color = (i % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
-        
-        board->pieces[piece_id].position = pos;
-        board->pieces[piece_id].velocity = (Vec2){0.0f, 0.0f};
-        board->pieces[piece_id].on_board = true;
-        board->pieces[piece_id].pocketed = false;
-        board->pieces[piece_id].pocketed_position = (Vec2){0, 0};
-        board->pieces[piece_id].pocket_index = 255;
-        board->pieces[piece_id].color = color;
+        positions[pos_idx++] = math_vec2_from_angle(angle);
+        positions[pos_idx-1].x *= 2.0f * r;
+        positions[pos_idx-1].y *= 2.0f * r;
     }
 
-    // 4. Outer Ring: 12 pieces (alternating White/Black)
-    // We use IDs 6-17 for outer ring.
-    for (int i = 0; i < 12; i++) {
-        float angle = (float)i * (M_PI / 6.0f);
-        Vec2 pos = { OUTER_RING_RADIUS * cosf(angle), OUTER_RING_RADIUS * sinf(angle) };
+    // Outer ring Tips: R = 4r, 6 pieces, 60deg increments
+    for (int i = 0; i < 6; i++) {
+        float angle = (float)i * (M_PI / 3.0f);
+        positions[pos_idx++] = math_vec2_from_angle(angle);
+        positions[pos_idx-1].x *= 4.0f * r;
+        positions[pos_idx-1].y *= 4.0f * r;
+    }
+
+    // Outer ring Notches: R = 2*sqrt(3)*r, 6 pieces, 30deg, 90deg...
+    for (int i = 0; i < 6; i++) {
+        float angle = (float)i * (M_PI / 3.0f) + (M_PI / 6.0f);
+        positions[pos_idx++] = math_vec2_from_angle(angle);
+        float scale = 2.0f * math_sqrtf(3.0f) * r;
+        positions[pos_idx-1].x *= scale;
+        positions[pos_idx-1].y *= scale;
+    }
+
+    // 4. Assign IDs by color: 0-8 White, 9-17 Black
+    // To meet ICF spec, colors must alternate within rings.
+    
+    int white_count = 0;
+    int black_count = 0;
+    
+    for (int i = 0; i < 18; i++) {
+        PieceColor color;
+        if (i < 6) {
+            // Inner ring: alternate W, B, W, B, W, B
+            color = (i % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
+        } else if (i < 12) {
+            // Outer tips: alternate B, W, B, W, B, W 
+            // (Offset from inner to maintain global alternation if needed, 
+            // but here we just ensure internal ring alternation)
+            color = ((i - 6) % 2 == 0) ? PIECE_BLACK : PIECE_WHITE;
+        } else {
+            // Outer notches: alternate W, B, W, B, W, B
+            color = ((i - 12) % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
+        }
+
+        int piece_id;
+        if (color == PIECE_WHITE) {
+            piece_id = white_count++;
+        } else {
+            piece_id = 9 + black_count++;
+        }
         
-        int piece_id = i + 6;
-        PieceColor color = (i % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
-        
-        board->pieces[piece_id].position = pos;
+        board->pieces[piece_id].position = positions[i];
         board->pieces[piece_id].velocity = (Vec2){0.0f, 0.0f};
         board->pieces[piece_id].on_board = true;
         board->pieces[piece_id].pocketed = false;
@@ -249,5 +273,3 @@ int board_count_on_board(const BoardState* board, PieceColor color) {
     }
     return count;
 }
-
-// Remove the stub and its declaration as it is not called anywhere in the codebase.
