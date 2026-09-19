@@ -1,11 +1,12 @@
-#define __USE_MINGW_ANSI_STDIO 1
 #include <math.h>
+#include <math.h>
+#define __USE_MINGW_ANSI_STDIO 1
 #ifdef __MINGW32__
 extern float atan2f(float, float);
 #endif
 #include "shot_candidates.h"
 #include "types.h"
-#include "common/math.h"
+#include "common/vecmath.h"
 #include "board.h"
 #include <stdlib.h>
 

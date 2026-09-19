@@ -1,7 +1,7 @@
-#include "types.h"
-#include "math.h"
-#define __USE_MINGW_ANSI_STDIO 1
 #include <math.h>
+#include "types.h"
+#include "vecmath.h"
+#define __USE_MINGW_ANSI_STDIO 1
 #ifdef __MINGW32__
 extern float cosf(float);
 extern float sinf(float);

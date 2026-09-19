@@ -1,9 +1,9 @@
-#include <math.h>
 #include <stdlib.h>
 #include "unity.h"
 #include "physics/physics.h"
 #include "physics/physics_snapshot.h"
 #include "common/types.h"
+#include "common/vecmath.h"
 
 void setUp(void) {}
 void tearDown(void) {}

@@ -5,7 +5,7 @@
 #include "common/rng.h"
 #include "game/board.h"
 #include "game/match.h"
-#include <math.h>
+#include "common/vecmath.h"
 #ifdef __MINGW32__
 extern float fabsf(float);
 #endif

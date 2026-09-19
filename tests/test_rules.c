@@ -6,7 +6,7 @@
 #include "game/match.h"
 #include "common/rng.h"
 #include <string.h>
-#include <math.h>
+#include "common/vecmath.h"
 
 /* -----------------------------------------------------------------------------
  * Rules Engine Unit Tests (Article 16.1 coverage)

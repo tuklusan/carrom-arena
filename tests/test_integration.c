@@ -8,8 +8,8 @@
 #include "physics/physics.h"
 #include "ai/controller.h"
 #include "telemetry/trace.h"
+#include "common/vecmath.h"
 #include <stdlib.h>
-#include <math.h>
 
 void setUp(void) {}
 void tearDown(void) {}

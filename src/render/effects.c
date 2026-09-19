@@ -1,10 +1,10 @@
+#include <math.h>
 #include "effects.h"
 #include "common/types.h"
 #define __USE_MINGW_ANSI_STDIO 1
 #include <raylib.h>
 #include <stdio.h>
-#include <math.h>
-#include "common/math.h"
+#include "common/vecmath.h"
 
 #define MAX_POCKET_FADE_TIME 0.2f  // 200ms fade
 #define PLACEMENT_HOLD_TIME 1.0f   // 1 second at 1x playback

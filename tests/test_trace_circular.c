@@ -4,7 +4,7 @@
  * --------------------------------------------------------------------------- */
 
 #include "unity.h"
-#include <math.h>
+#include "common/vecmath.h"
 #include "telemetry/trace.h"
 #include "common/types.h"
 #include "game/rules.h"

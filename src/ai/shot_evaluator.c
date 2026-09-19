@@ -5,7 +5,7 @@ extern float sqrtf(float);
 #endif
 #include "shot_evaluator.h"
 #include "types.h"
-#include "math.h"
+#include "vecmath.h"
 #include "rng.h"
 #include "physics/physics.h"
 #include "physics/physics_snapshot.h"

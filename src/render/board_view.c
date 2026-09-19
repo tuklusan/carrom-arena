@@ -2,7 +2,7 @@
 #include "board_view.h"
 #include "renderer.h"
 #include "common/types.h"
-#include "common/math.h"
+#include "common/vecmath.h"
 #include "physics/physics.h"
 #define __USE_MINGW_ANSI_STDIO 1
 #include <raylib.h>
