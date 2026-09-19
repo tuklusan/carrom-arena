@@ -1,0 +1,92 @@
+[DEBUG] argc=6
+[DEBUG] argv[0]=./carrom_arena
+[DEBUG] argv[1]=--mode=capture
+[DEBUG] argv[2]=--seed=42
+[DEBUG] argv[3]=--headless
+[DEBUG] argv[4]=--frames=5
+[DEBUG] argv[5]=--capture-dir=carrom_capture_test_1021213
+[DEBUG] app_create called
+[DEBUG] config->playback_speed = 0.050000, ctx->playback_speed = 0.050000
+[DEBUG] CLI parsed seed: 42
+INFO: Initializing raylib 5.5
+INFO: Platform backend: DESKTOP (GLFW)
+INFO: Supported raylib modules:
+INFO:     > rcore:..... loaded (mandatory)
+INFO:     > rlgl:...... loaded (mandatory)
+INFO:     > rshapes:... loaded (optional)
+INFO:     > rtextures:. loaded (optional)
+INFO:     > rtext:..... loaded (optional)
+INFO:     > rmodels:... loaded (optional)
+INFO:     > raudio:.... loaded (optional)
+INFO: DISPLAY: Trying to enable VSYNC
+INFO: DISPLAY: Device initialized successfully
+INFO:     > Display size: 1920 x 1080
+INFO:     > Screen size:  1280 x 720
+INFO:     > Render size:  1280 x 720
+INFO:     > Viewport offsets: 0, 0
+INFO: GLAD: OpenGL extensions loaded successfully
+INFO: GL: Supported extensions count: 232
+INFO: GL: OpenGL device information:
+INFO:     > Vendor:   Mesa
+INFO:     > Renderer: llvmpipe (LLVM 21.1.8, 256 bits)
+INFO:     > Version:  4.5 (Core Profile) Mesa 26.0.3-1ubuntu1
+INFO:     > GLSL:     4.50
+INFO: GL: VAO extension detected, VAO functions loaded successfully
+INFO: GL: NPOT textures extension detected, full NPOT textures supported
+INFO: GL: DXT compressed textures supported
+INFO: GL: ETC2/EAC compressed textures supported
+INFO: PLATFORM: DESKTOP (GLFW - X11): Initialized successfully
+INFO: TEXTURE: [ID 1] Texture loaded successfully (1x1 | R8G8B8A8 | 1 mipmaps)
+INFO: TEXTURE: [ID 1] Default texture loaded successfully
+INFO: SHADER: [ID 1] Vertex shader compiled successfully
+INFO: SHADER: [ID 2] Fragment shader compiled successfully
+INFO: SHADER: [ID 3] Program shader loaded successfully
+INFO: SHADER: [ID 3] Default shader loaded successfully
+INFO: RLGL: Render batch vertex buffers loaded successfully in RAM (CPU)
+INFO: RLGL: Render batch vertex buffers loaded successfully in VRAM (GPU)
+INFO: RLGL: Default OpenGL state initialized successfully
+INFO: TEXTURE: [ID 2] Texture loaded successfully (128x128 | GRAY_ALPHA | 1 mipmaps)
+INFO: FONT: Default font loaded successfully (224 glyphs)
+INFO: SYSTEM: Working Directory: /home/sanyalnet/SOFTWARE-DEVELOPMENT/carrom/build_release_noasan
+INFO: TIMER: Target time per frame: 66.667 milliseconds
+INFO: TEXTURE: [ID 3] Texture loaded successfully (1280x720 | R8G8B8A8 | 1 mipmaps)
+INFO: TEXTURE: [ID 1] Depth renderbuffer loaded successfully (32 bits)
+INFO: FBO: [ID 1] Framebuffer object created successfully
+INFO: TEXTURE: [ID 3] Pixel data retrieved successfully
+INFO: FILEIO: [carrom_capture_test_1021213/frame_000000.png] File saved successfully
+INFO: FILEIO: [carrom_capture_test_1021213/frame_000000.png] Image exported successfully
+INFO: TEXTURE: [ID 3] Pixel data retrieved successfully
+INFO: FILEIO: [carrom_capture_test_1021213/frame_000001.png] File saved successfully
+INFO: FILEIO: [carrom_capture_test_1021213/frame_000001.png] Image exported successfully
+INFO: TEXTURE: [ID 3] Pixel data retrieved successfully
+INFO: FILEIO: [carrom_capture_test_1021213/frame_000002.png] File saved successfully
+INFO: FILEIO: [carrom_capture_test_1021213/frame_000002.png] Image exported successfully
+[DEBUG] About to set placement timer: ctx->playback_speed = 0.050000
+INFO: TEXTURE: [ID 3] Pixel data retrieved successfully
+INFO: FILEIO: [carrom_capture_test_1021213/frame_000003.png] File saved successfully
+INFO: FILEIO: [carrom_capture_test_1021213/frame_000003.png] Image exported successfully
+INFO: TEXTURE: [ID 3] Pixel data retrieved successfully
+INFO: FILEIO: [carrom_capture_test_1021213/frame_000004.png] File saved successfully
+INFO: FILEIO: [carrom_capture_test_1021213/frame_000004.png] Image exported successfully
+INFO: FBO: [ID 1] Unloaded framebuffer from VRAM (GPU)
+INFO: TEXTURE: [ID 2] Unloaded texture data from VRAM (GPU)
+INFO: SHADER: [ID 3] Default shader unloaded successfully
+INFO: TEXTURE: [ID 1] Default texture unloaded successfully
+INFO: Window closed successfully
+
+=================================================================
+==1021231==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 680 byte(s) in 1 object(s) allocated from:
+    #0 0x7da402d2b40f in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:74
+    #1 0x5769375debc4 in physics_snapshot_create /home/sanyalnet/SOFTWARE-DEVELOPMENT/carrom/src/physics/physics_snapshot.c:37
+    #2 0x5769375da8fa in physics_snapshot /home/sanyalnet/SOFTWARE-DEVELOPMENT/carrom/src/physics/physics.c:632
+    #3 0x5769375b9585 in app_run_simulation /home/sanyalnet/SOFTWARE-DEVELOPMENT/carrom/src/app/app.c:475
+    #4 0x5769375ba871 in app_run_capture /home/sanyalnet/SOFTWARE-DEVELOPMENT/carrom/src/app/app.c:842
+    #5 0x5769375ba61e in app_run /home/sanyalnet/SOFTWARE-DEVELOPMENT/carrom/src/app/app.c:783
+    #6 0x5769375b76c9 in main /home/sanyalnet/SOFTWARE-DEVELOPMENT/carrom/src/app/main.c:19
+    #7 0x7da40202a600 in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:59
+    #8 0x7da40202a717 in __libc_start_main_impl ../csu/libc-start.c:360
+    #9 0x5769375b7584 in _start (/home/sanyalnet/SOFTWARE-DEVELOPMENT/carrom/build_release_noasan/carrom_arena+0x67584) (BuildId: 79783e0021f8ae9f4201ebeb945cf9571ee53803)
+
+SUMMARY: AddressSanitizer: 680 byte(s) leaked in 1 allocation(s).

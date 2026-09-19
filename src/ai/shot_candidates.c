@@ -5,7 +5,7 @@ extern float atan2f(float, float);
 #endif
 #include "shot_candidates.h"
 #include "types.h"
-#include "math.h"
+#include "common/math.h"
 #include "board.h"
 #include <stdlib.h>
 
@@ -34,12 +34,14 @@ int shot_candidates_tactical(const DecisionSnapshot* snap, Vec2 placement, ShotC
     Seat seat = snap->active_seat;
     Team team = (seat == SEAT_NORTH || seat == SEAT_SOUTH) ? TEAM_WHITE : TEAM_BLACK;
     
-    // Find target pieces (own color)
-    Vec2 targets[19];
+    // TACTIC_DIRECT: Aim at each own piece toward any valid pocket
+    Vec2 targets[MAX_PIECES];
     int target_count = 0;
     for (int i = 0; i < MAX_PIECES; i++) {
         if (board->pieces[i].on_board && board->pieces[i].color == (team == TEAM_WHITE ? PIECE_WHITE : PIECE_BLACK)) {
-            targets[target_count++] = board->pieces[i].position;
+            if (target_count < MAX_PIECES) {
+                targets[target_count++] = board->pieces[i].position;
+            }
         }
     }
     
@@ -299,6 +301,7 @@ int shot_candidates_variants(const DecisionSnapshot* snap, ShotCandidate* base, 
             count++;
         }
     }
+
     
     return count;
 }

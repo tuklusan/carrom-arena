@@ -72,7 +72,7 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
     int black_pocketed = 0;
     bool queen_pocketed = facts->queen_pocketed;
     
-    for (int i = 0; i < facts->pocketed_count; i++) {
+    for (int i = 0; i < facts->pocketed_count && i < MAX_PIECES; i++) {
         if (facts->pocketed_colors[i] == PIECE_WHITE) white_pocketed++;
         else if (facts->pocketed_colors[i] == PIECE_BLACK) black_pocketed++;
     }
@@ -228,8 +228,7 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
     game->scores.white += white_score_delta;
     game->scores.black += black_score_delta;
     
-    // Pocket events for regular pieces
-    for (int i = 0; i < facts->pocketed_count; i++) {
+    for (int i = 0; i < facts->pocketed_count && i < MAX_PIECES; i++) {
         if (outcome.event_count < 16) {
             outcome.events[outcome.event_count++] = (GameEvent){
                 .type = EVENT_POCKET,

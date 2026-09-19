@@ -27,9 +27,6 @@ bool board_is_legal_placement(Seat seat, Vec2 pos);
 const PieceState* board_get_piece(const BoardState* board, uint8_t id);
 int board_count_on_board(const BoardState* board, PieceColor color);
 
-/* Update piece positions from physics */
-void board_sync_from_physics(BoardState* board, const PhysicsSnapshot* phys);
-
 /* Game/Match state initialization */
 void game_state_init(GameState* game, uint64_t seed);
 void match_state_init(MatchState* match);

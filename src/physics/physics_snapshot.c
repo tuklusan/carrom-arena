@@ -91,7 +91,7 @@ void physics_snapshot_restore(PhysicsWorld* pw, const PhysicsSnapshot* snap) {
         if (b2Body_IsValid(pw->piece_bodies[i]) && !snap->pieces[i].pocketed) {
             b2Body_SetTransform(pw->piece_bodies[i], 
                 (b2Vec2){ snap->pieces[i].position.x, snap->pieces[i].position.y },
-                (b2Rot){ cosf(snap->pieces[i].angle * 0.5f), sinf(snap->pieces[i].angle * 0.5f) });
+                (b2Rot){ .c = cosf(snap->pieces[i].angle), .s = sinf(snap->pieces[i].angle) });
             b2Body_SetLinearVelocity(pw->piece_bodies[i], 
                 (b2Vec2){ snap->pieces[i].velocity.x, snap->pieces[i].velocity.y });
             b2Body_SetAngularVelocity(pw->piece_bodies[i], snap->pieces[i].angular_velocity);
@@ -106,7 +106,7 @@ void physics_snapshot_restore(PhysicsWorld* pw, const PhysicsSnapshot* snap) {
     if (b2Body_IsValid(pw->striker_body) && !snap->striker.pocketed) {
         b2Body_SetTransform(pw->striker_body,
             (b2Vec2){ snap->striker.position.x, snap->striker.position.y },
-            (b2Rot){ cosf(snap->striker.angle * 0.5f), sinf(snap->striker.angle * 0.5f) });
+            (b2Rot){ .c = cosf(snap->striker.angle), .s = sinf(snap->striker.angle) });
         b2Body_SetLinearVelocity(pw->striker_body,
             (b2Vec2){ snap->striker.velocity.x, snap->striker.velocity.y });
         b2Body_SetAngularVelocity(pw->striker_body, snap->striker.angular_velocity);

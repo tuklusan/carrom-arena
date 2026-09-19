@@ -81,12 +81,13 @@ int trace_replay_and_verify(const char* trace_file, uint64_t seed) {
         Controller* controller = arena_controller_create(seat, profile, &rng.streams[seat]);
         
         ShotPlan plan = controller_decide(controller, &snap, &rng.streams[seat]);
-        controller_destroy(controller);
         
         // Validate and execute
         if (!match_validate_shot(&game, &plan)) {
             plan = controller_fallback_shot(controller, &snap, &rng.streams[seat]);
         }
+        // Move destroy AFTER the fallback shot call
+        controller_destroy(controller);
         
         physics_place_striker(physics, seat, plan.placement);
         physics_apply_shot(physics, plan.aim_angle, plan.power);

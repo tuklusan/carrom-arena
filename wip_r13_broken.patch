@@ -1,0 +1,232 @@
+diff --git a/src/ai/shot_candidates.c b/src/ai/shot_candidates.c
+index 806c2c0..b4458cb 100644
+--- a/src/ai/shot_candidates.c
++++ b/src/ai/shot_candidates.c
+@@ -235,9 +235,14 @@ int shot_candidates_tactical(const DecisionSnapshot* snap, Vec2 placement, ShotC
+     
+     // TACTIC_BREAK: Break shot (first shot of board)
+     if (snap->game->consecutive_turns == 0 && count < max_candidates) {
+-        // Aim at center of pack
+-        Vec2 to_center = vec2_sub((Vec2){0, 0}, placement);
+-        float aim = atan2f(to_center.y, to_center.x);
++        // Aim straight toward center of board along baseline based on seat
++        float aim;
++        switch (seat) {
++            case SEAT_NORTH: aim = -M_PI / 2.0f; break;
++            case SEAT_SOUTH: aim = M_PI / 2.0f; break;
++            case SEAT_EAST:  aim = M_PI; break;
++            case SEAT_WEST:  aim = 0; break;
++        }
+         out_candidates[count].plan = (ShotPlan){
+             .placement = placement,
+             .aim_angle = aim,
+diff --git a/src/app/app.c b/src/app/app.c
+index e24c571..03bfe66 100644
+--- a/src/app/app.c
++++ b/src/app/app.c
+@@ -378,9 +378,13 @@ int app_run_simulation(AppContext* ctx) {
+     // Minimum thinking time for visualization (flash animation visibility)
+     // First turn: 0.5s for figure flash sync; subsequent turns use 2.0s for verification
+     double budget_sec = (ctx->config.ai_budget_ms > 0) ? (ctx->config.ai_budget_ms / 1000.0) : 0.15;
+-    ctx->thinking_min_wall = budget_sec * 0.2;
+-    if (ctx->thinking_min_wall < 0.5) ctx->thinking_min_wall = 0.5;  // First turn: at least 0.5s for figure flash sync
+-    ctx->thinking_min_wall += platform_time_now();  // Absolute wall time when min thinking ends
++    double thinking_min_wall_offset = budget_sec * 0.2;
++    if (thinking_min_wall_offset < 0.5) thinking_min_wall_offset = 0.5;  // First turn: at least 0.5s for figure flash sync
++    ctx->thinking_min_wall = platform_time_now() + thinking_min_wall_offset;
++    if (ctx->config.verbose) {
++        printf("[DEBUG] thinking_min_wall offset set to: %f (budget_sec=%f)\n", thinking_min_wall_offset, budget_sec);
++        fflush(stdout);
++    }
+     
+     if (ctx->config.verbose) {
+         printf("[DEBUG] Starting simulation, seed=%llu\n", (unsigned long long)ctx->rng.master_seed);
+@@ -506,7 +510,13 @@ int app_run_simulation(AppContext* ctx) {
+                     if (!ctx->placement_phase_active) {
+                         // Just entered placement phase - start timer
+                         // Use pre-computed shot plan from THINKING phase
+-                        ctx->placement_timer = 1.0 / fmaxf(ctx->playback_speed, 0.05f);
++                        // Debug: print playback speed before setting timer
++                        if (ctx->config.verbose) {
++                            printf("[DEBUG] About to set placement timer: ctx->playback_speed = %f\n", ctx->playback_speed);
++                            fflush(stdout);
++                        }
++                        // Use pre-computed shot plan from THINKING phase
++                        ctx->placement_timer = 0.0f;
+                         ctx->placement_phase_active = true;
+                         if (ctx->config.verbose) {
+                             printf("[DEBUG] Frame %llu: Placement phase started for seat %d, timer=%.2fs\n", 
+@@ -689,6 +699,11 @@ AppContext* app_create(const AppConfig* config) {
+     AppContext* ctx = calloc(1, sizeof(AppContext));
+     if (!ctx) return NULL;
+     
++    if (ctx->config.verbose) {
++        printf("[DEBUG] app_create called\n");
++        fflush(stdout);
++    }
++    
+     ctx->config = *config;
+     
+     // Initialize playback speed based on mode
+@@ -714,10 +729,19 @@ AppContext* app_create(const AppConfig* config) {
+     ctx->aim_preview_timer = 0.0;
+     ctx->aim_preview_active = false;
+     
++    // Debug: print playback speeds
++    if (ctx->config.verbose) {
++        printf("[DEBUG] config->playback_speed = %f, ctx->playback_speed = %f\n", 
++               config->playback_speed, ctx->playback_speed);
++        fflush(stdout);
++    }
++    
+     // Initialize RNG
+     uint64_t seed = config->seed;
+-    printf("[DEBUG] CLI parsed seed: %llu\n", (unsigned long long)seed);
+-    fflush(stdout);
++    if (ctx->config.verbose) {
++        printf("[DEBUG] CLI parsed seed: %llu\n", (unsigned long long)seed);
++        fflush(stdout);
++    }
+     if (seed == 0) {
+         seed = platform_time_us();
+     }
+@@ -858,11 +882,7 @@ static const char* get_arg_value(const char* arg, const char* prefix) {
+ AppConfig app_parse_args(int argc, char* argv[]) {
+     AppConfig config = app_config_default();
+     
+-    printf("[DEBUG] argc=%d\n", argc);
+-    for (int i = 0; i < argc; i++) {
+-        printf("[DEBUG] argv[%d]=%s\n", i, argv[i]);
+-    }
+-    fflush(stdout);
++    
+     
+     for (int i = 1; i < argc; i++) {
+         const char* val;
+@@ -915,6 +935,14 @@ AppConfig app_parse_args(int argc, char* argv[]) {
+         }
+     }
+     
++    if (config.verbose) {
++        printf("[DEBUG] argc=%d\n", argc);
++        for (int i = 0; i < argc; i++) {
++            printf("[DEBUG] argv[%d]=%s\n", i, argv[i]);
++        }
++        fflush(stdout);
++    }
++    
+     return config;
+ }
+ 
+diff --git a/src/physics/physics.c b/src/physics/physics.c
+index 11a1266..c0ff876 100644
+--- a/src/physics/physics.c
++++ b/src/physics/physics.c
+@@ -386,54 +386,20 @@ static void physics_check_pockets(PhysicsWorld* pw) {
+             float dy = pos.y - pocket_pos.y;
+             float dist_sq = dx*dx + dy*dy;
+             
+-            // Check if piece is in pocket zone (near pocket center, within pocket radius)
+-            // AND pressed against the cushion (within cushion thickness of inner edge)
+-            // Pocket centers are at (±0.47, ±0.47), pocket radius = 0.03
+-            // Cushion inner edge at 0.475, so pocket spans from 0.44 to 0.50 (for north)
+-            // Piece is pocketed if: within pocket radius of center AND pressed against cushion
+-            
+-            bool in_pocket_zone = false;
+-            bool pressed_against_cushion = false;
+-            
+-            // North pockets (p=0,1): pocket_pos.y ≈ 0.47, cushion at y=0.475
+-            if (pocket_pos.y > 0) {
+-                float pocket_x = pocket_pos.x;
+-                float pocket_x_min = pocket_x - POCKET_RADIUS_NORM;
+-                float pocket_x_max = pocket_x + POCKET_RADIUS_NORM;
+-                // Piece is in pocket x-range
+-                in_pocket_zone = (pos.x >= pocket_x_min && pos.x <= pocket_x_max);
+-                // Piece is pressed against north cushion (y close to cushion inner edge)
+-                pressed_against_cushion = (pos.y >= CUSHION_INNER - 0.005f);  // Within 0.5mm of cushion
+-            }
+-            // South pockets (p=2,3): pocket_pos.y ≈ -0.47
+-            else if (pocket_pos.y < 0) {
+-                float pocket_x = pocket_pos.x;
+-                float pocket_x_min = pocket_x - POCKET_RADIUS_NORM;
+-                float pocket_x_max = pocket_x + POCKET_RADIUS_NORM;
+-                in_pocket_zone = (pos.x >= pocket_x_min && pos.x <= pocket_x_max);
+-                pressed_against_cushion = (pos.y <= -CUSHION_INNER + 0.005f);
+-            }
+-            // East pockets (p=1): pocket_pos.x ≈ 0.47
+-            else if (pocket_pos.x > 0) {
+-                float pocket_y = pocket_pos.y;
+-                float pocket_y_min = pocket_y - POCKET_RADIUS_NORM;
+-                float pocket_y_max = pocket_y + POCKET_RADIUS_NORM;
+-                in_pocket_zone = (pos.y >= pocket_y_min && pos.y <= pocket_y_max);
+-                pressed_against_cushion = (pos.x >= CUSHION_INNER - 0.005f);
+-            }
+-            // West pockets (p=0): pocket_pos.x ≈ -0.47
+-            else {  // pocket_pos.x < 0
+-                float pocket_y = pocket_pos.y;
+-                float pocket_y_min = pocket_y - POCKET_RADIUS_NORM;
+-                float pocket_y_max = pocket_y + POCKET_RADIUS_NORM;
+-                in_pocket_zone = (pos.y >= pocket_y_min && pos.y <= pocket_y_max);
+-                pressed_against_cushion = (pos.x <= -CUSHION_INNER + 0.005f);
+-            }
+-            
+-            // Only pocket if piece is in pocket zone AND pressed against cushion
+-            if (in_pocket_zone && pressed_against_cushion) {
+-                // Also check distance to pocket center as backup
+-                if (dist_sq < capture_radius_sq) {
++            // Check if piece is within pocket radius of center AND properly positioned relative to cushion
++            if (dist_sq < capture_radius_sq) {
++                bool cushion_ok = false;
++                if (pocket_pos.y > 0) { // north pocket
++                    cushion_ok = (pos.y >= (CUSHION_INNER - 0.005f) && pos.y <= CUSHION_INNER);
++                } else if (pocket_pos.y < 0) { // south pocket
++                    cushion_ok = (pos.y >= -CUSHION_INNER && pos.y <= (-CUSHION_INNER + 0.005f));
++                } else if (pocket_pos.x > 0) { // east pocket
++                    cushion_ok = (pos.x >= (CUSHION_INNER - 0.005f) && pos.x <= CUSHION_INNER);
++                } else { // west pocket (pocket_pos.x < 0)
++                    cushion_ok = (pos.x >= -CUSHION_INNER && pos.x <= (-CUSHION_INNER + 0.005f));
++                }
++
++                if (cushion_ok) {
+                     pw->piece_pocketed[i] = true;
+                     pw->pocketed_ids[pw->pocketed_count] = (uint8_t)i;
+                     pw->pocketed_pocket_indices[pw->pocketed_count] = (uint8_t)p;
+@@ -449,7 +415,7 @@ static void physics_check_pockets(PhysicsWorld* pw) {
+                     
+                     b2DestroyBody(pw->piece_bodies[i]);
+                     pw->piece_bodies[i] = (b2BodyId){0};
+-                    break;
++                    break; // break out of pocket loop for this piece
+                 }
+             }
+         }
+@@ -548,7 +514,16 @@ void physics_place_striker(PhysicsWorld* pw, Seat seat, Vec2 placement) {
+         pw->striker_pocketed = false;
+     }
+     
+-    b2Body_SetTransform(pw->striker_body, (b2Vec2){placement.x, placement.y}, b2Rot_identity);
++    // Offset slightly inward from cushion to avoid initial penetration
++    const float epsilon = 0.0005f;
++    Vec2 adjusted = placement;
++    switch (seat) {
++        case SEAT_NORTH: adjusted.y -= epsilon; break;
++        case SEAT_SOUTH: adjusted.y += epsilon; break;
++        case SEAT_EAST:  adjusted.x -= epsilon; break;
++        case SEAT_WEST:  adjusted.x += epsilon; break;
++    }
++    b2Body_SetTransform(pw->striker_body, (b2Vec2){adjusted.x, adjusted.y}, b2Rot_identity);
+     b2Body_SetLinearVelocity(pw->striker_body, (b2Vec2){0, 0});
+     b2Body_SetAwake(pw->striker_body, true);
+ }
+diff --git a/src/render/renderer.c b/src/render/renderer.c
+index 3d5fa48..f3b65de 100644
+--- a/src/render/renderer.c
++++ b/src/render/renderer.c
+@@ -224,7 +224,6 @@ static void draw_footer_band(Renderer* r, const Layout* L) {
+ static void draw_placement_banner(Renderer* r, const GameState* game, double placement_timer, const Layout* L) {
+     if (game->phase != PHASE_PLACEMENT) return;
+     if (!game->board.striker.on_baseline || game->board.striker.pocketed) return;
+-    if (game->turn_seat != SEAT_NORTH) return;  // Only show for N seat (human-readable)
+ 
+     Vec2 striker_pos = game->board.striker.position;
+     char countdown_text[128];

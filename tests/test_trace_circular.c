@@ -4,6 +4,7 @@
  * --------------------------------------------------------------------------- */
 
 #include "unity.h"
+#include <math.h>
 #include "telemetry/trace.h"
 #include "common/types.h"
 #include "game/rules.h"
@@ -230,7 +231,8 @@ void test_trace_wrap_preserves_recent_data(void) {
     MatchState match;
     GameState game;
     
-    /* Write enough to force wrap */
+    /* Write enough to force wrap. Each shot is ~500-1000 bytes. 
+       8MiB / 500B = 16000. 20000 should wrap. */
     const int NUM_SHOTS = 20000;
     for (int i = 1; i <= NUM_SHOTS; i++) {
         create_dummy_shot_data(&plan, &result, &outcome, &match, &game, i);
@@ -241,20 +243,24 @@ void test_trace_wrap_preserves_recent_data(void) {
     trace_flush(writer);
     trace_close(writer);
     
-    /* Read last 100 records - should be from the end of the sequence */
-    TraceRecordArray arr = trace_read_last_records(test_trace_path, 100);
-    TEST_ASSERT_GREATER_THAN(0, arr.count);
+    /* Read last 10 records - should be exactly the last 10 shots in order */
+    TraceRecordArray arr = trace_read_last_records(test_trace_path, 10);
+    TEST_ASSERT_EQUAL_INT(10, arr.count);
     
-    /* Verify shot numbers are from the end of our sequence */
-    bool found_high_numbers = false;
+    /* The last record in the array should be the very last shot written (shot 20000) */
+    /* We check if the last record contains "20000" */
+    TEST_ASSERT_NOT_NULL(strstr(arr.lines[arr.count - 1], "20000"));
+    
+    /* Verify logical order: each subsequent record should have a higher shot number */
+    int last_shot_num = -1;
     for (size_t i = 0; i < arr.count; i++) {
-        /* Look for shot numbers near NUM_SHOTS */
-        if (strstr(arr.lines[i], "199") || strstr(arr.lines[i], "2000")) {
-            found_high_numbers = true;
-            break;
+        char* shot_num_ptr = strstr(arr.lines[i], "\"shot_number\":");
+        if (shot_num_ptr) {
+            int current_shot_num = atoi(shot_num_ptr + 14);
+            TEST_ASSERT_TRUE(current_shot_num > last_shot_num);
+            last_shot_num = current_shot_num;
         }
     }
-    TEST_ASSERT_TRUE(found_high_numbers);
     
     trace_record_array_free(&arr);
 }
