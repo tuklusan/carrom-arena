@@ -1,3 +1,0 @@
-/home/sanyalnet/SOFTWARE-DEVELOPMENT/carrom/build_release_noasan/_deps/box2d-subbuild/CMakeFiles/box2d-populate.dir
-/home/sanyalnet/SOFTWARE-DEVELOPMENT/carrom/build_release_noasan/_deps/box2d-subbuild/CMakeFiles/edit_cache.dir
-/home/sanyalnet/SOFTWARE-DEVELOPMENT/carrom/build_release_noasan/_deps/box2d-subbuild/CMakeFiles/rebuild_cache.dir
