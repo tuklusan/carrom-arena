@@ -106,11 +106,11 @@ void test_rack_stability(void) {
 void test_cushion_bounce(void) {
     PhysicsWorld* pw = physics_create();
     // Place striker and shoot East
-    physics_place_striker(pw, SEAT_NORTH, (Vec2){0.1f, 0.0f});
-    physics_apply_shot(pw, 0.0f, 0.5f); // East
+    physics_place_striker(pw, SEAT_NORTH, (Vec2){0.0f, 0.0f});
+    physics_apply_shot(pw, 0.0f, 1.0f); // East (Max speed 5.0)
     
     // Step until it hits the cushion (at x=0.5)
-    for (int i = 0; i < 200; i++) physics_step(pw, PHYSICS_DT);
+    for (int i = 0; i < 100; i++) physics_step(pw, PHYSICS_DT);
     
     Vec2 vel;
     physics_get_striker_velocity(pw, &vel);
@@ -122,9 +122,10 @@ void test_pocket_capture(void) {
     PhysicsWorld* pw = physics_create();
     BoardState board;
     board_state_init(&board);
-    // Place piece exactly where a pocket sensor is (corner)
+    // Place piece precisely on a pocket sensor.
+    // Based on src/physics/physics.c:377, CUSHION_INNER is 0.475.
     // POCKET_CENTERS[0] is typically top-left
-    board.pieces[0].position = (Vec2){-0.47f, 0.47f}; 
+    board.pieces[0].position = (Vec2){-0.47f, 0.475f}; 
     board.pieces[0].on_board = true;
     board.white_on_board = 1;
     physics_sync_from_board(pw, &board, SEAT_NORTH);

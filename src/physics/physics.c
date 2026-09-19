@@ -63,6 +63,8 @@ PhysicsWorld* physics_create(void) {
     // Box2D world definition
     b2WorldDef world_def = b2DefaultWorldDef();
     world_def.gravity = (b2Vec2){0.0f, 0.0f};  // Top-down, no gravity
+    world_def.restitutionThreshold = 0.05f;
+    world_def.maxContactPushSpeed = 0.3f;
     
     pw->world_id = b2CreateWorld(&world_def);
     if (b2World_IsValid(pw->world_id) == false) {
@@ -199,6 +201,7 @@ static void physics_create_striker(PhysicsWorld* pw) {
     body_def.linearDamping = 0.0f;
     body_def.angularDamping = 0.0f;
     body_def.fixedRotation = true;
+    body_def.isBullet = true;
     body_def.position = (b2Vec2){0, 0};
     
     // Striker shape: restitution=0.95, friction=0.1
