@@ -1,6 +1,6 @@
 #include "controller.h"
 #include "common/types.h"
-#include "common/math.h"
+#include "common/vecmath.h"
 #include "common/rng.h"
 #include "ai/shot_candidates.h"
 #include "ai/shot_evaluator.h"

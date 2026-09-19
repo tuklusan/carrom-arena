@@ -2,7 +2,7 @@
 #include "board_view.h"
 #include "hud.h"
 #include "effects.h"
-#include "common/math.h"
+#include "common/vecmath.h"
 #include "common/types.h"
 #include <raylib.h>
 #include <stdlib.h>

@@ -1,3 +1,4 @@
+#include <math.h>
 #include "app.h"
 #include "common/types.h"
 #include "common/rng.h"
@@ -16,7 +17,6 @@
 #include <string.h>
 #include <time.h>
 #include <assert.h>
-#include <math.h>
 
 /* -----------------------------------------------------------------------------
  * Application Context

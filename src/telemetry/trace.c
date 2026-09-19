@@ -1,3 +1,4 @@
+#include <math.h>
 #include "trace.h"
 #include "common/types.h"
 #include "platform/platform.h"
@@ -7,7 +8,6 @@
 #include <string.h>
 #include <time.h>
 #include <inttypes.h>
-#include <math.h>
 
 /* -----------------------------------------------------------------------------
  * Internal Structures

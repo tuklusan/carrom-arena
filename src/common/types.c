@@ -1,5 +1,5 @@
 #include "types.h"
-#include "math.h"
+#include "vecmath.h"
 #include <string.h>
 #include <stdio.h>
 

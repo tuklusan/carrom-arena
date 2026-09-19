@@ -1,7 +1,7 @@
 #include "rules.h"
 #include "common/types.h"
 #include "common/rng.h"
-#include "common/math.h"
+#include "common/vecmath.h"
 #include "board.h"
 #include "scoring.h"
 #include <string.h>
