@@ -63,7 +63,7 @@ PhysicsWorld* physics_create(void) {
     // Box2D world definition
     b2WorldDef world_def = b2DefaultWorldDef();
     world_def.gravity = (b2Vec2){0.0f, 0.0f};  // Top-down, no gravity
-    world_def.restitutionThreshold = 0.05f;
+    world_def.restitutionThreshold = 0.0f;
     world_def.maxContactPushSpeed = 0.3f;
     
     pw->world_id = b2CreateWorld(&world_def);
