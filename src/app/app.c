@@ -142,6 +142,12 @@ static void app_simulation_step(AppContext* ctx, double dt) {
         dt = 0.0;
     }
     ctx->accumulator += dt * ctx->playback_speed;
+
+    // Cap accumulated time to prevent spiral of death and lag above 0.5x playback
+    // Max substeps (4) at 1/120s is ~0.033s. Capping at 0.25s drops excess.
+    if (ctx->accumulator > 0.25) {
+        ctx->accumulator = 0.25;
+    }
     
     int substeps = 0;
     while (ctx->accumulator >= PHYSICS_DT && substeps < MAX_SUBSTEPS) {
@@ -517,7 +523,7 @@ int app_run_simulation(AppContext* ctx) {
                     if (!ctx->placement_phase_active) {
                         // Just entered placement phase - start timer
                         // Use pre-computed shot plan from THINKING phase
-                        ctx->placement_timer = 1.0 / fmaxf(ctx->playback_speed, 0.05f);
+                        ctx->placement_timer = 1.0;
                         ctx->placement_phase_active = true;
                         if (ctx->config.verbose) {
                             printf("[DEBUG] Frame %llu: Placement phase started for seat %d, timer=%.2fs\n", 
