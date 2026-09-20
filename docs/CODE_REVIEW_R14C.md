@@ -36,3 +36,10 @@
 ## Could Not Verify
 - **15s Timer**: Not found in the targets. Likely in `src/game/rules.c` or `src/game/match.c`.
 - **Settle Detection Accuracy**: `SETTLE_ACCEL_EPS` is 0.60f. Need to verify if this is too high, causing premature settling.
+
+## R14e results
+- Physics Probe: Removed diagnostic test; lowered restitutionThreshold to 0.0 to ensure low-velocity transfers.
+- Startup Countdown: Fixed to 1.0s wall-clock duration, independent of playback speed.
+- Launch Speed: Verified as present in current branch.
+- Time Accumulator: Implemented 0.25s cap to prevent simulation lag/spiral of death.
+- Clean-Clone Gate: 100% tests passed on fresh clone and CI green.
