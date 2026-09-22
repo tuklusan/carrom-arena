@@ -6,9 +6,9 @@
 #include <stdio.h>
 
 // Mock MatchState, GameState, ShotPlan, ShotResult, RulesOutcome for tracing
-static MatchState mock_match = {0};
-static GameState mock_game = {0};
-static ShotPlan mock_plan = {0};
+static MatchState mock_match __attribute__((unused)) = {0};
+static GameState mock_game __attribute__((unused)) = {0};
+static ShotPlan mock_plan __attribute__((unused)) = {0};
 static ShotResult mock_result = {0};
 static RulesOutcome mock_outcome = {0};
 
