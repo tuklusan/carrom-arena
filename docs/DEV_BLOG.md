@@ -494,7 +494,7 @@ Operator spotted **two black rectangular windows with a white title strip** on W
 
 Killed all 8 stray processes. Enriched the R5 directive with the diagnosis and gave kimi two options:
 
-1. Interactive-session launcher via `schtasks /Create /RU <user> /RP ***REMOVED***` — requires someone logged into the desktop on that host.
+1. Interactive-session launcher via `schtasks /Create /RU <user> /RP <password>` — requires someone logged into the desktop on that host.
 2. **Preferred**: add real `--headless` support to the app using raylib's `LoadRenderTexture` + `ExportImage` (off-screen path). The existing `--headless` flag is parsed but ignored — the app still calls `InitWindow`. Extending it fixes both R5 on Windows AND future CI headless capture on any OS.
 
 Also told kimi to sanity-check every PNG batch (≥ 5 % non-black pixels somewhere in the batch) and never to report R5 pass on all-black frames.
@@ -690,7 +690,7 @@ Operator asked for a git-level hard gate that kills prior runs on ANY test machi
 | Windows 11 192.168.4.103 | same |
 | macOS 192.168.4.77 | ssh key auth + `ps | grep | kill -TERM ... kill -KILL` |
 
-Flags: `--dry-run` (preview), `--verbose`, `--strict` (fail if any host unreachable), `SKIP_HOSTS=` env for exclusions. Auth chain: `~/.ssh/id_ed25519` first, `sshpass -p ***REMOVED***` fallback. Local-host targets bypass SSH entirely.
+Flags: `--dry-run` (preview), `--verbose`, `--strict` (fail if any host unreachable), `SKIP_HOSTS=` env for exclusions. Auth chain: `~/.ssh/id_ed25519` key auth (installed on all four hosts). Local-host targets bypass SSH entirely.
 
 **`scripts/git-hooks/pre-push`** — runs the sweep before every push. Activated by `git config core.hooksPath scripts/git-hooks` (done). Skip individual pushes with `git push --no-verify`. `STRICT_KILL=1` fails push if any host is unreachable.
 

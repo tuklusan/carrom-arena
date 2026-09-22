@@ -47,7 +47,7 @@ HOSTS=(
 
 log() { [ "$VERBOSE" = "1" ] && echo "  $*" >&2; }
 
-# Prefer key auth (already installed on all four). Fall back to sshpass with ***REMOVED***.
+# Key auth is installed on all four hosts; this is the only supported path.
 ssh_run() {
   local target="$1" cmd="$2"
   local peer_ip="${target##*@}"
@@ -64,11 +64,7 @@ ssh_run() {
     ssh "${base_opts[@]}" -i "$HOME/.ssh/id_ed25519" "$target" "$cmd" 2>&1
     return $?
   fi
-  if command -v sshpass >/dev/null 2>&1; then
-    sshpass -p ***REMOVED*** ssh "${base_opts[@]/-o BatchMode=yes/}" "$target" "$cmd" 2>&1
-    return $?
-  fi
-  echo "no ssh auth available (need ~/.ssh/id_ed25519 or sshpass)" >&2
+  echo "no ssh auth available (need ~/.ssh/id_ed25519)" >&2
   return 255
 }
 
