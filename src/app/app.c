@@ -121,12 +121,12 @@ static void app_setup_renderer(AppContext* ctx) {
     if (ctx->config.mode == APP_MODE_RENDERED) {
         if (!ctx->config.headless) {
             ctx->renderer = renderer_create(ctx->config.window_width, ctx->config.window_height, 
-                                             "Carrom Arena", false, false, ctx->config.debug_phase);
+                                             "Carrom Arena", false, false, ctx->config.debug_phase, ctx->playback_speed);
         }
     } else if (ctx->config.mode == APP_MODE_CAPTURE) {
         // Capture mode always needs a renderer (windowed or hidden)
         ctx->renderer = renderer_create(ctx->config.window_width, ctx->config.window_height, 
-                                         "Carrom Arena", true, ctx->config.headless, ctx->config.debug_phase);
+                                         "Carrom Arena", true, ctx->config.headless, ctx->config.debug_phase, ctx->playback_speed);
     }
 }
 
@@ -298,7 +298,6 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
             double budget_sec = (ctx->config.ai_budget_ms > 0) ? (ctx->config.ai_budget_ms / 1000.0) : 0.15;
             ctx->thinking_min_wall = budget_sec * 0.2;
             if (ctx->thinking_min_wall < 2.0) ctx->thinking_min_wall = 2.0;  // At least 2 seconds for verification
-            ctx->thinking_min_wall += platform_time_now();
             break;
         case TURN_BOARD_OVER:
             // Set to THINKING for the new board immediately to avoid a frame hole
@@ -312,7 +311,7 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
             double budget_sec_new = (ctx->config.ai_budget_ms > 0) ? (ctx->config.ai_budget_ms / 1000.0) : 0.15;
             ctx->thinking_min_wall = budget_sec_new * 0.2;
             if (ctx->thinking_min_wall < 0.5) ctx->thinking_min_wall = 0.5; 
-            ctx->thinking_min_wall += platform_time_now();
+            // Thinking min wall is now treated as a duration in seconds, not an absolute timestamp
             break;
         case TURN_GAME_OVER:
         case TURN_MATCH_OVER:
@@ -420,11 +419,15 @@ int app_run_simulation(AppContext* ctx) {
                 break;
             }
             ctx->paused = renderer_is_paused(ctx->renderer);
-            
-            // Sync playback speed from renderer (modified by +/- keys)
-            ctx->playback_speed = renderer_get_playback_speed(ctx->renderer);
-            ctx->speed_paused = ctx->paused;
         }
+
+        if (ctx->renderer) {
+            float r_speed = renderer_get_playback_speed(ctx->renderer);
+            if (r_speed != ctx->playback_speed) {
+                ctx->playback_speed = r_speed;
+            }
+        }
+        ctx->speed_paused = ctx->paused;
         
         if (!ctx->paused) {
             // Periodic debug output
@@ -464,11 +467,10 @@ int app_run_simulation(AppContext* ctx) {
                 case PHASE_THINKING:
                     // AI thinking phase: compute shot plan
                     if (ctx->thinking_phase_active) {
-                        ctx->thinking_timer += dt;
+                        ctx->thinking_timer += dt * ctx->playback_speed;
                         
-                        // Check for transition at START of frame (deferred from previous frame)
-                        double wall_now = platform_time_now();
-                        if (ctx->pending_shot_valid && wall_now >= ctx->thinking_min_wall) {
+                        // Check for transition: using scaled thinking_timer instead of wall time
+                        if (ctx->pending_shot_valid && ctx->thinking_timer >= 2.0) {
                             ctx->thinking_phase_active = false;
                             ctx->game.phase = PHASE_PLACEMENT;
                             ctx->placement_phase_active = false;
@@ -534,7 +536,7 @@ int app_run_simulation(AppContext* ctx) {
                     
                     // Count down timer (only if not paused)
                     if (!ctx->paused && !ctx->speed_paused) {
-                        ctx->placement_timer -= dt;
+                        ctx->placement_timer -= dt * ctx->playback_speed;
                     }
                     
                     // Timer expired - transition to AIM_PREVIEW with the pre-computed shot plan
@@ -550,33 +552,35 @@ int app_run_simulation(AppContext* ctx) {
                         ctx->game.computed_shot_plan = ctx->pending_shot_plan;
                         // computed_shot_valid will be set to true when AIM_PREVIEW phase starts
                         
-                        // Start AIM_PREVIEW phase (5 seconds wall time, unaffected by playback_speed)
+                        // Start AIM_PREVIEW phase (5 seconds scaled time)
                         ctx->aim_preview_timer = 5.0;
                         ctx->aim_preview_active = true;
-                        ctx->aim_preview_start_wall = platform_time_now();  // Record start for figure animation
                         ctx->game.phase = PHASE_AIM_PREVIEW;
                         ctx->pending_shot_valid = false;
                     }
                     break;
                     
                 case PHASE_AIM_PREVIEW:
-                    // AIM_PREVIEW phase: 5 seconds wall time (unaffected by playback_speed)
+                    // AIM_PREVIEW phase: timer scaled by playback_speed
                     if (ctx->aim_preview_active) {
-                        // Use wall time (GetTime() equivalent) - not simulation time
-                        double wall_now = platform_time_now();
-                        double elapsed_wall = wall_now - ctx->aim_preview_start_wall;
+                        // Use playback_speed for timing
+                        ctx->aim_preview_timer -= dt * ctx->playback_speed;
                         
                         // Set computed_shot_valid true on first frame of AIM_PREVIEW
                         if (!ctx->game.computed_shot_valid) {
                             ctx->game.computed_shot_valid = true;
                         }
                         
-                        // Store progress in game state for renderer (0.0 to 1.0 over 0.3s)
-                        ctx->game.aim_preview_progress = (float)(elapsed_wall / 0.3);
+                        // Progress for renderer (0.0 to 1.0 over 0.3s)
+                        // Based on inverse of timer: timer starts at 5.0, ends at 0.0
+                        //’s progress = (5.0 - timer) / 0.3
+                        double elapsed_scaled = 5.0 - ctx->aim_preview_timer;
+                        ctx->game.aim_preview_progress = (float)(elapsed_scaled / 0.3);
                         if (ctx->game.aim_preview_progress > 1.0f) ctx->game.aim_preview_progress = 1.0f;
+                        if (ctx->game.aim_preview_progress < 0.0f) ctx->game.aim_preview_progress = 0.0f;
                         
-                        if (elapsed_wall >= 5.0) {
-                            // 5 seconds elapsed - execute the shot
+                        if (ctx->aim_preview_timer <= 0.0) {
+                            // 5 seconds elapsed (scaled) - execute the shot
                             ctx->aim_preview_active = false;
                             if (ctx->config.verbose) {
                                 printf("[DEBUG] Frame %llu: AIM_PREVIEW complete, executing shot for seat %d\n", 
@@ -592,6 +596,12 @@ int app_run_simulation(AppContext* ctx) {
                             Seat seat = ctx->game.turn_seat;
                             physics_place_striker(ctx->physics, seat, ctx->game.computed_shot_plan.placement);
                             physics_apply_shot(ctx->physics, ctx->game.computed_shot_plan.aim_angle, ctx->game.computed_shot_plan.power);
+                            
+                            // Fix launch speed burst: reset accumulator to 0.
+                            // This ensures the first rendered frame of the shot is precisely the 
+                            // start of the motion, without jumping ahead by several physics steps.
+                            ctx->accumulator = 0.0;
+                            
                             ctx->game.phase = PHASE_SHOT_EXECUTION;
                             
                             // Log shot plan
@@ -645,11 +655,24 @@ int app_run_simulation(AppContext* ctx) {
             renderer_end_board(ctx->renderer);
             renderer_draw_placement_banner(ctx->renderer, &ctx->game, ctx->placement_timer);
             renderer_end(ctx->renderer);
+
+            // MEASUREMENT: Log striker position every frame for burst analysis
+            static FILE* meas_fp = NULL;
+            if (!meas_fp) {
+                meas_fp = fopen("striker_measure.csv", "w");
+                if (meas_fp) fprintf(meas_fp, "wall_time,phase,striker_x,striker_y\n");
+            }
+            if (meas_fp) {
+                fprintf(meas_fp, "%.6f,%d,%.6f,%.6f\n", 
+                        platform_time_now(), ctx->game.phase, 
+                        ctx->game.board.striker.position.x, ctx->game.board.striker.position.y);
+                fflush(meas_fp);
+            }
             
             // Capture frames if in capture mode
             if (ctx->config.mode == APP_MODE_CAPTURE && ctx->capture_frame_count < ctx->config.frames) {
                 renderer_capture_frame(ctx->renderer, ctx->config.capture_dir, ctx->capture_frame_count,
-                                       ctx->game.phase, ctx->placement_timer, ctx->playback_speed);
+                                       ctx->game.phase, ctx->placement_timer, ctx->playback_speed, &ctx->game.board);
                 ctx->capture_frame_count++;
                 
                 // Check if we've captured enough frames - exit simulation loop
@@ -708,23 +731,14 @@ AppContext* app_create(const AppConfig* config) {
     
     ctx->config = *config;
     
-    // Initialize playback speed based on mode
     if (config->playback_speed > 0.0f) {
         ctx->playback_speed = config->playback_speed;
     } else {
-        // Default based on mode
-        switch (config->mode) {
-            case APP_MODE_SOAK:
-            case APP_MODE_DIAGNOSTIC:
-                ctx->playback_speed = 1.0f;
-                break;
-            case APP_MODE_RENDERED:
-            case APP_MODE_CAPTURE:
-            default:
-                ctx->playback_speed = 0.5f;
-                break;
-        }
+        // Default to 0.1x for all modes
+        ctx->playback_speed = 0.1f;
     }
+    printf("[DEBUG] App created with playback_speed=%.2fx\n", ctx->playback_speed);
+    fflush(stdout);
     ctx->speed_paused = false;
     ctx->placement_timer = 0.0;
     ctx->placement_phase_active = false;
@@ -947,7 +961,7 @@ void app_print_usage(const char* prog_name) {
     printf("  --frames <n>          Frames to capture (capture mode, default: 300)\n");
     printf("  --trace-dir <path>    Trace output directory (default: traces)\n");
     printf("  --capture-dir <path>  Capture output directory (default: captures)\n");
-    printf("  --playback-speed <x>  Sim speed multiplier 0.05-4.0 (default: 0.05 rendered/capture, 1.0 soak/diagnostic)\n");
+    printf("  --playback-speed <x>  Sim speed multiplier 0.05-4.0 (default: 0.1 rendered/capture, 1.0 soak/diagnostic)\n");
     printf("  --ai-budget-ms <n>    AI decision time budget in ms (default: 150, range: 10-10000)\n");
     printf("  --verbose             Verbose logging\n");
     printf("  --headless            Force headless mode\n");
