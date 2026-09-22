@@ -198,9 +198,9 @@ static char* shot_result_to_json(const ShotResult* result, char* buf, size_t siz
         const char* color_str = (result->pocketed_colors[i] == PIECE_WHITE) ? "WHITE" :
                                (result->pocketed_colors[i] == PIECE_BLACK) ? "BLACK" : "QUEEN";
         int written = snprintf(p, remaining,
-            "%s{\"piece_id\":%d,\"color\":\"%s\"}",
+            "%s{\"piece_id\":%d,\"color\":\"%s\",\"pocket\":%d}",
             i > 0 ? "," : "",
-            (int)result->pocketed_ids[i], color_str);
+            (int)result->pocketed_ids[i], color_str, result->pocketed_pocket_indices[i]);
         if (written < 0 || (size_t)written >= remaining) break;
         p += written;
         remaining -= (size_t)written;
@@ -213,11 +213,24 @@ static char* shot_result_to_json(const ShotResult* result, char* buf, size_t siz
     } else {
         pockets_json[sizeof(pockets_json) - 1] = ']';
     }
+
+    char final_pos_json[2048] = "[";
+    char* fp = final_pos_json + 1;
+    size_t fp_rem = sizeof(final_pos_json) - 2;
+    for (int i = 0; i < 20; i++) {
+        int written = snprintf(fp, fp_rem,
+            "%s{\"id\":%d,\"pos\":{\"x\":%.6f,\"y\":%.6f}}",
+            i == 0 ? "" : ",", i, result->final_positions[i].x, result->final_positions[i].y);
+        if (written < 0 || (size_t)written >= fp_rem) break;
+        fp += written;
+        fp_rem -= (size_t)written;
+    }
+    if (fp_rem > 0) { *fp = ']'; *(fp + 1) = '\0'; } else { final_pos_json[sizeof(final_pos_json)-1] = ']'; }
     
     int written = snprintf(buf, size,
-        "{\"pockets\":%s,\"queen_pocketed\":%s,\"striker_pocketed\":%s,\"fouls\":%d,"
+        "{\"pockets\":%s,\"final_positions\":%s,\"queen_pocketed\":%s,\"striker_pocketed\":%s,\"fouls\":%d,"
         "\"sim_time\":%.6f}",
-        pockets_json,
+        pockets_json, final_pos_json,
         result->queen_pocketed ? "true" : "false",
         result->striker_pocketed ? "true" : "false",
         result->fouls, result->sim_time);
@@ -271,7 +284,30 @@ static const char* turn_decision_to_str(TurnDecision td) {
  * Public API
  * --------------------------------------------------------------------------- */
 
+void trace_write_pocket_near_miss(TraceWriter* writer, uint8_t piece_id, uint8_t pocket_index, float distance, float speed) {
+    if (!writer || !writer->jsonl_file) return;
+
+    char json[512];
+    int written = snprintf(json, sizeof(json),
+        "{\"type\":\"POCKET_NEAR_MISS\",\"piece_id\":%d,\"pocket\":%d,\"distance\":%.6f,\"speed\":%.6f}",
+        piece_id, pocket_index, distance, speed);
+    
+    if (written < 0 || (size_t)written >= sizeof(json)) {
+        /* Truncated */
+    }
+    
+    trace_write_line_internal(writer, json, strlen(json));
+
+    if (writer->log_file) {
+        platform_fprintf(writer->log_file, 
+            "  [NEAR MISS] Piece %d near pocket %d (dist=%.4f, speed=%.4f)\n",
+            piece_id, pocket_index, distance, speed);
+        platform_fflush(writer->log_file);
+    }
+}
+
 TraceWriter* trace_open(const char* path, const char* log_dir, bool verbose, uint64_t seed) {
+
     /* Integer overflow check for TraceWriter allocation */
     if (sizeof(TraceWriter) > SIZE_MAX) {
         return NULL;

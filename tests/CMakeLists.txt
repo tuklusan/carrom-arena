@@ -63,6 +63,15 @@ target_include_directories(test_rules PRIVATE
 add_test(NAME rules_test COMMAND test_rules)
 
 # Test executable for physics settling
+add_executable(test_pocketing_deterministic
+    test_pocketing_deterministic.c)
+apply_test_warnings(test_pocketing_deterministic)
+target_link_libraries(test_pocketing_deterministic carrom_core box2d ${PLATFORM_LIBS})
+target_include_directories(test_pocketing_deterministic PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+add_test(NAME pocketing_deterministic_test COMMAND test_pocketing_deterministic)
+
 add_executable(test_physics
     test_physics.c
     ${unity_SOURCE_DIR}/src/unity.c
@@ -120,6 +129,18 @@ add_executable(test_integration
     test_integration.c
     ${unity_SOURCE_DIR}/src/unity.c
 )
+
+add_executable(test_pocketing_integration
+    test_pocketing_integration.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_pocketing_integration)
+target_link_libraries(test_pocketing_integration carrom_core box2d ${PLATFORM_LIBS})
+target_include_directories(test_pocketing_integration PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME pocketing_integration_test COMMAND test_pocketing_integration)
 
 apply_test_warnings(test_integration)
 
@@ -202,7 +223,34 @@ target_include_directories(test_physics_r14d PRIVATE
 )
 add_test(NAME physics_r14d_test COMMAND test_physics_r14d)
 
+# Locked Dimensions Test
+add_executable(test_locked_dimensions
+    test_locked_dimensions.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_locked_dimensions)
+target_link_libraries(test_locked_dimensions carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_locked_dimensions PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME locked_dimensions_test COMMAND test_locked_dimensions)
+
+# Telemetry Extensions Test
+add_executable(test_telemetry_extensions
+    test_telemetry_extensions.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_telemetry_extensions)
+target_link_libraries(test_telemetry_extensions carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_telemetry_extensions PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME telemetry_extensions_test COMMAND test_telemetry_extensions)
+
 # Capture regression test (spawns carrom_arena binary in capture mode)
+
 # Catches: capture-mode hang (Gap-2 renderer rewrite regression)
 add_executable(test_capture
     test_capture.c
