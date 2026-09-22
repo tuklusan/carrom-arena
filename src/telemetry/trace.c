@@ -227,10 +227,22 @@ static char* shot_result_to_json(const ShotResult* result, char* buf, size_t siz
     }
     if (fp_rem > 0) { *fp = ']'; *(fp + 1) = '\0'; } else { final_pos_json[sizeof(final_pos_json)-1] = ']'; }
     
+    /* Pocket indices for all pieces (including non-pocketed ones as -1) */
+    char pocket_indices_json[512] = "[";
+    char* pip = pocket_indices_json + 1;
+    size_t pip_rem = sizeof(pocket_indices_json) - 2;
+    for (int i = 0; i < 19; i++) {
+        int written = snprintf(pip, pip_rem, "%s%d", i == 0 ? "" : ",", (int)result->pocketed_pocket_indices[i]);
+        if (written < 0 || (size_t)written >= pip_rem) break;
+        pip += written;
+        pip_rem -= (size_t)written;
+    }
+    if (pip_rem > 0) { *pip = ']'; *(pip + 1) = '\0'; } else { pocket_indices_json[sizeof(pocket_indices_json)-1] = ']'; }
+
     int written = snprintf(buf, size,
-        "{\"pockets\":%s,\"final_positions\":%s,\"queen_pocketed\":%s,\"striker_pocketed\":%s,\"fouls\":%d,"
+        "{\"pockets\":%s,\"final_positions\":%s,\"pocket_indices\":%s,\"queen_pocketed\":%s,\"striker_pocketed\":%s,\"fouls\":%d,"
         "\"sim_time\":%.6f}",
-        pockets_json, final_pos_json,
+        pockets_json, final_pos_json, pocket_indices_json,
         result->queen_pocketed ? "true" : "false",
         result->striker_pocketed ? "true" : "false",
         result->fouls, result->sim_time);

@@ -42,6 +42,9 @@ void trace_write_physics_state(TraceWriter* writer, uint64_t frame, uint64_t sho
 /* Flush any buffered data to disk */
 void trace_flush(TraceWriter* writer);
 
+/* Record a pocket near miss event */
+void trace_write_pocket_near_miss(TraceWriter* writer, uint8_t piece_id, uint8_t pocket_index, float distance, float speed);
+
 /* Replay/Validation */
 bool trace_validate_determinism(const char* trace1, const char* trace2);
 

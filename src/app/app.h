@@ -55,7 +55,7 @@ static inline AppConfig app_config_default(void) {
         .window_width = 1280,
         .window_height = 720,
         .replay_file = NULL,
-        .playback_speed = 0.05f,  // R3: 1/10th speed default for rendered/capture modes
+        .playback_speed = 0.1f,   // R3: 1/10th speed default for rendered/capture modes
         .ai_budget_ms = 150,      // R5: Default AI budget: 150ms (lowered from 250)
         .debug_phase = false      // Per-frame phase debug logging in capture mode
     };

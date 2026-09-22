@@ -250,7 +250,7 @@ void renderer_draw_placement_banner(Renderer* r, const GameState* game, double p
     draw_placement_banner(r, game, placement_timer, L);
 }
 
-Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window, bool debug_phase) {
+Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window, bool debug_phase, float initial_speed) {
     (void)title;
     
     Renderer* r = calloc(1, sizeof(Renderer));
@@ -259,7 +259,7 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     r->capture_mode = capture_mode;
     r->hidden_window = hidden_window;
     r->paused = false;
-    r->playback_speed = 0.05f;  // R3: 1/10th speed default
+    r->playback_speed = initial_speed;  // R14f: use initial speed
     r->debug_phase = debug_phase;
     r->debug_frame_count = 0;
     r->width = width;
@@ -428,7 +428,7 @@ void renderer_draw_effects(Renderer* r, const GameState* game, double placement_
     effects_draw(vp, game, placement_timer, L);
 }
 
-void renderer_capture_frame(Renderer* r, const char* dir, uint64_t frame_num, int game_phase, double placement_timer, float playback_speed) {
+void renderer_capture_frame(Renderer* r, const char* dir, uint64_t frame_num, int game_phase, double placement_timer, float playback_speed, const BoardState* board) {
     if (!r->capture_mode) return;
     
     char path[512];
@@ -441,7 +441,8 @@ void renderer_capture_frame(Renderer* r, const char* dir, uint64_t frame_num, in
     
     // Debug phase logging
     if (r->debug_phase) {
-        fprintf(stderr, "frame=%llu phase=%d placement_timer=%.3f playback_speed=%.2f\n",
-                (unsigned long long)frame_num, game_phase, placement_timer, playback_speed);
+        fprintf(stderr, "frame=%llu phase=%d placement_timer=%.3f playback_speed=%.2f striker_x=%.4f striker_y=%.4f\n",
+                (unsigned long long)frame_num, game_phase, placement_timer, playback_speed, 
+                board->striker.position.x, board->striker.position.y);
     }
 }

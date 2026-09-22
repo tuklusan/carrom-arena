@@ -46,6 +46,12 @@ void test_trace_shot_end_fields(void) {
     mock_result.pocketed_ids[0] = 10;
     mock_result.pocketed_colors[0] = PIECE_WHITE;
     mock_result.pocketed_pocket_indices[0] = 0;
+    
+    // Set some specific pocket indices for testing the array
+    for (int i = 0; i < 19; i++) mock_result.pocketed_pocket_indices[i] = 255; 
+    mock_result.pocketed_pocket_indices[0] = 0;
+    mock_result.pocketed_pocket_indices[1] = 1;
+
     mock_result.final_positions[0] = vec2(0.1f, 0.1f);
     mock_result.sim_time = 1.234f;
     
@@ -62,6 +68,10 @@ void test_trace_shot_end_fields(void) {
     // Check for final positions
     TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "\"final_positions\":"));
     TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "\"pos\":{\"x\":0.100000,\"y\":0.100000}"));
+
+    // Check for pocket_indices array
+    TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "\"pocket_indices\":"));
+    TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "[0,1"));
     
     trace_record_array_free(&records);
 }

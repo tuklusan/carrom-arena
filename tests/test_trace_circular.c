@@ -182,10 +182,17 @@ void test_trace_last_records_intact_and_parsable(void) {
     const int NUM_SHOTS = 200;
     for (int i = 1; i <= NUM_SHOTS; i++) {
         create_dummy_shot_data(&plan, &result, &outcome, &match, &game, i);
+        // Initialize final positions for testing
+        for (int j = 0; j < 20; j++) {
+            result.final_positions[j] = vec2((float)j * 0.01f, (float)j * 0.01f);
+        }
         trace_write_shot_start(writer, &match, &game, (uint64_t)i, SEAT_NORTH, &plan);
         trace_write_shot_end(writer, &result, &outcome);
     }
     
+    /* Also write a near miss */
+    trace_write_pocket_near_miss(writer, 5, 2, 0.05f, 1.2f);
+
     trace_flush(writer);
     trace_close(writer);
     
@@ -194,16 +201,18 @@ void test_trace_last_records_intact_and_parsable(void) {
     TEST_ASSERT_GREATER_THAN(0, arr.count);
     TEST_ASSERT_LESS_OR_EQUAL(50, arr.count);
     
-    /* Debug: print first few lines */
-    for (size_t i = 0; i < arr.count && i < 5; i++) {
-        if (arr.lines[i]) {
-            printf("DEBUG line %zu: len=%zu, first_char=%d ('%c'), content: %.100s\n", 
-                   i, strlen(arr.lines[i]), (int)arr.lines[i][0], arr.lines[i][0], arr.lines[i]);
-        } else {
-            printf("DEBUG line %zu: NULL\n", i);
+    /* Verify the near miss is present */
+    bool found_near_miss = false;
+    for (size_t i = 0; i < arr.count; i++) {
+        if (strstr(arr.lines[i], "POCKET_NEAR_MISS") != NULL) {
+            found_near_miss = true;
+            TEST_ASSERT_NOT_NULL(strstr(arr.lines[i], "\"piece_id\":5"));
+            TEST_ASSERT_NOT_NULL(strstr(arr.lines[i], "\"pocket\":2"));
+            break;
         }
     }
-    
+    TEST_ASSERT_TRUE(found_near_miss);
+
     /* Verify each record is valid JSON (starts with '{' and contains either
      * shot_start fields (shot_number, build_id, seed) or shot_end fields (result) */
     for (size_t i = 0; i < arr.count; i++) {
@@ -211,7 +220,12 @@ void test_trace_last_records_intact_and_parsable(void) {
         TEST_ASSERT_EQUAL('{', arr.lines[i][0]);  /* Valid JSON object */
         bool is_shot_start = strstr(arr.lines[i], "shot_number") != NULL;
         bool is_shot_end = strstr(arr.lines[i], "result") != NULL;
-        TEST_ASSERT_TRUE(is_shot_start || is_shot_end);
+        bool is_near_miss = strstr(arr.lines[i], "POCKET_NEAR_MISS") != NULL;
+        TEST_ASSERT_TRUE(is_shot_start || is_shot_end || is_near_miss);
+        if (is_shot_end) {
+            TEST_ASSERT_NOT_NULL(strstr(arr.lines[i], "final_positions"));
+            TEST_ASSERT_NOT_NULL(strstr(arr.lines[i], "pocket")); // Check if pocket index is present in pockets array
+        }
         if (is_shot_start) {
             TEST_ASSERT_NOT_NULL(strstr(arr.lines[i], "build_id"));
             TEST_ASSERT_NOT_NULL(strstr(arr.lines[i], "seed"));

@@ -48,10 +48,9 @@ struct PhysicsWorld {
 static void physics_create_board_geometry(PhysicsWorld* pw);
 static void physics_create_pieces(PhysicsWorld* pw);
 static void physics_create_striker(PhysicsWorld* pw);
-static b2ShapeDef physics_make_shape_def(float restitution, float friction);
+static b2ShapeDef physics_make_shape_def(float restitution, float friction, bool enable_sensors);
 static b2ShapeDef physics_make_sensor_shape_def(void);
 static void physics_check_pocket_events(PhysicsWorld* pw);
-static void physics_check_pockets(PhysicsWorld* pw);
 
 /* -----------------------------------------------------------------------------
  * Physics Creation / Destruction
@@ -102,10 +101,11 @@ void physics_destroy(PhysicsWorld* pw) {
 /* -----------------------------------------------------------------------------
  * Shape Definition Helpers (Box2D v3 API)
  * --------------------------------------------------------------------------- */
-static b2ShapeDef physics_make_shape_def(float restitution, float friction) {
+static b2ShapeDef physics_make_shape_def(float restitution, float friction, bool enable_sensors) {
     b2ShapeDef shape_def = b2DefaultShapeDef();
     shape_def.material.restitution = restitution;
     shape_def.material.friction = friction;
+    shape_def.enableSensorEvents = enable_sensors;
     return shape_def;
 }
 
@@ -124,7 +124,7 @@ static void physics_create_board_geometry(PhysicsWorld* pw) {
     float cushion_thick = CUSHION_THICKNESS;
     
     // Cushion shape definition - Box2D v3 uses material for restitution/friction
-    b2ShapeDef cushion_shape = physics_make_shape_def(0.9f, 0.1f);
+    b2ShapeDef cushion_shape = physics_make_shape_def(0.9f, 0.1f, false);
     
     // Top cushion
     b2BodyDef top_def = b2DefaultBodyDef();
@@ -181,7 +181,7 @@ static void physics_create_pieces(PhysicsWorld* pw) {
     body_def.fixedRotation = true;
     
     // Piece shape: restitution=0.95, friction=0.1
-    b2ShapeDef shape_def = physics_make_shape_def(0.95f, 0.1f);
+    b2ShapeDef shape_def = physics_make_shape_def(0.95f, 0.1f, true);
     shape_def.density = 1.0f;
     
     b2Circle circle = { .radius = PIECE_RADIUS_NORM };
@@ -205,7 +205,7 @@ static void physics_create_striker(PhysicsWorld* pw) {
     body_def.position = (b2Vec2){0, 0};
     
     // Striker shape: restitution=0.95, friction=0.1
-    b2ShapeDef shape_def = physics_make_shape_def(0.95f, 0.1f);
+    b2ShapeDef shape_def = physics_make_shape_def(0.95f, 0.1f, true);
     shape_def.density = 1.0f;
     
     b2Circle circle = { .radius = STRIKER_RADIUS_NORM };
@@ -246,9 +246,6 @@ void physics_step(PhysicsWorld* pw, float dt) {
         
         // Check pocket captures using Box2D v3 sensor events
         physics_check_pocket_events(pw);
-        
-        // Fallback: distance-based pocket detection (safety net for sensor event failures)
-        physics_check_pockets(pw);
     }
     
     pw->substeps = 0;
@@ -300,6 +297,8 @@ void physics_apply_board_resistance(PhysicsWorld* pw) {
 
 /* -----------------------------------------------------------------------------
  * Pocket Capture Detection via Sensor Events (Box2D v3)
+ * Authoritative capture method. Distance-based fallback removed.
+ * Capture distance: POCKET_CAPTURE_RADIUS_NORM (approx 0.051 normalized units).
  * --------------------------------------------------------------------------- */
 static void physics_check_pocket_events(PhysicsWorld* pw) {
     // Get sensor events from Box2D v3
@@ -371,129 +370,6 @@ static void physics_check_pocket_events(PhysicsWorld* pw) {
     }
 }
 
-/* Keep distance-based check as fallback for robustness */
-static void physics_check_pockets(PhysicsWorld* pw) {
-    float capture_radius = POCKET_RADIUS_NORM + PIECE_RADIUS_NORM;
-    float capture_radius_sq = capture_radius * capture_radius;
-    
-    // Cushion inner edges (where pieces must cross to be pocketed)
-    const float CUSHION_INNER = 0.5f - CUSHION_THICKNESS;  // 0.475
-    
-    // Check pieces
-    for (int i = 0; i < MAX_PIECES; i++) {
-        if (pw->piece_pocketed[i] || !b2Body_IsValid(pw->piece_bodies[i])) continue;
-        
-        b2Vec2 pos = b2Body_GetPosition(pw->piece_bodies[i]);
-        
-        for (int p = 0; p < 4; p++) {
-            if (!b2Body_IsValid(pw->pocket_sensors[p])) continue;
-            
-            b2Vec2 pocket_pos = b2Body_GetPosition(pw->pocket_sensors[p]);
-            float dx = pos.x - pocket_pos.x;
-            float dy = pos.y - pocket_pos.y;
-            float dist_sq = dx*dx + dy*dy;
-            
-            // Check if piece is in pocket zone (near pocket center, within pocket radius)
-            // AND pressed against the cushion (within cushion thickness of inner edge)
-            // Pocket centers are at (±0.47, ±0.47), pocket radius = 0.03
-            // Cushion inner edge at 0.475, so pocket spans from 0.44 to 0.50 (for north)
-            // Piece is pocketed if: within pocket radius of center AND pressed against cushion
-            
-            bool in_pocket_zone = false;
-            bool pressed_against_cushion = false;
-            
-            // North pockets (p=0,1): pocket_pos.y ≈ 0.47, cushion at y=0.475
-            if (pocket_pos.y > 0) {
-                float pocket_x = pocket_pos.x;
-                float pocket_x_min = pocket_x - POCKET_RADIUS_NORM;
-                float pocket_x_max = pocket_x + POCKET_RADIUS_NORM;
-                // Piece is in pocket x-range
-                in_pocket_zone = (pos.x >= pocket_x_min && pos.x <= pocket_x_max);
-                // Piece is pressed against north cushion (y close to cushion inner edge)
-                pressed_against_cushion = (pos.y >= CUSHION_INNER - 0.005f);  // Within 0.5mm of cushion
-            }
-            // South pockets (p=2,3): pocket_pos.y ≈ -0.47
-            else if (pocket_pos.y < 0) {
-                float pocket_x = pocket_pos.x;
-                float pocket_x_min = pocket_x - POCKET_RADIUS_NORM;
-                float pocket_x_max = pocket_x + POCKET_RADIUS_NORM;
-                in_pocket_zone = (pos.x >= pocket_x_min && pos.x <= pocket_x_max);
-                pressed_against_cushion = (pos.y <= -CUSHION_INNER + 0.005f);
-            }
-            // East pockets (p=1): pocket_pos.x ≈ 0.47
-            else if (pocket_pos.x > 0) {
-                float pocket_y = pocket_pos.y;
-                float pocket_y_min = pocket_y - POCKET_RADIUS_NORM;
-                float pocket_y_max = pocket_y + POCKET_RADIUS_NORM;
-                in_pocket_zone = (pos.y >= pocket_y_min && pos.y <= pocket_y_max);
-                pressed_against_cushion = (pos.x >= CUSHION_INNER - 0.005f);
-            }
-            // West pockets (p=0): pocket_pos.x ≈ -0.47
-            else {  // pocket_pos.x < 0
-                float pocket_y = pocket_pos.y;
-                float pocket_y_min = pocket_y - POCKET_RADIUS_NORM;
-                float pocket_y_max = pocket_y + POCKET_RADIUS_NORM;
-                in_pocket_zone = (pos.y >= pocket_y_min && pos.y <= pocket_y_max);
-                pressed_against_cushion = (pos.x <= -CUSHION_INNER + 0.005f);
-            }
-            
-            // Only pocket if piece is in pocket zone AND pressed against cushion
-            if (in_pocket_zone && pressed_against_cushion) {
-                // Also check distance to pocket center as backup
-                if (dist_sq < capture_radius_sq) {
-                    pw->piece_pocketed[i] = true;
-                    pw->pocketed_ids[pw->pocketed_count] = (uint8_t)i;
-                    pw->pocketed_pocket_indices[pw->pocketed_count] = (uint8_t)p;
-                    
-                    if (i == QUEEN_ID) {
-                        pw->pocketed_colors[pw->pocketed_count] = PIECE_QUEEN;
-                    } else {
-                        pw->pocketed_colors[pw->pocketed_count] = pw->piece_colors[i];
-                    }
-                    pw->pocketed_count++;
-                    
-                    b2DestroyBody(pw->piece_bodies[i]);
-                    pw->piece_bodies[i] = (b2BodyId){0};
-                    break;
-                }
-            }
-        }
-    }
-    
-    // Check striker
-    if (!pw->striker_pocketed && b2Body_IsValid(pw->striker_body)) {
-        b2Vec2 pos = b2Body_GetPosition(pw->striker_body);
-        
-        for (int p = 0; p < 4; p++) {
-            if (!b2Body_IsValid(pw->pocket_sensors[p])) continue;
-            
-            b2Vec2 pocket_pos = b2Body_GetPosition(pw->pocket_sensors[p]);
-            float dx = pos.x - pocket_pos.x;
-            float dy = pos.y - pocket_pos.y;
-            float dist_sq = dx*dx + dy*dy;
-            
-            // Only pocket striker if it has crossed the cushion line
-            bool past_cushion = false;
-            if (pocket_pos.y > 0 && pos.y > CUSHION_INNER) {
-                past_cushion = true;
-            } else if (pocket_pos.y < 0 && pos.y < -CUSHION_INNER) {
-                past_cushion = true;
-            } else if (pocket_pos.x > 0 && pos.x > CUSHION_INNER) {
-                past_cushion = true;
-            } else if (pocket_pos.x < 0 && pos.x < -CUSHION_INNER) {
-                past_cushion = true;
-            }
-            
-            if (past_cushion && dist_sq < capture_radius_sq) {
-                pw->striker_pocketed = true;
-                b2DestroyBody(pw->striker_body);
-                pw->striker_body = (b2BodyId){0};
-                break;
-            }
-        }
-    }
-}
-
 void physics_collect_pocketed(PhysicsWorld* pw, ShotResult* result) {
     result->pocketed_count = (uint8_t)pw->pocketed_count;
     for (int i = 0; i < pw->pocketed_count; i++) {
@@ -543,7 +419,7 @@ void physics_place_striker(PhysicsWorld* pw, Seat seat, Vec2 placement) {
         body_def.fixedRotation = true;
         body_def.position = (b2Vec2){placement.x, placement.y};
         
-        b2ShapeDef shape_def = physics_make_shape_def(0.95f, 0.1f);
+        b2ShapeDef shape_def = physics_make_shape_def(0.95f, 0.1f, true);
         shape_def.density = 1.0f;
         
         b2Circle circle = { .radius = STRIKER_RADIUS_NORM };

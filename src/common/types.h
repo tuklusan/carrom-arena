@@ -182,7 +182,7 @@ typedef struct {
     uint8_t pocketed_ids[19], pocketed_count, pocketed_colors[19];
     uint8_t pocketed_pocket_indices[19];  // Which pocket each piece went into (0-3)
     bool queen_pocketed, striker_pocketed; FoulFlags fouls;
-    Vec2 final_positions[19]; float sim_time;
+    Vec2 final_positions[20]; float sim_time;
 } ShotResult;
 
 /* -----------------------------------------------------------------------------

@@ -64,11 +64,14 @@ add_test(NAME rules_test COMMAND test_rules)
 
 # Test executable for physics settling
 add_executable(test_pocketing_deterministic
-    test_pocketing_deterministic.c)
+    test_pocketing_deterministic.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
 apply_test_warnings(test_pocketing_deterministic)
 target_link_libraries(test_pocketing_deterministic carrom_core box2d ${PLATFORM_LIBS})
 target_include_directories(test_pocketing_deterministic PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
 )
 add_test(NAME pocketing_deterministic_test COMMAND test_pocketing_deterministic)
 
