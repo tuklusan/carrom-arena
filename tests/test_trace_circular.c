@@ -200,7 +200,7 @@ void test_trace_last_records_intact_and_parsable(void) {
     TraceRecordArray arr = trace_read_last_records(test_trace_path, 50);
     TEST_ASSERT_GREATER_THAN(0, arr.count);
     TEST_ASSERT_LESS_OR_EQUAL(50, arr.count);
-    
+
     /* Verify the near miss is present */
     bool found_near_miss = false;
     for (size_t i = 0; i < arr.count; i++) {
@@ -231,7 +231,7 @@ void test_trace_last_records_intact_and_parsable(void) {
             TEST_ASSERT_NOT_NULL(strstr(arr.lines[i], "seed"));
         }
     }
-    
+
     trace_record_array_free(&arr);
 }
 

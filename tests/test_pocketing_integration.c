@@ -46,10 +46,6 @@ void test_pocketing_integration_flow(void) {
     shot_result_init(&result);
     physics_collect_pocketed(pw, &result);
     
-    TEST_ASSERT_EQUAL_INT(1, result.pocketed_count);
-    TEST_ASSERT_EQUAL_INT(0, result.pocketed_ids[0]);
-    TEST_ASSERT_EQUAL_INT(PIECE_WHITE, result.pocketed_colors[0]);
-    
     // 5. Resolve rules (app-level HUD/Score update)
     ShotFacts facts = {0};
     facts.active_seat = game.turn_seat;
@@ -64,21 +60,30 @@ void test_pocketing_integration_flow(void) {
     
     RulesOutcome outcome = rules_resolve(&match, &game, &facts);
     
-    // 6. Verify Rule Engine / HUD updates
-    // White pockets white -> score +1 for white, turn continues
-    TEST_ASSERT_EQUAL_INT(1, outcome.score_delta.white);
-    TEST_ASSERT_EQUAL_INT(TURN_CONTINUE, outcome.turn_decision);
-    
-    // 7. Verify Piece removal from play
-    // The outcome.next_game_state should reflect the piece is pocketed
-    TEST_ASSERT_TRUE(outcome.next_game_state.board.pieces[0].pocketed);
-    TEST_ASSERT_FALSE(outcome.next_game_state.board.pieces[0].on_board);
-    
-    // 8. Verify turn continuation (White pockets white -> continues)
-    TEST_ASSERT_EQUAL_INT(TURN_CONTINUE, outcome.turn_decision);
-    
+    // Extract values for assertions and destroy physics world
+    int result_count = result.pocketed_count;
+    int first_piece_id = (result.pocketed_count > 0) ? result.pocketed_ids[0] : -1;
+    int first_piece_color = (result.pocketed_count > 0) ? result.pocketed_colors[0] : -1;
+    int score_white = outcome.score_delta.white;
+    int decision = outcome.turn_decision;
+    bool piece0_pocketed = outcome.next_game_state.board.pieces[0].pocketed;
+    bool piece0_on_board = outcome.next_game_state.board.pieces[0].on_board;
+
     physics_destroy(pw);
+
+    // Assertions
+    TEST_ASSERT_EQUAL_INT(1, result_count);
+    TEST_ASSERT_EQUAL_INT(0, first_piece_id);
+    TEST_ASSERT_EQUAL_INT(PIECE_WHITE, first_piece_color);
+    TEST_ASSERT_EQUAL_INT(1, score_white);
+    TEST_ASSERT_EQUAL_INT(TURN_CONTINUE, decision);
+    TEST_ASSERT_TRUE(piece0_pocketed);
+    TEST_ASSERT_FALSE(piece0_on_board);
 }
+
+
+
+
 
 void test_striker_pocket_integration(void) {
     MatchState match;
