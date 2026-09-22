@@ -16,14 +16,14 @@ void setUp(void) {}
 void tearDown(void) {}
 
 void test_trace_write_near_miss(void) {
-    TraceWriter* w = trace_open("tests/test_near_miss.jsonl", "tests/logs", true, 12345);
+    TraceWriter* w = trace_open("test_near_miss.jsonl", "tests/logs", true, 12345);
     TEST_ASSERT_NOT_NULL(w);
     
     trace_write_pocket_near_miss(w, 5, 2, 0.005f, 0.1f);
     trace_close(w);
     
     // Validate the JSONL record
-    TraceRecordArray records = trace_read_last_records("tests/test_near_miss.jsonl", 1);
+    TraceRecordArray records = trace_read_last_records("test_near_miss.jsonl", 1);
     TEST_ASSERT_EQUAL_INT(1, records.count);
     TEST_ASSERT_NOT_NULL(records.lines[0]);
     
