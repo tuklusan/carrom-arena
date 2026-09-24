@@ -61,11 +61,12 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     Vec2 screen = math_world_to_screen(vp, world_pos);
     
     // Figure dimensions in screen pixels (based on L->board_size per spec)
-    float head_radius = (float)L->board_size / 25.0f;
-    float shoulder_half_width = (float)L->board_size / 18.0f;
-    float shoulder_height = (float)L->board_size / 45.0f;
-    float torso_height = (float)L->board_size / 12.0f;
-    float torso_bottom_half_width = (float)L->board_size / 22.5f;
+    float fref = (float)L->board_size * FIG_SCALE;
+    float head_radius = fref / 25.0f;
+    float shoulder_half_width = fref / 18.0f;
+    float shoulder_height = fref / 45.0f;
+    float torso_height = fref / 12.0f;
+    float torso_bottom_half_width = fref / 22.5f;
     
     // Colors based on team
     Color fill_color = (team == TEAM_WHITE) ? COLOR_TEAM_WHITE_FILL : COLOR_TEAM_BLACK_FILL;
@@ -360,12 +361,12 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     // Margin from board boundary = required_margin, where required_margin = max(board_size/10, 24px)
     // The figure's NEAREST point (bottom of torso for N/S) should be at board_boundary + required_margin
     // Head center is at board_boundary + required_margin + body_length
-    float required_margin_px = my_fmaxf((float)L->board_size / 10.0f, 24.0f);
+    float required_margin_px = (float)FIG_MARGIN_PX;
     float margin_world = required_margin_px / vp.world_to_screen;
     
     // Figure body length in world units (head_radius + gap + torso_height)
-    float head_radius = (float)L->board_size / 25.0f;
-    float torso_height = (float)L->board_size / 12.0f;
+    float head_radius = (float)L->board_size * FIG_SCALE / 25.0f;
+    float torso_height = (float)L->board_size * FIG_SCALE / 12.0f;
     float gap = 2.0f; // pixels
     float body_length_world = (head_radius + gap + torso_height) / vp.world_to_screen;
     

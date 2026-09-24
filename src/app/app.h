@@ -51,8 +51,8 @@ static inline AppConfig app_config_default(void) {
         .capture_dir = "captures",
         .verbose = false,
         .headless = false,
-        .window_width = 1280,
-        .window_height = 720,
+        .window_width = 800,
+        .window_height = 560,
         .playback_speed = 0.1f,   // R3: 1/10th speed default for rendered/capture modes
         .ai_budget_ms = 150,      // R5: Default AI budget: 150ms (lowered from 250)
         .debug_phase = false      // Per-frame phase debug logging in capture mode

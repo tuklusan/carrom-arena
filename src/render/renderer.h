@@ -13,6 +13,9 @@ extern "C" {
  * Read-only view of authoritative state
  * --------------------------------------------------------------------------- */
 
+#define FIG_MARGIN_PX 6      /* gap between board edge and a player figure */
+#define FIG_SCALE 0.65f       /* player figure size relative to board_size */
+
 /* Dynamic layout computed each frame from actual window size */
 typedef struct {
     int sw, sh;                    // Screen width/height

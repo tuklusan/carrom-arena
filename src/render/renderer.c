@@ -41,40 +41,27 @@ void layout_compute(int sw, int sh, Layout* out) {
     float fsh = (float)sh;
 
     out->title_band_h = (int)(fsh * 0.055f);
-    out->footer_band_h = (int)(fsh * 0.10f);
-    out->hud_w = (int)(fsw * 0.16f);
-    out->right_sidebar_w = (int)(fsw * 0.04f);
-    out->board_region_x = out->hud_w + 10;
-    out->board_region_w = sw - out->hud_w - out->right_sidebar_w - 10;
+    out->footer_band_h = (int)(fsh * 0.07f);
+    out->hud_w = (int)(fsw * 0.21f);
+    out->right_sidebar_w = 0;
+    out->board_region_x = out->hud_w;
+    out->board_region_w = sw - out->hud_w - 8;
+    out->body_h = sh - out->title_band_h - out->footer_band_h;
 
-    // Closed-form vertical binding
-    // available_h_raw = sh - title_band_h - footer_band_h - 30
-    int available_h_raw = sh - out->title_band_h - out->footer_band_h - 30;
-    // board_size_if_vert_binds = 0.8 * available_h_raw
-    int board_size_if_vert_binds = (int)(0.8f * (float)available_h_raw);
-    // available_w = board_region_w - 40
-    int available_w = out->board_region_w - 40;
-    // candidate = min(board_size_if_vert_binds, available_w)
-    int candidate = (board_size_if_vert_binds < available_w) ? board_size_if_vert_binds : available_w;
-    // Clamp: if candidate < 200 → 200; if candidate > 1400 → 1400
+    // A figure (head + torso) plus its margin extends fig_extent = FIG_MARGIN_PX + 0.105 * board beyond
+    // the board edge on every side; the board is the largest square that leaves room for all four.
+    float fig_k = 0.105f;
+    int fig_fixed = FIG_MARGIN_PX + 8;
+    int vert = (int)(((float)out->body_h - 2.0f * (float)fig_fixed) / (1.0f + 2.0f * fig_k));
+    int horiz = (int)(((float)out->board_region_w - 2.0f * (float)fig_fixed) / (1.0f + 2.0f * fig_k));
+    int candidate = (vert < horiz) ? vert : horiz;
     if (candidate < 200) candidate = 200;
     if (candidate > 1400) candidate = 1400;
     out->board_size = candidate;
+    out->figure_band_h = fig_fixed + (int)(fig_k * (float)candidate);
 
-    // Now compute figure_band_h from actual board_size
-    out->figure_band_h = out->board_size / 8;
-
-    // Board centered BOTH horizontally AND vertically in allotted region
-    // Vertical centering: board_y = title_band_h + figure_band_h + (available_space_for_board - board_size) / 2
-    // where available_space_for_board = sh - title_band_h - footer_band_h - 2 * figure_band_h
-    int available_space_for_board = sh - out->title_band_h - out->footer_band_h - 2 * out->figure_band_h;
-    int vertical_padding = (available_space_for_board - out->board_size) / 2;
-    out->board_y = out->title_band_h + out->figure_band_h + vertical_padding;
-    if (out->board_y < out->title_band_h + out->figure_band_h + 10) {
-        out->board_y = out->title_band_h + out->figure_band_h + 10;
-    }
-
-    // Horizontal centering
+    // Board centred in the body (between title and footer) and in the region right of the HUD
+    out->board_y = out->title_band_h + (out->body_h - out->board_size) / 2;
     out->board_x = out->board_region_x + (out->board_region_w - out->board_size) / 2;
 
     // N figure band center (above board, in the figure band)
@@ -84,8 +71,6 @@ void layout_compute(int sw, int sh, Layout* out) {
 
     // Placement banner in N figure band
     out->placement_banner_y = out->title_band_h + 6;
-
-    out->body_h = sh - out->title_band_h - out->footer_band_h;
 
     // Font sizes (same as before)
     float board_size_f = (float)out->board_size;
@@ -211,12 +196,12 @@ static void draw_footer_band(Renderer* r, const Layout* L) {
     
     int blog_link_width = MeasureText(BLOG_LINK, L->font_size_footer_link);
     int link_x = (L->sw - blog_link_width) / 2;
-    int link_y = rule_y + 20;
+    int link_y = rule_y + 4;
     DrawText(BLOG_LINK, link_x, link_y, L->font_size_footer_link, LIGHTGRAY);
     
     int copyright_width = MeasureText(COPYRIGHT_TEXT, L->font_size_footer_copyright);
     int copyright_x = (L->sw - copyright_width) / 2;
-    int copyright_y = link_y + L->font_size_footer_link + 10;
+    int copyright_y = link_y + L->font_size_footer_link + 2;
     DrawText(COPYRIGHT_TEXT, copyright_x, copyright_y, L->font_size_footer_copyright, (Color){ 180, 180, 180, 255 });
 }
 

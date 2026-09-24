@@ -943,8 +943,8 @@ void app_print_usage(const char* prog_name) {
     printf("  --verbose             Verbose logging\n");
     printf("  --headless            Force headless mode\n");
     printf("  --debug-phase         Enable per-frame phase debug logging in capture mode\n");
-    printf("  --width <n>           Window width (default: 1280)\n");
-    printf("  --height <n>          Window height (default: 720)\n");
+    printf("  --width <n>           Window width (default: 800)\n");
+    printf("  --height <n>          Window height (default: 560)\n");
     printf("  --help, -h            Show this help\n");
     printf("  --version, -v         Show version\n");
 }
