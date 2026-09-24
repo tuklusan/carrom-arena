@@ -36,7 +36,8 @@ void test_restitution_low_speed(void) {
 }
 
 void test_momentum_transfer(void) {
-    float speeds[] = {0.3f, 1.0f, 3.0f};
+    /* Board deceleration is 2.5 u/s^2, so reaching a piece 0.2 u away needs v > sqrt(2*2.5*0.2) = 1.0 u/s */
+    float speeds[] = {1.5f, 3.0f, 5.0f};
     for (int s = 0; s < 3; s++) {
         PhysicsWorld* pw = physics_create();
         BoardState board;
@@ -53,7 +54,7 @@ void test_momentum_transfer(void) {
         physics_place_striker(pw, SEAT_NORTH, (Vec2){-0.2f, 0.0f});
         physics_apply_shot(pw, 0.0f, speeds[s] / 5.0f);
         
-        // Simulate enough time for collision (0.2 units / 0.3 units/s approx 0.6s)
+        // Simulate enough time for collision (0.2 units at >= 1.5 units/s is under 0.2 s)
         for (int i = 0; i < 120; i++) physics_step(pw, PHYSICS_DT);
         
         Vec2 pos[MAX_PIECES];
