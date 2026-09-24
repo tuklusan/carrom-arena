@@ -136,13 +136,22 @@ static void app_setup_renderer(AppContext* ctx) {
  * --------------------------------------------------------------------------- */
 // Use physics.h definitions: PHYSICS_HZ, PHYSICS_DT, MAX_SUBSTEPS
 
+/* The configured game speed (default 0.1x) applies only from striker LAUNCH until the board
+ * SETTLES. Thinking, placement and aim preview always run at full (1x) speed. */
+static double app_phase_speed(const AppContext* ctx) {
+    if (ctx->game.phase == PHASE_SHOT_EXECUTION || ctx->game.phase == PHASE_SETTLING) {
+        return (double)ctx->playback_speed;
+    }
+    return 1.0;
+}
+
 static void app_simulation_step(AppContext* ctx, double dt) {
     // Apply playback speed: at 0.5x, 1 wall-clock second advances 0.5s of simulation
     // Space key pause sets speed_paused=true, which forces dt=0
     if (ctx->speed_paused) {
         dt = 0.0;
     }
-    ctx->accumulator += dt * ctx->playback_speed;
+    ctx->accumulator += dt * app_phase_speed(ctx);
 
     // Cap accumulated time to prevent spiral of death and lag above 0.5x playback
     // Max substeps (4) at 1/120s is ~0.033s. Capping at 0.25s drops excess.
@@ -447,7 +456,7 @@ int app_run_simulation(AppContext* ctx) {
                 case PHASE_THINKING:
                     // AI thinking phase: compute shot plan
                     if (ctx->thinking_phase_active) {
-                        ctx->thinking_timer += dt * ctx->playback_speed;
+                        ctx->thinking_timer += dt * app_phase_speed(ctx);
                         
                         // Check for transition: using scaled thinking_timer instead of wall time
                         if (ctx->pending_shot_valid && ctx->thinking_timer >= 2.0) {
@@ -516,7 +525,7 @@ int app_run_simulation(AppContext* ctx) {
                     
                     // Count down timer (only if not paused)
                     if (!ctx->paused && !ctx->speed_paused) {
-                        ctx->placement_timer -= dt * ctx->playback_speed;
+                        ctx->placement_timer -= dt * app_phase_speed(ctx);
                     }
                     
                     // Timer expired - transition to AIM_PREVIEW with the pre-computed shot plan
@@ -544,7 +553,7 @@ int app_run_simulation(AppContext* ctx) {
                     // AIM_PREVIEW phase: timer scaled by playback_speed
                     if (ctx->aim_preview_active) {
                         // Use playback_speed for timing
-                        ctx->aim_preview_timer -= dt * ctx->playback_speed;
+                        ctx->aim_preview_timer -= dt * app_phase_speed(ctx);
                         
                         // Set computed_shot_valid true on first frame of AIM_PREVIEW
                         if (!ctx->game.computed_shot_valid) {

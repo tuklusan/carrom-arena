@@ -17,7 +17,7 @@ extern "C" {
 
 #define PHYSICS_HZ 120
 #define PHYSICS_DT (1.0f / PHYSICS_HZ)
-#define MAX_SUBSTEPS 4
+#define MAX_SUBSTEPS 40
 
 // Physics constants
 #define BOARD_COULOMB     0.10f    // Coulomb friction coefficient (stronger dry friction)

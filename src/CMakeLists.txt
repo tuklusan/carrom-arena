@@ -121,7 +121,7 @@ endif()
 # Compile definitions
 target_compile_definitions(carrom_core PRIVATE
     PHYSICS_HZ=120
-    MAX_SUBSTEPS=4
+    MAX_SUBSTEPS=40
     BOARD_SIDE=1.0f
     POCKET_RADIUS=0.030f
     PIECE_RADIUS=0.021f
@@ -139,7 +139,7 @@ target_compile_definitions(carrom_core PRIVATE
 
 target_compile_definitions(carrom_render PRIVATE
     PHYSICS_HZ=120
-    MAX_SUBSTEPS=4
+    MAX_SUBSTEPS=40
     BOARD_SIDE=1.0f
     POCKET_RADIUS=0.030f
     PIECE_RADIUS=0.021f
