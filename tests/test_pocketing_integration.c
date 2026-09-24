@@ -19,7 +19,7 @@ void test_pocketing_integration_flow(void) {
     GameState game;
     game_state_init(&game, 12345);
     board_state_init(&game.board);
-    board_setup_initial_formation(&game.board, TEAM_WHITE);
+    board_setup_initial_formation(&game.board, NULL);
     game.turn_seat = SEAT_NORTH;
     
     PhysicsWorld* pw = physics_create();
@@ -53,7 +53,7 @@ void test_pocketing_integration_flow(void) {
     int first_piece_id = (result.pocketed_count > 0) ? result.pocketed_ids[0] : -1;
     int first_piece_color = (result.pocketed_count > 0) ? result.pocketed_colors[0] : -1;
     int score_white = outcome.score_delta.white;
-    int decision = outcome.turn_decision;
+    int decision = (int)outcome.turn_decision;
     bool piece0_pocketed = outcome.next_game_state.board.pieces[0].pocketed;
     bool piece0_on_board = outcome.next_game_state.board.pieces[0].on_board;
 
@@ -101,7 +101,7 @@ void test_striker_pocket_integration(void) {
     facts.striker_pocketed = striker_pocketed;
     
     RulesOutcome outcome_final = rules_resolve(&match, &game, &facts);
-    int final_decision = outcome_final.turn_decision;
+    int final_decision = (int)outcome_final.turn_decision;
 
     TEST_ASSERT_EQUAL_INT(TURN_ADVANCE, final_decision);
 }
