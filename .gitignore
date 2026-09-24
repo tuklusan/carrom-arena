@@ -39,3 +39,10 @@ wip_*.patch
 .kimi_run/
 traces/
 captures/
+
+# local run artefacts
+.kimi_*
+striker_measure.csv
+speed_test/
+captures/
+*.jsonl

@@ -655,19 +655,6 @@ int app_run_simulation(AppContext* ctx) {
             renderer_draw_placement_banner(ctx->renderer, &ctx->game, ctx->placement_timer);
             renderer_end(ctx->renderer);
 
-            // MEASUREMENT: Log striker position every frame for burst analysis
-            static FILE* meas_fp = NULL;
-            if (!meas_fp) {
-                meas_fp = fopen("striker_measure.csv", "w");
-                if (meas_fp) fprintf(meas_fp, "wall_time,phase,striker_x,striker_y\n");
-            }
-            if (meas_fp) {
-                fprintf(meas_fp, "%.6f,%d,%.6f,%.6f\n", 
-                        platform_time_now(), ctx->game.phase, 
-                        ctx->game.board.striker.position.x, ctx->game.board.striker.position.y);
-                fflush(meas_fp);
-            }
-            
             // Capture frames if in capture mode
             if (ctx->config.mode == APP_MODE_CAPTURE && ctx->capture_frame_count < ctx->config.frames) {
                 renderer_capture_frame(ctx->renderer, ctx->config.capture_dir, ctx->capture_frame_count,
