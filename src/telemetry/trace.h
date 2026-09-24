@@ -39,6 +39,18 @@ void trace_write_physics_state(TraceWriter* writer, uint64_t frame, uint64_t sho
                                float sim_time, const Vec2* striker_vel, const Vec2* striker_pos,
                                const char* phase);
 
+/* Immediate record when physics pockets a piece */
+void trace_write_pocket(TraceWriter* writer, uint64_t shot_number, uint8_t piece_id, int color,
+                        uint8_t pocket_index, float sim_time);
+
+/* Mid-shot snapshot. pos/vel/alive are indexed by piece id (MAX_PIECES entries); pocketed[] lists
+ * pocketed ids so far. SHOT_PROGRESS lists only pieces moving faster than 0.02; SHOT_INTERRUPTED
+ * (interrupted=true) lists every live piece and flushes. */
+void trace_write_shot_snapshot(TraceWriter* writer, bool interrupted, uint64_t shot_number, float sim_time,
+                               const char* phase, const Vec2* striker_pos, const Vec2* striker_vel,
+                               const Vec2* pos, const Vec2* vel, const bool* alive,
+                               const uint8_t* pocketed, int pocketed_count);
+
 /* Flush any buffered data to disk */
 void trace_flush(TraceWriter* writer);
 

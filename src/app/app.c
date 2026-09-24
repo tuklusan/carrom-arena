@@ -54,6 +54,8 @@
     bool aim_preview_active;         // Whether we're in the aim preview phase
     double aim_preview_start_wall;   // Wall time when aim preview started (for figure animation)
     double thinking_min_wall;        // Minimum wall time for THINKING phase visualization
+    int pockets_registered;          // Pockets of the running shot already registered in game state
+    float next_progress_time;        // Sim time of the next SHOT_PROGRESS trace record
 };
 
 /* -----------------------------------------------------------------------------
@@ -178,6 +180,67 @@ static ShotResult app_collect_shot_result(AppContext* ctx) {
     return result;
 }
 
+/* Place a freshly pocketed piece in its 3x3 corner slot outside the board (game state only). */
+static void app_register_pocket(AppContext* ctx, uint8_t piece_id, uint8_t pocket_idx) {
+    if (piece_id >= MAX_PIECES || pocket_idx > 3) return;
+    BoardState* board = &ctx->game.board;
+    board->pieces[piece_id].on_board = false;
+    board->pieces[piece_id].pocketed = true;
+
+    // Pockets: 0=top-left (NW), 1=top-right (NE), 2=bottom-left (SW), 3=bottom-right (SE)
+    Vec2 base = POCKET_CENTERS[pocket_idx];
+    Vec2 offset = {0.06f, 0.06f};
+    Vec2 spacing = {0.025f, 0.025f};
+    if (pocket_idx == 1 || pocket_idx == 3) offset.x = -0.06f;
+    if (pocket_idx == 2 || pocket_idx == 3) offset.y = -0.06f;
+
+    int slot = board->pocketed_count;
+    if (slot >= MAX_PIECES) return;
+    board->pieces[piece_id].pocketed_position = (Vec2){
+        base.x + offset.x + (slot % 3) * spacing.x,
+        base.y + offset.y + (slot / 3) * spacing.y
+    };
+    board->pieces[piece_id].pocket_index = pocket_idx;
+    board->pocketed_pieces[slot] = board->pieces[piece_id];
+    board->pocketed_count++;
+}
+
+static void app_snapshot_trace(AppContext* ctx, bool interrupted) {
+    if (!ctx->trace) return;
+    Vec2 pos[MAX_PIECES], vel[MAX_PIECES], spos, svel;
+    bool alive[MAX_PIECES];
+    physics_get_positions(ctx->physics, pos);
+    for (int i = 0; i < MAX_PIECES; i++) alive[i] = physics_get_piece_velocity(ctx->physics, i, &vel[i]);
+    physics_get_striker_position(ctx->physics, &spos);
+    physics_get_striker_velocity(ctx->physics, &svel);
+    ShotResult r = {0};
+    physics_collect_pocketed(ctx->physics, &r);
+    const char* phase = ctx->game.phase == PHASE_SETTLING ? "SETTLING" : "SHOT_EXECUTION";
+    uint64_t shot = ctx->shot_count ? ctx->shot_count - 1 : 0;
+    trace_write_shot_snapshot(ctx->trace, interrupted, shot, physics_get_sim_time(ctx->physics), phase,
+                              &spos, &svel, pos, vel, alive, r.pocketed_ids, r.pocketed_count);
+}
+
+/* Called every frame while a shot runs: register new pockets at once, trace progress. */
+static void app_shot_progress(AppContext* ctx) {
+    ShotResult r = {0};
+    physics_collect_pocketed(ctx->physics, &r);
+    float t = physics_get_sim_time(ctx->physics);
+    uint64_t shot = ctx->shot_count ? ctx->shot_count - 1 : 0;
+    for (int i = ctx->pockets_registered; i < r.pocketed_count; i++) {
+        app_register_pocket(ctx, r.pocketed_ids[i], r.pocketed_pocket_indices[i]);
+        if (ctx->trace) {
+            trace_write_pocket(ctx->trace, shot, r.pocketed_ids[i], r.pocketed_colors[i],
+                               r.pocketed_pocket_indices[i], t);
+        }
+    }
+    ctx->pockets_registered = r.pocketed_count;
+    if (t >= ctx->next_progress_time) {
+        app_snapshot_trace(ctx, false);
+        ctx->next_progress_time = t + 2.0f;
+    }
+}
+
 static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Extract facts for rules engine
     ShotFacts facts;
@@ -190,53 +253,13 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     ctx->game = outcome.next_game_state;
     ctx->match = outcome.next_match_state;
 
-    // Handle pocketed pieces: update board state and compute pocketed positions
-    for (int i = 0; i < result->pocketed_count; i++) {
-        uint8_t piece_id = result->pocketed_ids[i];
-        uint8_t pocket_idx = result->pocketed_pocket_indices[i];
-        
-        // Remove piece from board
-        ctx->game.board.pieces[piece_id].on_board = false;
-        ctx->game.board.pieces[piece_id].pocketed = true;
-        
-        // Compute pocketed slot position: 3x3 grid per corner
-        // Grid starts at POCKET_CENTERS[pocket_idx] + (0.06, 0.06) outward, 0.025 spacing
-        // Pockets: 0=top-left (NW), 1=top-right (NE), 2=bottom-left (SW), 3=bottom-right (SE)
-        // Outward direction depends on corner
-        Vec2 base = POCKET_CENTERS[pocket_idx];
-        Vec2 offset = {0.06f, 0.06f};
-        Vec2 spacing = {0.025f, 0.025f};
-        
-        // Adjust offset direction based on pocket corner
-        if (pocket_idx == 1) { // NE (top-right)
-            offset.x = -0.06f;
-        } else if (pocket_idx == 2) { // SW (bottom-left)
-            offset.y = -0.06f;
-        } else if (pocket_idx == 3) { // SE (bottom-right)
-            offset.x = -0.06f;
-            offset.y = -0.06f;
-        }
-        // Pocket 0 (NW) uses positive offset as-is
-        
-        int pocketed_idx = ctx->game.board.pocketed_count;
-        if (pocketed_idx < MAX_PIECES) {
-            int row = pocketed_idx / 3;
-            int col = pocketed_idx % 3;
-            Vec2 pocketed_pos = {
-                base.x + offset.x + col * spacing.x,
-                base.y + offset.y + row * spacing.y
-            };
-            
-            // Update the piece's pocketed position and index
-            ctx->game.board.pieces[piece_id].pocketed_position = pocketed_pos;
-            ctx->game.board.pieces[piece_id].pocket_index = pocket_idx;
-            
-            // Copy to pocketed_pieces array for rendering
-            ctx->game.board.pocketed_pieces[pocketed_idx] = ctx->game.board.pieces[piece_id];
-            ctx->game.board.pocketed_count++;
-        }
+    // Register any pockets not already registered mid-shot (idempotent)
+    for (int i = ctx->pockets_registered; i < result->pocketed_count; i++) {
+        app_register_pocket(ctx, result->pocketed_ids[i], result->pocketed_pocket_indices[i]);
     }
-    
+    ctx->pockets_registered = 0;
+    ctx->next_progress_time = 0.0f;
+
     // Set phase for next turn based on turn decision
     switch (outcome.turn_decision) {
         case TURN_CONTINUE:
@@ -394,6 +417,9 @@ int app_run_simulation(AppContext* ctx) {
             
             // Fixed timestep physics
             app_simulation_step(ctx, dt);
+            if (ctx->game.phase == PHASE_SHOT_EXECUTION || ctx->game.phase == PHASE_SETTLING) {
+                app_shot_progress(ctx);
+            }
             
             // Diagnostic: trace physics state during shot execution and settling
             if (ctx->trace && ctx->config.verbose && 
@@ -713,6 +739,9 @@ void app_destroy(AppContext* ctx) {
     app_cleanup_controllers(ctx);
     
     if (ctx->trace) {
+        if (ctx->game.phase == PHASE_SHOT_EXECUTION || ctx->game.phase == PHASE_SETTLING) {
+            app_snapshot_trace(ctx, true);
+        }
         trace_close(ctx->trace);
     }
     

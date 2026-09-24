@@ -1,5 +1,6 @@
 #include <math.h>
 #include "board_view.h"
+#include "piece_draw.h"
 #include "renderer.h"
 #include "common/types.h"
 #include "common/vecmath.h"
@@ -544,15 +545,12 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     
     // Pieces (interpolated from physics for smooth animation, fall back to board state)
     for (int i = 0; i < MAX_PIECES; i++) {
-        if (!board->pieces[i].on_board) continue;
-        
         Vec2 pos;
-        if (use_physics) {
-            // Interpolate between previous and current physics positions
-            Vec2 interp = vec2_lerp(prev_positions[i], curr_positions[i], alpha);
-            pos = interp;
-        } else {
-            pos = board->pieces[i].position;
+        bool phys_pocketed = use_physics && physics_is_piece_pocketed(physics, i);
+        if (!board_view_piece_draw_pos(board->pieces[i].on_board, phys_pocketed, use_physics,
+                                       board->pieces[i].position,
+                                       prev_positions[i], curr_positions[i], alpha, &pos)) {
+            continue;
         }
         
         Vec2 screen = math_world_to_screen(vp, pos);

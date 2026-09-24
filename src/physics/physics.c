@@ -390,6 +390,20 @@ void physics_collect_pocketed(PhysicsWorld* pw, ShotResult* result) {
     // Do NOT reset pocketed_count here - let app layer consume and clear via physics_consume_pocketed()
 }
 
+bool physics_is_piece_pocketed(const PhysicsWorld* pw, int id) {
+    if (!pw || id < 0 || id >= MAX_PIECES) return false;
+    return pw->piece_pocketed[id];
+}
+
+bool physics_get_piece_velocity(const PhysicsWorld* pw, int id, Vec2* vel) {
+    *vel = (Vec2){ 0, 0 };
+    if (!pw || id < 0 || id >= MAX_PIECES) return false;
+    if (pw->piece_pocketed[id] || !b2Body_IsValid(pw->piece_bodies[id])) return false;
+    b2Vec2 v = b2Body_GetLinearVelocity(pw->piece_bodies[id]);
+    *vel = (Vec2){ v.x, v.y };
+    return true;
+}
+
 void physics_consume_pocketed(PhysicsWorld* pw) {
     pw->pocketed_count = 0;
     pw->striker_pocketed = false;

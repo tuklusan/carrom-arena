@@ -252,6 +252,19 @@ target_include_directories(test_telemetry_extensions PRIVATE
 )
 add_test(NAME telemetry_extensions_test COMMAND test_telemetry_extensions)
 
+# Pocket visibility / mid-shot trace test
+add_executable(test_pocket_visibility
+    test_pocket_visibility.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_pocket_visibility)
+target_link_libraries(test_pocket_visibility carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_pocket_visibility PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME pocket_visibility_test COMMAND test_pocket_visibility)
+
 # Capture regression test (spawns carrom_arena binary in capture mode)
 
 # Catches: capture-mode hang (Gap-2 renderer rewrite regression)

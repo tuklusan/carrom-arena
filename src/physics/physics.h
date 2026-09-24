@@ -56,6 +56,9 @@ void physics_apply_shot(PhysicsWorld* pw, float aim_angle, float power);
 
 // Pocket capture queries
 void physics_collect_pocketed(PhysicsWorld* pw, ShotResult* result);
+bool physics_is_piece_pocketed(const PhysicsWorld* pw, int id);
+/* Live linear velocity of a piece; returns false (vel zeroed) if it is pocketed or absent */
+bool physics_get_piece_velocity(const PhysicsWorld* pw, int id, Vec2* vel);
 void physics_consume_pocketed(PhysicsWorld* pw);
 void physics_get_final_positions(PhysicsWorld* pw, Vec2* positions);
 

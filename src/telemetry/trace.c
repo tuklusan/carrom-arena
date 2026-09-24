@@ -537,6 +537,48 @@ void trace_write_physics_state(TraceWriter* writer, uint64_t frame, uint64_t sho
     trace_write_line_internal(writer, json, strlen(json));
 }
 
+void trace_write_pocket(TraceWriter* writer, uint64_t shot_number, uint8_t piece_id, int color,
+                        uint8_t pocket_index, float sim_time) {
+    if (!writer || !writer->jsonl_file) return;
+    char json[256];
+    snprintf(json, sizeof(json),
+        "{\"type\":\"POCKET\",\"shot_number\":%" PRIu64 ",\"piece_id\":%u,\"color\":%d,"
+        "\"pocket_index\":%u,\"sim_time\":%.6f}",
+        shot_number, (unsigned)piece_id, color, (unsigned)pocket_index, sim_time);
+    trace_write_line_internal(writer, json, strlen(json));
+}
+
+void trace_write_shot_snapshot(TraceWriter* writer, bool interrupted, uint64_t shot_number, float sim_time,
+                               const char* phase, const Vec2* striker_pos, const Vec2* striker_vel,
+                               const Vec2* pos, const Vec2* vel, const bool* alive,
+                               const uint8_t* pocketed, int pocketed_count) {
+    if (!writer || !writer->jsonl_file) return;
+    char json[4096];
+    size_t n = 0;
+#define APPEND(...) do { if (n < sizeof(json)) { int w_ = snprintf(json + n, sizeof(json) - n, __VA_ARGS__); if (w_ > 0) n += (size_t)w_; } } while (0)
+    APPEND("{\"type\":\"%s\",\"shot_number\":%" PRIu64 ",\"sim_time\":%.6f,\"phase\":\"%s\","
+           "\"striker\":{\"pos\":{\"x\":%.6f,\"y\":%.6f},\"vel\":{\"x\":%.6f,\"y\":%.6f}},\"pieces\":[",
+           interrupted ? "SHOT_INTERRUPTED" : "SHOT_PROGRESS", shot_number, sim_time, phase,
+           striker_pos->x, striker_pos->y, striker_vel->x, striker_vel->y);
+    bool first = true;
+    for (int i = 0; i < MAX_PIECES; i++) {
+        if (!alive[i]) continue;
+        float sp = sqrtf(vel[i].x * vel[i].x + vel[i].y * vel[i].y);
+        if (!interrupted && sp <= 0.02f) continue;
+        APPEND("%s{\"id\":%d,\"pos\":{\"x\":%.5f,\"y\":%.5f},\"vel\":{\"x\":%.5f,\"y\":%.5f}}",
+               first ? "" : ",", i, pos[i].x, pos[i].y, vel[i].x, vel[i].y);
+        first = false;
+    }
+    APPEND("],\"pocketed\":[");
+    for (int i = 0; i < pocketed_count; i++) APPEND("%s%u", i ? "," : "", (unsigned)pocketed[i]);
+    APPEND("]}");
+#undef APPEND
+    if (n >= sizeof(json)) n = sizeof(json) - 1;
+    json[n] = '\0';
+    trace_write_line_internal(writer, json, n);
+    if (interrupted) trace_flush(writer);
+}
+
 /* -----------------------------------------------------------------------------
  * Validation & Reading
  * --------------------------------------------------------------------------- */
