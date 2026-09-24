@@ -6,117 +6,55 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  BUILD_TYPE: Release
+# Only one CI run at a time, and inside a run only ONE job per runner
+# architecture at a time (max-parallel: 1 per architecture job below).
+concurrency:
+  group: carrom-ci
+  cancel-in-progress: false
 
 jobs:
-  build-test:
+  linux:
     name: ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.build_type }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
-          # Linux - Ubuntu 24.04
-          - os: ubuntu-24.04
-            compiler: gcc
-            build_type: Release
-            cmake_extra_args: ""
-          - os: ubuntu-24.04
-            compiler: clang
-            build_type: Release
-            cmake_extra_args: "-DCMAKE_C_COMPILER=clang"
-          - os: ubuntu-24.04
-            compiler: gcc
-            build_type: Debug
-            cmake_extra_args: "-DCMAKE_BUILD_TYPE=Debug"
-          - os: ubuntu-24.04
-            compiler: clang
-            build_type: Debug
-            cmake_extra_args: "-DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug"
-          
-          # Linux - Ubuntu 22.04
-          - os: ubuntu-22.04
-            compiler: gcc
-            build_type: Release
-            cmake_extra_args: ""
-          - os: ubuntu-22.04
-            compiler: clang
-            build_type: Release
-            cmake_extra_args: "-DCMAKE_C_COMPILER=clang"
-          - os: ubuntu-22.04
-            compiler: gcc
-            build_type: Debug
-            cmake_extra_args: "-DCMAKE_BUILD_TYPE=Debug"
-          - os: ubuntu-22.04
-            compiler: clang
-            build_type: Debug
-            cmake_extra_args: "-DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug"
-          
-          # macOS temporarily disabled - runner capacity/fix pending
-          
-          # Windows 2022 - MinGW only (MSVC temporarily disabled - fix pending)
-          - os: windows-2022
-            compiler: mingw
-            build_type: Release
-            cmake_extra_args: "-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++"
-          - os: windows-2022
-            compiler: mingw
-            build_type: Debug
-            cmake_extra_args: "-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=Debug"
-          
-          # Windows 2019 temporarily disabled - runner capacity limited on free tier
-
+          - { os: ubuntu-24.04, compiler: gcc,   build_type: Release, cmake_extra_args: "" }
+          - { os: ubuntu-24.04, compiler: clang, build_type: Release, cmake_extra_args: "-DCMAKE_C_COMPILER=clang" }
+          - { os: ubuntu-24.04, compiler: gcc,   build_type: Debug,   cmake_extra_args: "" }
+          - { os: ubuntu-24.04, compiler: clang, build_type: Debug,   cmake_extra_args: "-DCMAKE_C_COMPILER=clang" }
+          - { os: ubuntu-22.04, compiler: gcc,   build_type: Release, cmake_extra_args: "" }
+          - { os: ubuntu-22.04, compiler: clang, build_type: Release, cmake_extra_args: "-DCMAKE_C_COMPILER=clang" }
+          - { os: ubuntu-22.04, compiler: gcc,   build_type: Debug,   cmake_extra_args: "" }
+          - { os: ubuntu-22.04, compiler: clang, build_type: Debug,   cmake_extra_args: "-DCMAKE_C_COMPILER=clang" }
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
-          sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev
-
-      - name: Install dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install ninja
-
-      - name: Setup MSVC environment
-        if: matrix.compiler == 'msvc' && runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Configure CMake
-        run: |
-          cmake -B build -G Ninja ${{ matrix.cmake_extra_args }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-
-      - name: Build
-        run: |
-          cmake --build build --config ${{ matrix.build_type }} -j
-
-      - name: Setup virtual display (Xvfb)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
-          # Start Xvfb on :99 in background - avoids Xorg.wrap entirely
-          Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp &
-          echo "DISPLAY=:99" >> $GITHUB_ENV
-          # Give Xvfb a moment to start
-          sleep 1
-
-      - name: Run ctest
-        run: |
-          ctest --test-dir build --output-on-failure -j$(nproc)
-        shell: bash
-
-      - name: Upload ctest log
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/ci-cell
         with:
-          name: ctest-log-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
-          path: build/Testing/**/*.xml
-          retention-days: 7
+          compiler: ${{ matrix.compiler }}
+          build_type: ${{ matrix.build_type }}
+          cmake_extra_args: ${{ matrix.cmake_extra_args }}
+          artifact_suffix: ${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
 
+  windows:
+    name: ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - { os: windows-2022, compiler: mingw, build_type: Release, cmake_extra_args: "-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++" }
+          - { os: windows-2022, compiler: mingw, build_type: Debug,   cmake_extra_args: "-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/ci-cell
+        with:
+          compiler: ${{ matrix.compiler }}
+          build_type: ${{ matrix.build_type }}
+          cmake_extra_args: ${{ matrix.cmake_extra_args }}
+          artifact_suffix: ${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}

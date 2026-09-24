@@ -1,0 +1,50 @@
+name: Build and test
+description: Configure, build and run the full ctest suite for one matrix cell
+inputs:
+  compiler:
+    required: true
+  build_type:
+    required: true
+  cmake_extra_args:
+    required: false
+    default: ""
+  artifact_suffix:
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install dependencies (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo rm -f /etc/apt/sources.list.d/google-chrome.list
+        sudo apt-get update
+        sudo apt-get install -y ninja-build libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev xvfb
+
+    - name: Configure CMake
+      shell: bash
+      run: cmake -B build -G Ninja ${{ inputs.cmake_extra_args }} -DCMAKE_BUILD_TYPE=${{ inputs.build_type }}
+
+    - name: Build
+      shell: bash
+      run: cmake --build build --config ${{ inputs.build_type }} -j
+
+    - name: Start virtual display (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp &
+        echo "DISPLAY=:99" >> $GITHUB_ENV
+        sleep 1
+
+    - name: Run ctest
+      shell: bash
+      run: ctest --test-dir build --output-on-failure -j$(nproc)
+
+    - name: Upload ctest log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ctest-log-${{ inputs.artifact_suffix }}
+        path: build/Testing/**/*.xml
+        retention-days: 7
