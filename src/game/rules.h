@@ -26,8 +26,6 @@ void match_start_board(MatchState* match, GameState* game, RNGContext* rng);
 
 // Match state queries
 bool match_is_over(const MatchState* match);
-bool game_is_over(const GameState* game);
-bool board_is_over(const GameState* game);
 
 #ifdef __cplusplus
 }

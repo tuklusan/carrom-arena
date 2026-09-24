@@ -91,16 +91,6 @@ PlatformFile* platform_fopen(const char* path, const char* mode) {
     return pf;
 }
 
-size_t platform_fwrite(const void* ptr, size_t size, size_t count, PlatformFile* file) {
-    if (!file || !file->handle) return 0;
-    return fwrite(ptr, size, count, (FILE*)file->handle);
-}
-
-size_t platform_fread(void* ptr, size_t size, size_t count, PlatformFile* file) {
-    if (!file || !file->handle) return 0;
-    return fread(ptr, size, count, (FILE*)file->handle);
-}
-
 int platform_fclose(PlatformFile* file) {
     if (!file || !file->handle) return -1;
     int result = fclose((FILE*)file->handle);
@@ -127,32 +117,5 @@ bool platform_mkdir(const char* path) {
     return mkdir(path) == 0;
 #else
     return mkdir(path, 0755) == 0;
-#endif
-}
-
-bool platform_path_exists(const char* path) {
-#if defined(_WIN32)
-    DWORD attr = GetFileAttributesA(path);
-    return attr != INVALID_FILE_ATTRIBUTES;
-#else
-    return access(path, F_OK) == 0;
-#endif
-}
-
-bool platform_get_executable_path(char* buffer, size_t size) {
-#if defined(_WIN32)
-    DWORD len = GetModuleFileNameA(NULL, buffer, (DWORD)size);
-    return len > 0 && len < size;
-#elif defined(__APPLE__)
-    uint32_t bufsize = (uint32_t)size;
-    int ret = _NSGetExecutablePath(buffer, &bufsize);
-    return ret == 0;
-#else
-    ssize_t len = readlink("/proc/self/exe", buffer, size - 1);
-    if (len > 0 && len < (ssize_t)size) {
-        buffer[len] = '\0';
-        return true;
-    }
-    return false;
 #endif
 }

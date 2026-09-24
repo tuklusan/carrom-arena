@@ -24,8 +24,6 @@ int board_get_legal_placements(Seat seat, Vec2* out_placements, int max_placemen
 bool board_is_legal_placement(Seat seat, Vec2 pos);
 
 /* Piece queries */
-const PieceState* board_get_piece(const BoardState* board, uint8_t id);
-int board_count_on_board(const BoardState* board, PieceColor color);
 
 /* Game/Match state initialization */
 void game_state_init(GameState* game, uint64_t seed);

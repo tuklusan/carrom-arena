@@ -468,11 +468,3 @@ bool match_validate_shot(const GameState* game, const ShotPlan* plan) {
     
     return true;
 }
-
-bool game_is_over(const GameState* game) {
-    return game->phase == PHASE_GAME_OVER || game->phase == PHASE_MATCH_OVER;
-}
-
-bool board_is_over(const GameState* game) {
-    return game->phase == PHASE_BOARD_OVER;
-}

@@ -178,51 +178,6 @@ static ShotResult app_collect_shot_result(AppContext* ctx) {
     return result;
 }
 
-/* -----------------------------------------------------------------------------
- * Shot Execution Flow
- * --------------------------------------------------------------------------- */
-static void app_execute_shot(AppContext* ctx) {
-    Seat seat = ctx->game.turn_seat;
-    Controller* controller = ctx->controllers[seat];
-    
-    // Create decision snapshot (immutable view for AI)
-    DecisionSnapshot snap = {
-        .match = &ctx->match,
-        .game = &ctx->game,
-        .board = &ctx->game.board,
-        .physics = physics_snapshot(ctx->physics),
-        .active_seat = seat,
-        .ai_budget_ms = ctx->config.ai_budget_ms,
-        .max_candidates = ctx->max_candidates
-    };
-    
-    // AI decides shot plan
-    ShotPlan plan = controller_decide(controller, &snap, &ctx->rng.streams[seat]);
-    
-    // Validate shot plan
-    if (!match_validate_shot(&ctx->game, &plan)) {
-        // Fallback: minimal legal shot
-        plan = controller_fallback_shot(controller, &snap, &ctx->rng.streams[seat]);
-    }
-    
-    // Execute in live physics
-    physics_place_striker(ctx->physics, seat, plan.placement);
-    physics_apply_shot(ctx->physics, plan.aim_angle, plan.power);
-    
-    // Update game phase
-    ctx->game.phase = PHASE_SHOT_EXECUTION;
-    
-    // Log shot plan
-    if (ctx->trace) {
-        trace_write_shot_start(ctx->trace, &ctx->match, &ctx->game, 
-                               ctx->shot_count, seat, &plan);
-    }
-    
-    ctx->shot_count++;
-    ctx->thinking_phase_active = false;
-    ctx->candidates_evaluated = 0;
-}
-
 static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Extract facts for rules engine
     ShotFacts facts;
@@ -912,8 +867,6 @@ AppConfig app_parse_args(int argc, char* argv[]) {
             config.window_width = atoi(val);
         } else if ((val = get_arg_value(argv[i], "--height")) != 0) {
             config.window_height = atoi(val);
-        } else if ((val = get_arg_value(argv[i], "--replay")) != 0) {
-            config.replay_file = val;
         } else if ((val = get_arg_value(argv[i], "--playback-speed")) != 0) {
             float speed = strtof(val, NULL);
             if (speed < 0.05f) speed = 0.05f;
@@ -954,7 +907,6 @@ void app_print_usage(const char* prog_name) {
     printf("  --debug-phase         Enable per-frame phase debug logging in capture mode\n");
     printf("  --width <n>           Window width (default: 1280)\n");
     printf("  --height <n>          Window height (default: 720)\n");
-    printf("  --replay <file>       Replay trace file\n");
     printf("  --help, -h            Show this help\n");
     printf("  --version, -v         Show version\n");
 }

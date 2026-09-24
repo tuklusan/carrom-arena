@@ -33,10 +33,3 @@ void match_start_board(MatchState* match, GameState* game, RNGContext* rng) {
     striker_state_init(&game->board.striker, game->turn_seat);
     board_place_striker_on_baseline(&game->board.striker, game->turn_seat);
 }
-
-void match_advance_turn(GameState* game) {
-    game->turn_seat = (game->turn_seat + 1) % 4;
-    game->active_player.seat = game->turn_seat;
-    game->active_player.team = (game->turn_seat == SEAT_NORTH || game->turn_seat == SEAT_SOUTH) ? TEAM_WHITE : TEAM_BLACK;
-    game->consecutive_turns = 0;
-}

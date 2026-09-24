@@ -14,7 +14,6 @@ extern "C" {
 void match_state_init(MatchState* match);
 bool match_is_over(const MatchState* match);
 void match_start_board(MatchState* match, GameState* game, RNGContext* rng);
-void match_advance_turn(GameState* game);
 
 #ifdef __cplusplus
 }

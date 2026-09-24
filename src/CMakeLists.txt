@@ -15,7 +15,6 @@ add_library(carrom_core
     ai/shot_candidates.c
     ai/shot_evaluator.c
     telemetry/trace.c
-    telemetry/replay.c
     platform/platform.c
     common/types.c
     common/rng.c
@@ -49,7 +48,6 @@ endif()
 add_library(carrom_render
     render/renderer.c
     render/board_view.c
-    render/hud.c
     render/effects.c
 )
 

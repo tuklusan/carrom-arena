@@ -512,32 +512,6 @@ void physics_restore_snapshot(PhysicsWorld* pw, const PhysicsSnapshot* snap) {
     physics_snapshot_restore(pw, snap);
 }
 
-/* -----------------------------------------------------------------------------
- * Body Queries
- * --------------------------------------------------------------------------- */
-int physics_get_body_count(PhysicsWorld* pw) {
-    (void)pw;
-    return MAX_PIECES + 1;
-}
-
-b2BodyId* physics_get_bodies(PhysicsWorld* pw, int* out_count) {
-    static b2BodyId bodies[MAX_PIECES + 1];
-    int count = 0;
-    
-    for (int i = 0; i < MAX_PIECES; i++) {
-        if (b2Body_IsValid(pw->piece_bodies[i])) {
-            bodies[count++] = pw->piece_bodies[i];
-        }
-    }
-    
-    if (b2Body_IsValid(pw->striker_body)) {
-        bodies[count++] = pw->striker_body;
-    }
-    
-    *out_count = count;
-    return bodies;
-}
-
 void physics_get_positions(const PhysicsWorld* pw, Vec2* positions) {
     for (int i = 0; i < MAX_PIECES; i++) {
         if (!pw->piece_pocketed[i] && b2Body_IsValid(pw->piece_bodies[i])) {
@@ -640,8 +614,4 @@ void physics_get_striker_velocity(const PhysicsWorld* pw, Vec2* vel) {
     } else {
         *vel = (Vec2){ 0, 0 };
     }
-}
-
-float physics_get_accumulator(const PhysicsWorld* pw) {
-    return pw->accumulator;
 }

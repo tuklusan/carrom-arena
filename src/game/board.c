@@ -254,20 +254,3 @@ bool board_is_legal_placement(Seat seat, Vec2 pos) {
     
     return true;
 }
-
-const PieceState* board_get_piece(const BoardState* board, uint8_t id) {
-    if (id < MAX_PIECES) {
-        return &board->pieces[id];
-    }
-    return NULL;
-}
-
-int board_count_on_board(const BoardState* board, PieceColor color) {
-    int count = 0;
-    for (int i = 0; i < MAX_PIECES; i++) {
-        if (board->pieces[i].on_board && board->pieces[i].color == color) {
-            count++;
-        }
-    }
-    return count;
-}

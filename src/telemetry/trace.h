@@ -46,7 +46,6 @@ void trace_flush(TraceWriter* writer);
 void trace_write_pocket_near_miss(TraceWriter* writer, uint8_t piece_id, uint8_t pocket_index, float distance, float speed);
 
 /* Replay/Validation */
-bool trace_validate_determinism(const char* trace1, const char* trace2);
 
 /* Utility: read last N complete JSONL records from a circular trace file */
 typedef struct {

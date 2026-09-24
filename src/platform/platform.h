@@ -31,18 +31,14 @@ typedef struct {
 } PlatformFile;
 
 PlatformFile* platform_fopen(const char* path, const char* mode);
-size_t platform_fwrite(const void* ptr, size_t size, size_t count, PlatformFile* file);
-size_t platform_fread(void* ptr, size_t size, size_t count, PlatformFile* file);
 int platform_fclose(PlatformFile* file);
 int platform_fprintf(PlatformFile* file, const char* format, ...) __attribute__((format(printf, 2, 3)));
 int platform_fflush(PlatformFile* file);
 
 /* Directory operations */
 bool platform_mkdir(const char* path);
-bool platform_path_exists(const char* path);
 
 /* Get executable path */
-bool platform_get_executable_path(char* buffer, size_t size);
 
 /* Build ID (from CMake) */
 extern const char* PLATFORM_BUILD_ID;

@@ -19,8 +19,6 @@ void events_log(const GameEvent* evt, PlatformFile* log_file);
 // Event to JSON string (for trace)
 char* event_to_json(const GameEvent* evt, char* buffer, size_t size);
 
-// Emit event to trace writer
-void events_emit_trace(const GameEvent* evt, TraceWriter* trace);
 
 #ifdef __cplusplus
 }

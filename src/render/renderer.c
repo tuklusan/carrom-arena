@@ -1,6 +1,5 @@
 #include "renderer.h"
 #include "board_view.h"
-#include "hud.h"
 #include "effects.h"
 #include "common/vecmath.h"
 #include "common/types.h"
@@ -321,12 +320,6 @@ bool renderer_is_paused(Renderer* r) {
 
 float renderer_get_playback_speed(const Renderer* r) {
     return r->playback_speed;
-}
-
-void renderer_set_playback_speed(Renderer* r, float speed) {
-    if (speed < 0.05f) speed = 0.05f;
-    if (speed > 4.0f) speed = 4.0f;
-    r->playback_speed = speed;
 }
 
 void renderer_begin(Renderer* r) {

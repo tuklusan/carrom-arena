@@ -64,9 +64,6 @@ PhysicsSnapshot* physics_snapshot(PhysicsWorld* pw);
 void physics_snapshot_destroy(PhysicsSnapshot* snap);
 void physics_restore_snapshot(PhysicsWorld* pw, const PhysicsSnapshot* snap);
 
-// Body queries
-int physics_get_body_count(PhysicsWorld* pw);
-b2BodyId* physics_get_bodies(PhysicsWorld* pw, int* out_count);
 
 // Get current positions for rendering (read-only)
 void physics_get_positions(const PhysicsWorld* pw, Vec2* positions);
@@ -79,8 +76,6 @@ void physics_get_striker_velocity(const PhysicsWorld* pw, Vec2* vel);
 void physics_get_prev_positions(const PhysicsWorld* pw, Vec2* positions);
 void physics_get_prev_striker_position(const PhysicsWorld* pw, Vec2* pos);
 
-// Get accumulator for interpolation alpha
-float physics_get_accumulator(const PhysicsWorld* pw);
 
 // Sync physics bodies from board state (initial placement)
 void physics_sync_from_board(PhysicsWorld* pw, const BoardState* board, Seat striker_seat);

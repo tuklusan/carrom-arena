@@ -16,17 +16,6 @@ int shot_candidates_placements(Seat seat, Vec2* out_placements, int max_placemen
     return board_get_legal_placements(seat, out_placements, max_placements);
 }
 
-/* -----------------------------------------------------------------------------
- * Tactical Candidate Generation
- * --------------------------------------------------------------------------- */
-static float angle_to_piece(Vec2 from, Vec2 to) {
-    return atan2f(to.y - from.y, to.x - from.x);
-}
-
-static float angle_to_pocket(Vec2 from, int pocket_idx) {
-    return angle_to_piece(from, POCKET_CENTERS[pocket_idx]);
-}
-
 int shot_candidates_tactical(const DecisionSnapshot* snap, Vec2 placement, ShotCandidate* out_candidates, int max_candidates, PCG32* rng) {
     (void)rng;
     int count = 0;

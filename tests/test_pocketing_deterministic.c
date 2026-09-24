@@ -7,16 +7,6 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-/* Helper to step physics until settled or timeout */
-static void step_until_settled(PhysicsWorld* pw) {
-    int max_steps = 2000; 
-    int steps = 0;
-    while (!physics_is_settled(pw) && steps < max_steps) {
-        physics_step(pw, PHYSICS_DT);
-        steps++;
-    }
-}
-
 /* Helper to check if a piece is pocketed */
 static bool is_piece_pocketed(PhysicsWorld* pw, int piece_id) {
     ShotResult result;

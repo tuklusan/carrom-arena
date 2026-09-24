@@ -71,9 +71,3 @@ char* event_to_json(const GameEvent* evt, char* buffer, size_t size) {
     
     return buffer;
 }
-
-void events_emit_trace(const GameEvent* evt, TraceWriter* trace) {
-    // Implemented in trace.c
-    (void)evt;
-    (void)trace;
-}
