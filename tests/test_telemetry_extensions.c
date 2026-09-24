@@ -5,6 +5,14 @@
 #include <string.h>
 #include <stdio.h>
 
+static char* my_strdup(const char* s) {
+    if (s == NULL) return NULL;
+    size_t len = strlen(s) + 1;
+    char* d = malloc(len);
+    if (d) memcpy(d, s, len);
+    return d;
+}
+
 // Mock MatchState, GameState, ShotPlan, ShotResult, RulesOutcome for tracing
 static MatchState mock_match __attribute__((unused)) = {0};
 static GameState mock_game __attribute__((unused)) = {0};
@@ -24,17 +32,29 @@ void test_trace_write_near_miss(void) {
     
     // Validate the JSONL record
     TraceRecordArray records = trace_read_last_records("test_telemetry_near_miss.jsonl", 1);
-    TEST_ASSERT_EQUAL_INT(1, records.count);
-    TEST_ASSERT_NOT_NULL(records.lines[0]);
     
-    // Check for key fields in the JSON
-    TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "\"type\":\"POCKET_NEAR_MISS\""));
-    TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "\"piece_id\":5"));
-    TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "\"pocket\":2"));
-    TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "\"distance\":0.005000"));
-    TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "\"speed\":0.100000"));
+    size_t count = records.count;
+    char* line0 = records.lines ? records.lines[0] : NULL;
     
+    // Duplicate line0 to avoid using memory that trace_record_array_free will release
+    char* line0_copy = line0 ? my_strdup(line0) : NULL;
+
     trace_record_array_free(&records);
+    
+    bool success = true;
+    if (count != 1) success = false;
+    if (line0_copy == NULL) success = false;
+    else {
+        if (strstr(line0_copy, "\"type\":\"POCKET_NEAR_MISS\"") == NULL) success = false;
+        if (strstr(line0_copy, "\"piece_id\":5") == NULL) success = false;
+        if (strstr(line0_copy, "\"pocket\":2") == NULL) success = false;
+        if (strstr(line0_copy, "\"distance\":0.005000") == NULL) success = false;
+        if (strstr(line0_copy, "\"speed\":0.100000") == NULL) success = false;
+    }
+    
+    free(line0_copy);
+    TEST_ASSERT_TRUE(success);
+
 }
 
 void test_trace_shot_end_fields(void) {
@@ -59,21 +79,28 @@ void test_trace_shot_end_fields(void) {
     trace_close(w);
     
     TraceRecordArray records = trace_read_last_records("test_telemetry_shot_end.jsonl", 1);
-    TEST_ASSERT_EQUAL_INT(1, records.count);
+    
+    size_t count = records.count;
+    char* line0_raw = records.lines ? records.lines[0] : NULL;
+    char* line0 = line0_raw ? my_strdup(line0_raw) : NULL;
+
+    trace_record_array_free(&records);
+    
+    TEST_ASSERT_EQUAL_INT(1, count);
     
     // Check for pocketed data
-    TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "\"piece_id\":10"));
-    TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "\"pocket\":0"));
+    TEST_ASSERT_NOT_NULL(strstr(line0, "\"piece_id\":10"));
+    TEST_ASSERT_NOT_NULL(strstr(line0, "\"pocket\":0"));
     
     // Check for final positions
-    TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "\"final_positions\":"));
-    TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "\"pos\":{\"x\":0.100000,\"y\":0.100000}"));
-
-    // Check for pocket_indices array
-    TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "\"pocket_indices\":"));
-    TEST_ASSERT_NOT_NULL(strstr(records.lines[0], "[0,1"));
+    TEST_ASSERT_NOT_NULL(strstr(line0, "\"final_positions\":"));
+    TEST_ASSERT_NOT_NULL(strstr(line0, "\"pos\":{\"x\":0.100000,\"y\":0.100000}"));
     
-    trace_record_array_free(&records);
+    // Check for pocket_indices array
+    TEST_ASSERT_NOT_NULL(strstr(line0, "\"pocket_indices\":"));
+    TEST_ASSERT_NOT_NULL(strstr(line0, "[0,1"));
+
+    free(line0);
 }
 
 int main(void) {

@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+
 /* -----------------------------------------------------------------------------
  * Pure Rules Engine Implementation
  * Article 16.1 - All rules bullets covered
@@ -73,8 +74,25 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
     bool queen_pocketed = facts->queen_pocketed;
     
     for (int i = 0; i < facts->pocketed_count && i < MAX_PIECES; i++) {
+        uint8_t id = facts->pocketed_ids[i];
+        if (id >= MAX_PIECES) continue;
+        game->board.pieces[id].pocketed = true;
+        game->board.pieces[id].on_board = false;
+
         if (facts->pocketed_colors[i] == PIECE_WHITE) white_pocketed++;
         else if (facts->pocketed_colors[i] == PIECE_BLACK) black_pocketed++;
+    }
+
+    if (facts->striker_pocketed) {
+        game->board.striker.pocketed = true;
+        game->board.striker.on_baseline = false;
+    }
+    
+    // Handle queen on_board explicitly based on pocketing result
+    if (facts->queen_pocketed) {
+        game->board.queen_on_board = false;
+        game->board.pieces[QUEEN_ID].pocketed = true;
+        game->board.pieces[QUEEN_ID].on_board = false;
     }
     
     // Determine active team
@@ -230,12 +248,14 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
     
     for (int i = 0; i < facts->pocketed_count && i < MAX_PIECES; i++) {
         if (outcome.event_count < 16) {
+            uint8_t id = facts->pocketed_ids[i];
+            if (id >= MAX_PIECES) continue;
             outcome.events[outcome.event_count++] = (GameEvent){
                 .type = EVENT_POCKET,
                 .tick = game->consecutive_turns,
                 .seat = facts->active_seat,
                 .team = (facts->pocketed_colors[i] == PIECE_WHITE) ? TEAM_WHITE : TEAM_BLACK,
-                .piece_id = facts->pocketed_ids[i],
+                .piece_id = id,
                 .piece_color = facts->pocketed_colors[i],
                 .score_delta_white = (facts->pocketed_colors[i] == PIECE_WHITE && active_team == TEAM_WHITE) ? 1 : 0,
                 .score_delta_black = (facts->pocketed_colors[i] == PIECE_BLACK && active_team == TEAM_BLACK) ? 1 : 0,

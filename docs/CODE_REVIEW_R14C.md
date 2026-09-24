@@ -45,6 +45,19 @@
 - Clean-Clone Gate: 100% tests passed on fresh clone and CI green.
 
 ## R14f results
+... (existing content) ...
+84	```
+
+## R14h results
+
+### Bug Fixes
+- **`rules_resolve` State Sync**: Fixed bug where individual pieces were not being marked as `pocketed=true` and `on_board=false` during rule resolution.
+- **`app_resolve_shot` Position Overwrite**: Resolved issue where `pocketed_position` was being overwritten by applying the game state outcome after the final positions were computed.
+- **Trace Reader Circular Wrap**: Fixed circular wrap ordering in the trace reader to ensure correct frame sequence reconstruction.
+
+### Verification
+- All integration tests and `capture_test` passed.
+- Verified that pocketed pieces now maintain correct state and positions in the final game state.
 
 ### Pocketing 20-Case Table Results
 Ran `tests/test_pocketing_deterministic`. Results:

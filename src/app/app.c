@@ -20,8 +20,7 @@
 
 /* -----------------------------------------------------------------------------
  * Application Context
- * --------------------------------------------------------------------------- */
-struct AppContext {
+ * --------------------------------------------------------------------------- */struct AppContext {
     AppConfig config;
     RNGContext rng;
     MatchState match;
@@ -232,6 +231,10 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Resolve through rules engine
     RulesOutcome outcome = rules_resolve(&ctx->match, &ctx->game, &facts);
     
+    // Apply outcome to match and game states
+    ctx->game = outcome.next_game_state;
+    ctx->match = outcome.next_match_state;
+
     // Handle pocketed pieces: update board state and compute pocketed positions
     for (int i = 0; i < result->pocketed_count; i++) {
         uint8_t piece_id = result->pocketed_ids[i];
@@ -278,10 +281,6 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
             ctx->game.board.pocketed_count++;
         }
     }
-    
-    // Apply outcome
-    ctx->game = outcome.next_game_state;
-    ctx->match = outcome.next_match_state;
     
     // Set phase for next turn based on turn decision
     switch (outcome.turn_decision) {

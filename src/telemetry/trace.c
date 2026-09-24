@@ -600,140 +600,143 @@ bool trace_validate_determinism(const char* trace1, const char* trace2) {
     return equal;
 }
 
-/* Read last N complete JSONL records from circular trace file */
-/* Caller MUST call trace_record_array_free() on the returned array to avoid leaks. */
-TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
-    TraceRecordArray arr = {0};
-    char* data = NULL;
-    char* logical_buf = NULL;
-    size_t* line_starts = NULL;
-    FILE* f = NULL;
-    bool success = false;
+    TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
+        TraceRecordArray arr = {0};
+        char* data = NULL;
+        char* logical_buf = NULL;
+        size_t* line_starts = NULL;
+        FILE* f = NULL;
+        bool success = false;
 
-    arr.capacity = max_records > 0 ? max_records : 100;
-
-    if (arr.capacity > 0 && sizeof(char*) > SIZE_MAX / arr.capacity) {
-        return arr;
-    }
-    arr.lines = calloc(arr.capacity, sizeof(char*));
-    if (!arr.lines) {
-        arr.capacity = 0;
-        return arr;
-    }
-    arr.count = 0;
-
-    f = fopen(path, "rb");
-    if (!f) goto cleanup;
-
-    uint64_t write_offset;
-    if (fread(&write_offset, 1, TRACE_INDEX_SIZE, f) != TRACE_INDEX_SIZE) {
-        goto cleanup;
-    }
-
-    fseek(f, 0, SEEK_END);
-    long actual_file_size = ftell(f);
-    bool is_wrapped = (actual_file_size >= (long)(TRACE_INDEX_SIZE + TRACE_MAX_SIZE));
-
-    fseek(f, TRACE_INDEX_SIZE, SEEK_SET);
-    data = malloc(TRACE_MAX_SIZE);
-    if (!data) goto cleanup;
-    size_t read_bytes = fread(data, 1, TRACE_MAX_SIZE, f);
-    fclose(f);
-    f = NULL;
-
-    if (read_bytes == 0) goto cleanup;
-
-    logical_buf = malloc(TRACE_MAX_SIZE + 1);
-    if (!logical_buf) goto cleanup;
-
-    size_t logical_data_len = 0;
-    if (is_wrapped) {
-        size_t part1_len = TRACE_MAX_SIZE - write_offset;
-        memcpy(logical_buf, data + write_offset, part1_len);
-        memcpy(logical_buf + part1_len, data, write_offset);
-        logical_data_len = TRACE_MAX_SIZE;
-    } else {
-        memcpy(logical_buf, data, write_offset);
-        logical_data_len = write_offset;
-    }
-    logical_buf[logical_data_len] = '\0';
-
-    size_t line_count = 0;
-    for (size_t i = 0; i < logical_data_len; i++) {
-        if (logical_buf[i] == '\n') {
-            line_count++;
+        arr.capacity = max_records > 0 ? max_records : 100;
+        if (arr.capacity > 0 && sizeof(char*) > SIZE_MAX / arr.capacity) {
+            return arr;
         }
-    }
-
-    size_t line_starts_capacity = line_count + 1;
-    if (line_starts_capacity > 0 && sizeof(size_t) > SIZE_MAX / line_starts_capacity) {
-        goto cleanup;
-    }
-
-    line_starts = calloc(line_starts_capacity, sizeof(size_t));
-    if (!line_starts) goto cleanup;
-
-    line_starts[0] = 0;
-    size_t current_line = 1;
-    for (size_t i = 0; i < logical_data_len && current_line < line_starts_capacity; i++) {
-        if (logical_buf[i] == '\n') {
-            line_starts[current_line++] = i + 1;
+        arr.lines = calloc(arr.capacity, sizeof(char*));
+        if (!arr.lines) {
+            arr.capacity = 0;
+            return arr;
         }
-    }
-    size_t total_lines = line_count;
+        arr.count = 0;
 
-    size_t start_line_idx = is_wrapped ? 1 : 0;
-    size_t lines_to_read = (total_lines >= start_line_idx) ? (total_lines - start_line_idx) : 0;
-    if (lines_to_read > max_records) lines_to_read = max_records;
+        f = fopen(path, "rb");
+        if (!f) goto cleanup;
 
-    size_t actual_start_idx = (total_lines > (start_line_idx + lines_to_read)) ? (total_lines - (start_line_idx + lines_to_read)) : start_line_idx;
-    if (actual_start_idx < start_line_idx) actual_start_idx = start_line_idx;
-
-    for (size_t i = actual_start_idx; i < total_lines && arr.count < arr.capacity; i++) {
-        size_t line_start = line_starts[i];
-        size_t line_end = (i + 1 < total_lines) ? line_starts[i + 1] - 1 : logical_data_len;
-
-        if (line_end > logical_data_len) line_end = logical_data_len;
-        if (line_start >= line_end) continue;
-
-        size_t line_len = line_end - line_start;
-        if (line_len == 0) continue;
-        if (logical_buf[line_start] == '#') continue;
-
-        if (line_len > SIZE_MAX - 1) {
-            goto cleanup;
-        }
-        char* line = malloc(line_len + 1);
-        if (!line) {
+        uint64_t write_offset;
+        if (fread(&write_offset, 1, TRACE_INDEX_SIZE, f) != TRACE_INDEX_SIZE) {
             goto cleanup;
         }
 
-        memcpy(line, logical_buf + line_start, line_len);
-        line[line_len] = '\0';
-        arr.lines[arr.count++] = line;
-    }
+        /* DEBUG: Dump state */
+        // printf("[DEBUG] path=%s, write_offset=%lu\n", path, (unsigned long)write_offset);
 
-    success = true;
+        fseek(f, 0, SEEK_END);
+        long actual_file_size = ftell(f);
 
-cleanup:
-    if (f) fclose(f);
-    free(line_starts);
-    free(data);
-    free(logical_buf);
+        fseek(f, TRACE_INDEX_SIZE, SEEK_SET);
+        data = calloc(1, TRACE_MAX_SIZE);
+        if (!data) goto cleanup;
+        size_t read_bytes = fread(data, 1, TRACE_MAX_SIZE, f);
+        fclose(f);
+        f = NULL;
 
-    if (!success) {
-        if (arr.lines) {
-            for (size_t i = 0; i < arr.count; i++) {
-                free(arr.lines[i]);
+        if (read_bytes == 0) goto cleanup;
+
+        /* The buffer is wrapped if the file size is at least index + max size */
+        bool is_wrapped = (actual_file_size >= (long)(TRACE_INDEX_SIZE + TRACE_MAX_SIZE));
+
+        logical_buf = calloc(1, TRACE_MAX_SIZE * 2 + 1);
+        if (!logical_buf) goto cleanup;
+
+        size_t logical_data_len = 0;
+        if (is_wrapped) {
+            /* To find the last records, we want the data just before write_offset.
+             * The circular buffer contains: [0, write_offset) <--- NEWEST | [write_offset, TRACE_MAX_SIZE) <--- OLDEST
+             * In chronological order: [write_offset, TRACE_MAX_SIZE) then [0, write_offset)
+             */
+            size_t part1_len = TRACE_MAX_SIZE - write_offset;
+            memcpy(logical_buf, data + write_offset, part1_len);
+            memcpy(logical_buf + part1_len, data, write_offset);
+            logical_data_len = TRACE_MAX_SIZE;
+        } else {
+            /* Not wrapped: [0, write_offset) */
+            size_t copy_len = write_offset;
+            if (copy_len > (size_t)read_bytes) copy_len = (size_t)read_bytes;
+            memcpy(logical_buf, data, copy_len);
+            logical_data_len = copy_len;
+        }
+
+        /* Trim trailing nulls/zeros if the buffer isn't fully utilized */
+        while (logical_data_len > 0 && logical_buf[logical_data_len - 1] == 0) {
+            logical_data_len--;
+        }
+
+        /* 
+         * Robust Line Extraction:
+         * 1. Find all possible line starts.
+         * 2. Filter out comments and partial records.
+         * 3. Ensure we only take complete records.
+         */
+        size_t max_possible_lines = logical_data_len + 1;
+        line_starts = malloc(max_possible_lines * sizeof(size_t));
+        if (!line_starts) goto cleanup;
+
+        size_t found_lines = 0;
+        if (logical_data_len > 0) {
+            /* 
+             * If we wrapped, the first byte of logical_buf might be in the middle of a record.
+             * The first record is only valid if it starts with '{'.
+             */
+            if (logical_buf[0] == '{') {
+                line_starts[found_lines++] = 0;
             }
+            for (size_t i = 0; i < logical_data_len; i++) {
+                if (logical_buf[i] == '\n') {
+                    /* Only mark as a start if the next char is '{' */
+                    if (i + 1 < logical_data_len && logical_buf[i + 1] == '{') {
+                        line_starts[found_lines++] = i + 1;
+                    }
+                }
+            }
+        }
+
+        /* Extract last max_records */
+        size_t start_idx = (found_lines > max_records) ? (found_lines - max_records) : 0;
+        for (size_t i = start_idx; i < found_lines && arr.count < arr.capacity; i++) {
+            size_t line_start = line_starts[i];
+            size_t line_end = logical_data_len;
+            for (size_t j = line_start; j < logical_data_len; j++) {
+                if (logical_buf[j] == '\n') {
+                    line_end = j;
+                    break;
+                }
+            }
+            size_t line_len = line_end - line_start;
+            if (line_len == 0) continue;
+            char* line = malloc(line_len + 1);
+            if (!line) goto cleanup;
+            memcpy(line, logical_buf + line_start, line_len);
+            line[line_len] = '\0';
+            
+            arr.lines[arr.count++] = line;
+        }
+
+        success = true;
+
+    cleanup:
+        if (f) fclose(f);
+        free(line_starts);
+        free(data);
+        free(logical_buf);
+        if (!success && arr.lines) {
+            for (size_t i = 0; i < arr.count; i++) free(arr.lines[i]);
             free(arr.lines);
             arr.lines = NULL;
             arr.count = 0;
             arr.capacity = 0;
         }
+        return arr;
     }
-    return arr;
-}
 
 void trace_record_array_free(TraceRecordArray* arr) {
     if (!arr || !arr->lines) return;

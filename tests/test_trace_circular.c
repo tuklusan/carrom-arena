@@ -198,41 +198,68 @@ void test_trace_last_records_intact_and_parsable(void) {
     
     /* Read back last N records */
     TraceRecordArray arr = trace_read_last_records(test_trace_path, 50);
-    TEST_ASSERT_GREATER_THAN(0, arr.count);
-    TEST_ASSERT_LESS_OR_EQUAL(50, arr.count);
-
-    /* Verify the near miss is present */
+    
+    size_t arr_count = arr.count;
     bool found_near_miss = false;
-    for (size_t i = 0; i < arr.count; i++) {
-        if (strstr(arr.lines[i], "POCKET_NEAR_MISS") != NULL) {
-            found_near_miss = true;
-            TEST_ASSERT_NOT_NULL(strstr(arr.lines[i], "\"piece_id\":5"));
-            TEST_ASSERT_NOT_NULL(strstr(arr.lines[i], "\"pocket\":2"));
+    bool near_miss_valid = false;
+    bool all_records_valid = true;
+    int first_invalid_index = -1;
+
+    for (size_t i = 0; i < (size_t)arr_count; i++) {
+        if (arr.lines[i] == NULL) {
+            all_records_valid = false;
+            first_invalid_index = (int)i;
             break;
         }
-    }
-    TEST_ASSERT_TRUE(found_near_miss);
-
-    /* Verify each record is valid JSON (starts with '{' and contains either
-     * shot_start fields (shot_number, build_id, seed) or shot_end fields (result) */
-    for (size_t i = 0; i < arr.count; i++) {
-        TEST_ASSERT_NOT_NULL(arr.lines[i]);
-        TEST_ASSERT_EQUAL('{', arr.lines[i][0]);  /* Valid JSON object */
+        if (arr.lines[i][0] != '{') {
+            all_records_valid = false;
+            first_invalid_index = (int)i;
+            break;
+        }
         bool is_shot_start = strstr(arr.lines[i], "shot_number") != NULL;
         bool is_shot_end = strstr(arr.lines[i], "result") != NULL;
         bool is_near_miss = strstr(arr.lines[i], "POCKET_NEAR_MISS") != NULL;
-        TEST_ASSERT_TRUE(is_shot_start || is_shot_end || is_near_miss);
+        if (!(is_shot_start || is_shot_end || is_near_miss)) {
+            all_records_valid = false;
+            first_invalid_index = (int)i;
+            break;
+        }
+        if (is_near_miss) {
+            found_near_miss = true;
+            if (strstr(arr.lines[i], "\"piece_id\":5") != NULL &&
+                strstr(arr.lines[i], "\"pocket\":2") != NULL) {
+                near_miss_valid = true;
+            }
+        }
         if (is_shot_end) {
-            TEST_ASSERT_NOT_NULL(strstr(arr.lines[i], "final_positions"));
-            TEST_ASSERT_NOT_NULL(strstr(arr.lines[i], "pocket")); // Check if pocket index is present in pockets array
+            if (strstr(arr.lines[i], "final_positions") == NULL ||
+                strstr(arr.lines[i], "pocket") == NULL) {
+                all_records_valid = false;
+                first_invalid_index = (int)i;
+                break;
+            }
         }
         if (is_shot_start) {
-            TEST_ASSERT_NOT_NULL(strstr(arr.lines[i], "build_id"));
-            TEST_ASSERT_NOT_NULL(strstr(arr.lines[i], "seed"));
+            if (strstr(arr.lines[i], "build_id") == NULL ||
+                strstr(arr.lines[i], "seed") == NULL) {
+                all_records_valid = false;
+                first_invalid_index = (int)i;
+                break;
+            }
         }
     }
-
+    
+    /* Assertions */
     trace_record_array_free(&arr);
+    TEST_ASSERT_GREATER_THAN(0, arr_count);
+    TEST_ASSERT_LESS_OR_EQUAL(50, arr_count);
+    TEST_ASSERT_TRUE(found_near_miss);
+    TEST_ASSERT_TRUE(near_miss_valid);
+    TEST_ASSERT_TRUE(all_records_valid);
+    if (!all_records_valid) {
+        printf("First invalid record at index: %d\n", first_invalid_index);
+    }
+
 }
 
 void test_trace_wrap_preserves_recent_data(void) {
@@ -259,24 +286,34 @@ void test_trace_wrap_preserves_recent_data(void) {
     
     /* Read last 10 records - should be exactly the last 10 shots in order */
     TraceRecordArray arr = trace_read_last_records(test_trace_path, 10);
-    TEST_ASSERT_EQUAL_INT(10, arr.count);
-    
-    /* The last record in the array should be the very last shot written (shot 20000) */
-    /* We check if the last record contains "20000" */
-    TEST_ASSERT_NOT_NULL(strstr(arr.lines[arr.count - 1], "20000"));
+    size_t count = arr.count;
+    bool last_contains_20000 = false;
     
     /* Verify logical order: each subsequent record should have a higher shot number */
+    bool order_valid = true;
     int last_shot_num = -1;
-    for (size_t i = 0; i < arr.count; i++) {
+    for (size_t i = 0; i < (size_t)count; i++) {
+        if (arr.lines[i] == NULL) {
+            order_valid = false;
+            break;
+        }
         char* shot_num_ptr = strstr(arr.lines[i], "\"shot_number\":");
         if (shot_num_ptr) {
             int current_shot_num = atoi(shot_num_ptr + 14);
-            TEST_ASSERT_TRUE(current_shot_num > last_shot_num);
+            if (current_shot_num <= last_shot_num) {
+                order_valid = false;
+                break;
+            }
             last_shot_num = current_shot_num;
         }
     }
-    
+    /* The newest record is a shot-end record (no shot number); the newest shot start must be shot 20000. */
+    last_contains_20000 = (last_shot_num == 20000);
     trace_record_array_free(&arr);
+    
+    TEST_ASSERT_EQUAL_INT(10, count);
+    TEST_ASSERT_TRUE(last_contains_20000);
+    TEST_ASSERT_TRUE(order_valid);
 }
 
 void test_trace_log_file_also_circular(void) {
@@ -342,11 +379,10 @@ void test_trace_reopen_continues_from_index(void) {
     
     /* Verify continuity */
     TraceRecordArray arr = trace_read_last_records(test_trace_path, 50);
-    TEST_ASSERT_GREATER_THAN(0, arr.count);
-    
+    size_t count = arr.count;
     bool found_100_plus = false;
-    for (size_t i = 0; i < arr.count; i++) {
-        if (strstr(arr.lines[i], "1") && (strstr(arr.lines[i], "10") || strstr(arr.lines[i], "11") 
+    for (size_t i = 0; i < (size_t)count; i++) {
+        if (arr.lines[i] && strstr(arr.lines[i], "1") && (strstr(arr.lines[i], "10") || strstr(arr.lines[i], "11") 
             || strstr(arr.lines[i], "12") || strstr(arr.lines[i], "13") 
             || strstr(arr.lines[i], "14") || strstr(arr.lines[i], "15")
             || strstr(arr.lines[i], "16") || strstr(arr.lines[i], "17")
@@ -356,9 +392,10 @@ void test_trace_reopen_continues_from_index(void) {
             break;
         }
     }
-    TEST_ASSERT_TRUE(found_100_plus);
-    
     trace_record_array_free(&arr);
+    
+    TEST_ASSERT_GREATER_THAN(0, count);
+    TEST_ASSERT_TRUE(found_100_plus);
 }
 
 void test_trace_validate_determinism(void) {
@@ -398,8 +435,8 @@ void test_trace_validate_determinism(void) {
     if (arr1.count != arr2.count) {
         equal = false;
     } else {
-        for (size_t i = 0; i < arr1.count; i++) {
-            if (strcmp(arr1.lines[i], arr2.lines[i]) != 0) {
+        for (size_t i = 0; i < (size_t)arr1.count; i++) {
+            if (arr1.lines[i] == NULL || arr2.lines[i] == NULL || strcmp(arr1.lines[i], arr2.lines[i]) != 0) {
                 equal = false;
                 break;
             }

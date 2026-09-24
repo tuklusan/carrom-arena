@@ -12,14 +12,7 @@
 void setUp(void) {}
 void tearDown(void) {}
 
-/* 
- * Integration test for the pocketing system flow.
- * Since we cannot easily run the full app.c (which depends on raylib) in this environment 
- * without a full X server and GPU, we simulate the app-level loop.
- */
-
 void test_pocketing_integration_flow(void) {
-    // 1. Initialize state
     MatchState match;
     match_state_init(&match);
     
@@ -32,21 +25,17 @@ void test_pocketing_integration_flow(void) {
     PhysicsWorld* pw = physics_create();
     physics_sync_from_board(pw, &game.board, game.turn_seat);
     
-    // 2. Setup a scenario: Piece 0 is at pocket 0
     game.board.pieces[0].position = (Vec2){ POCKET_CENTERS[0].x, POCKET_CENTERS[0].y };
     game.board.pieces[0].on_board = true;
     game.board.pieces[0].color = PIECE_WHITE;
     physics_sync_from_board(pw, &game.board, game.turn_seat);
     
-    // 3. Simulate physics step -> Pocketing
     physics_step(pw, PHYSICS_DT);
     
-    // 4. Collect results (as the app would)
     ShotResult result;
     shot_result_init(&result);
     physics_collect_pocketed(pw, &result);
     
-    // 5. Resolve rules (app-level HUD/Score update)
     ShotFacts facts = {0};
     facts.active_seat = game.turn_seat;
     facts.pocketed_count = result.pocketed_count;
@@ -60,7 +49,6 @@ void test_pocketing_integration_flow(void) {
     
     RulesOutcome outcome = rules_resolve(&match, &game, &facts);
     
-    // Extract values for assertions and destroy physics world
     int result_count = result.pocketed_count;
     int first_piece_id = (result.pocketed_count > 0) ? result.pocketed_ids[0] : -1;
     int first_piece_color = (result.pocketed_count > 0) ? result.pocketed_colors[0] : -1;
@@ -71,7 +59,9 @@ void test_pocketing_integration_flow(void) {
 
     physics_destroy(pw);
 
-    // Assertions
+    printf("Debug: result_count=%d, first_id=%d, score=%d, decision=%d, p0_pocketed=%d, p0_on_board=%d\n",
+           result_count, first_piece_id, score_white, decision, piece0_pocketed, piece0_on_board);
+
     TEST_ASSERT_EQUAL_INT(1, result_count);
     TEST_ASSERT_EQUAL_INT(0, first_piece_id);
     TEST_ASSERT_EQUAL_INT(PIECE_WHITE, first_piece_color);
@@ -80,10 +70,6 @@ void test_pocketing_integration_flow(void) {
     TEST_ASSERT_TRUE(piece0_pocketed);
     TEST_ASSERT_FALSE(piece0_on_board);
 }
-
-
-
-
 
 void test_striker_pocket_integration(void) {
     MatchState match;
@@ -96,7 +82,6 @@ void test_striker_pocket_integration(void) {
     PhysicsWorld* pw = physics_create();
     physics_sync_from_board(pw, &game.board, game.turn_seat);
     
-    // Place striker in pocket 0
     Vec2 pocket_pos = POCKET_CENTERS[0];
     physics_place_striker(pw, SEAT_NORTH, pocket_pos);
     
@@ -106,18 +91,19 @@ void test_striker_pocket_integration(void) {
     shot_result_init(&result);
     physics_collect_pocketed(pw, &result);
     
-    TEST_ASSERT_TRUE(result.striker_pocketed);
+    bool striker_pocketed = result.striker_pocketed;
+    physics_destroy(pw);
+    
+    TEST_ASSERT_TRUE(striker_pocketed);
     
     ShotFacts facts = {0};
     facts.active_seat = game.turn_seat;
-    facts.striker_pocketed = result.striker_pocketed;
+    facts.striker_pocketed = striker_pocketed;
     
-    RulesOutcome outcome = rules_resolve(&match, &game, &facts);
-    
-    // Striker pocketed is a foul -> turn advances
-    TEST_ASSERT_EQUAL_INT(TURN_ADVANCE, outcome.turn_decision);
-    
-    physics_destroy(pw);
+    RulesOutcome outcome_final = rules_resolve(&match, &game, &facts);
+    int final_decision = outcome_final.turn_decision;
+
+    TEST_ASSERT_EQUAL_INT(TURN_ADVANCE, final_decision);
 }
 
 int main(void) {
