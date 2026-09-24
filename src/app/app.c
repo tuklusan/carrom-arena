@@ -461,6 +461,11 @@ int app_run_simulation(AppContext* ctx) {
                         // Check for transition: using scaled thinking_timer instead of wall time
                         if (ctx->pending_shot_valid && ctx->thinking_timer >= 2.0) {
                             ctx->thinking_phase_active = false;
+                            // Put the striker (physics + game state) exactly where the plan places it, so the
+                            // drawn striker, the aim line and the launch all start from the same spot.
+                            physics_place_striker(ctx->physics, ctx->game.turn_seat, ctx->pending_shot_plan.placement);
+                            ctx->game.board.striker.position = ctx->pending_shot_plan.placement;
+                            ctx->game.board.striker.velocity = (Vec2){0.0f, 0.0f};
                             ctx->game.phase = PHASE_PLACEMENT;
                             ctx->placement_phase_active = false;
                             ctx->thinking_timer = 0.0;

@@ -444,6 +444,7 @@ void physics_place_striker(PhysicsWorld* pw, Seat seat, Vec2 placement) {
     }
     
     b2Body_SetTransform(pw->striker_body, (b2Vec2){placement.x, placement.y}, b2Rot_identity);
+    pw->prev_striker_position = placement;
     b2Body_SetLinearVelocity(pw->striker_body, (b2Vec2){0, 0});
     b2Body_SetAwake(pw->striker_body, true);
 }
