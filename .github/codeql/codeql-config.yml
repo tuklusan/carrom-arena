@@ -1,6 +1,0 @@
-name: carrom-arena CodeQL config
-# Analyse the project's own code, not the third-party libraries fetched by CMake (raylib, Box2D, Unity).
-paths-ignore:
-  - build
-  - '**/_deps/**'
-  - '**/build*/**'
