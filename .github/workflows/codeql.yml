@@ -4,8 +4,6 @@ name: CodeQL
 # Serialized with the CI workflow (same concurrency group): one job per runner architecture at a time.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '17 4 * * 1'
   workflow_run:
     workflows: [CI]
     types: [completed]

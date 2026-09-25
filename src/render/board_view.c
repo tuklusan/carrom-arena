@@ -16,9 +16,6 @@ static inline float my_fmodf(float x, float y) {
 static inline float my_fmaxf(float a, float b) {
     return (a > b) ? a : b;
 }
-static inline float my_fminf(float a, float b) {
-    return (a < b) ? a : b;
-}
 
 /* Shared flash alpha computation for syncing figure and striker */
 static inline float compute_flash_alpha(double wall_time) {

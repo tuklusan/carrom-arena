@@ -18,6 +18,7 @@ void test_Snapshot_Rotation_Preservation(void) {
     // We can't easily set a body's rotation in physics.h without access to PhysicsWorld internals
     // But we can use a snapshot to inject one.
     PhysicsSnapshot* snap = calloc(1, sizeof(PhysicsSnapshot));
+    TEST_ASSERT_NOT_NULL(snap);
     
     // Setup snapshot with target angle
     snap->pieces[piece_id].position = (Vec2){0.1f, 0.1f};

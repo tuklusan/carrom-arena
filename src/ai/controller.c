@@ -18,7 +18,6 @@
 struct ControllerImpl {
     Seat seat;
     StrategyProfile profile;
-    PCG32* rng;
 };
 
 Controller* controller_create(Seat seat, const StrategyProfile* profile, PCG32* rng_stream) {
@@ -33,7 +32,6 @@ Controller* controller_create(Seat seat, const StrategyProfile* profile, PCG32* 
     
     impl->seat = seat;
     impl->profile = *profile;
-    impl->rng = rng_stream;
     
     ctrl->impl_state = impl;
     ctrl->rng_state = rng_stream->state;

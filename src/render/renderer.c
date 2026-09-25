@@ -10,10 +10,6 @@
 #include <math.h>
 #include "audio/audio.h"
 
-/* Inline math functions to avoid implicit declaration issues */
-static inline float my_fminf(float a, float b) {
-    return (a < b) ? a : b;
-}
 
 static const char* TITLE_TEXT = "SANYALnet Labs Carrom Arena";
 static const char* BLOG_LINK = "https://supratim-sanyal.blogspot.com/";
@@ -216,8 +212,6 @@ void renderer_poll_events(Renderer* r) {
     }
     if (IsKeyPressed(KEY_SPACE)) {
         r->paused = !r->paused;
-    }
-    if (IsKeyPressed(KEY_ESCAPE)) {
     }
     if (IsKeyPressed(KEY_KP_ADD) || IsKeyPressed(KEY_EQUAL)) {
         r->playback_speed *= 2.0f;

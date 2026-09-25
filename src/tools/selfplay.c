@@ -147,14 +147,16 @@ int main(int argc, char** argv) {
     int seeds = 1, max_turns = 300;
     bool stale = false, verbose = false, expect_finish = false;
     int boards = 1;
-    for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "--seed") && i + 1 < argc) seed = strtoull(argv[++i], NULL, 10);
-        else if (!strcmp(argv[i], "--seeds") && i + 1 < argc) seeds = atoi(argv[++i]);
-        else if (!strcmp(argv[i], "--max-turns") && i + 1 < argc) max_turns = atoi(argv[++i]);
-        else if (!strcmp(argv[i], "--stale")) stale = true;
-        else if (!strcmp(argv[i], "--verbose")) verbose = true;
-        else if (!strcmp(argv[i], "--boards") && i + 1 < argc) boards = atoi(argv[++i]);
-        else if (!strcmp(argv[i], "--expect-finish")) expect_finish = true;   /* exit 1 if any board fails to finish (CI) */
+    int i = 1;
+    while (i < argc) {
+        const char* arg_cur = argv[i++];
+        if (!strcmp(arg_cur, "--seed") && i < argc) seed = strtoull(argv[i++], NULL, 10);
+        else if (!strcmp(arg_cur, "--seeds") && i < argc) seeds = atoi(argv[i++]);
+        else if (!strcmp(arg_cur, "--max-turns") && i < argc) max_turns = atoi(argv[i++]);
+        else if (!strcmp(arg_cur, "--stale")) stale = true;
+        else if (!strcmp(arg_cur, "--verbose")) verbose = true;
+        else if (!strcmp(arg_cur, "--boards") && i < argc) boards = atoi(argv[i++]);
+        else if (!strcmp(arg_cur, "--expect-finish")) expect_finish = true;   /* exit 1 if any board fails to finish (CI) */
     }
     int finished = 0, total_turns = 0, total_stalls = 0;
     for (int k = 0; k < seeds; k++) {

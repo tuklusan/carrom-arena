@@ -1,4 +1,5 @@
 #include "flight.h"
+#include "platform/platform.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,7 +49,7 @@ static void write_header(FlightRecorder* fr) {
 FlightRecorder* flight_open(const char* path, uint64_t seed) {
     FlightRecorder* fr = calloc(1, sizeof(FlightRecorder));
     if (!fr) return NULL;
-    fr->fp = fopen(path, "wb+");
+    fr->fp = platform_fopen_private(path, "wb+");
     if (!fr->fp) { free(fr); return NULL; }
     fr->seed = seed;
     write_header(fr);
@@ -171,9 +172,9 @@ int flight_read(const char* path, FlightVisitor visitor, void* user, uint64_t* o
     size_t pos = 0;
     if (h.total_written > FLIGHT_RING_SIZE) {
         bool found = false;
-        for (; pos + REC_HEADER <= n && !found; pos++) {
+        while (pos + REC_HEADER <= n && !found) {
             size_t len;
-            if (!header_ok(lin + pos, n - pos, &len)) continue;
+            if (!header_ok(lin + pos, n - pos, &len)) { pos++; continue; }
             size_t nxt = pos + REC_HEADER + len, hops = 0;
             bool chain = true;
             while (nxt < n && hops < 4) {
@@ -182,7 +183,7 @@ int flight_read(const char* path, FlightVisitor visitor, void* user, uint64_t* o
                 nxt += REC_HEADER + l2;
                 hops++;
             }
-            if (chain) { found = true; pos--; }
+            if (chain) found = true; else pos++;
         }
         if (!found) { free(ring); free(lin); return 0; }
     }

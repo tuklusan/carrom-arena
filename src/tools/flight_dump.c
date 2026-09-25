@@ -94,12 +94,14 @@ int main(int argc, char** argv) {
         return 2;
     }
     Opts o = { 0, 0, -1e300, 1e300, 0, 0, 0, false };
-    for (int i = 2; i < argc; i++) {
-        if (!strcmp(argv[i], "--events")) o.mode = 1;
-        else if (!strcmp(argv[i], "--csv")) o.mode = 3;
-        else if (!strcmp(argv[i], "--frame") && i + 1 < argc) { o.mode = 2; o.want_frame = strtoull(argv[++i], NULL, 10); }
-        else if (!strcmp(argv[i], "--from") && i + 1 < argc) o.from = atof(argv[++i]);
-        else if (!strcmp(argv[i], "--to") && i + 1 < argc) o.to = atof(argv[++i]);
+    int i = 2;
+    while (i < argc) {
+        const char* arg_cur = argv[i++];
+        if (!strcmp(arg_cur, "--events")) o.mode = 1;
+        else if (!strcmp(arg_cur, "--csv")) o.mode = 3;
+        else if (!strcmp(arg_cur, "--frame") && i < argc) { o.mode = 2; o.want_frame = strtoull(argv[i++], NULL, 10); }
+        else if (!strcmp(arg_cur, "--from") && i < argc) o.from = atof(argv[i++]);
+        else if (!strcmp(arg_cur, "--to") && i < argc) o.to = atof(argv[i++]);
     }
     uint64_t total = 0, seed = 0;
     int n = flight_read(argv[1], visit, &o, &total, &seed);

@@ -34,14 +34,16 @@ static bool g_verbose = false;
 
 /* ---- CLI Parsing ---- */
 static void parse_args(int argc, char* argv[]) {
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
-            g_seed = strtoull(argv[++i], NULL, 10);
-        } else if (strcmp(argv[i], "--max-steps") == 0 && i + 1 < argc) {
-            g_max_total_steps = strtoull(argv[++i], NULL, 10);
-        } else if (strcmp(argv[i], "--max-shot-steps") == 0 && i + 1 < argc) {
-            g_max_shot_steps = (uint32_t)strtoul(argv[++i], NULL, 10);
-        } else if (strcmp(argv[i], "--verbose") == 0) {
+    int i = 1;
+    while (i < argc) {
+        const char* arg_cur = argv[i++];
+        if (strcmp(arg_cur, "--seed") == 0 && i < argc) {
+            g_seed = strtoull(argv[i++], NULL, 10);
+        } else if (strcmp(arg_cur, "--max-steps") == 0 && i < argc) {
+            g_max_total_steps = strtoull(argv[i++], NULL, 10);
+        } else if (strcmp(arg_cur, "--max-shot-steps") == 0 && i < argc) {
+            g_max_shot_steps = (uint32_t)strtoul(argv[i++], NULL, 10);
+        } else if (strcmp(arg_cur, "--verbose") == 0) {
             g_verbose = true;
         }
     }
@@ -88,7 +90,7 @@ static void run_headless_match(uint64_t seed, uint64_t* p_total_steps, uint32_t*
     }
     
     // Main simulation loop - run fixed number of shots
-    while (shot_count < MAX_TEST_SHOTS && total_physics_steps < g_max_total_steps && shot_count < MAX_SHOTS_PER_MATCH) {
+    while (shot_count < MAX_TEST_SHOTS && total_physics_steps < g_max_total_steps) {
             // Create decision snapshot for AI
             PhysicsSnapshot* snap = physics_snapshot(physics);
             DecisionSnapshot dsnap = {

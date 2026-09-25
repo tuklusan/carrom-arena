@@ -38,7 +38,7 @@ static bool trace_init_file(TraceWriter* w) {
     FILE* f = fopen(w->jsonl_path, "r+b");
     if (!f) {
         /* Create new file */
-        f = fopen(w->jsonl_path, "w+b");
+        f = platform_fopen_private(w->jsonl_path, "w+b");
         if (!f) return false;
         
         /* Write initial index (0) + zero-fill data area */
@@ -183,9 +183,7 @@ static char* shot_plan_to_json(const ShotPlan* plan, char* buf, size_t size) {
         plan->aim_angle, plan->power,
         tactic_names[plan->tactic], plan->rng_draw);
     
-    if (written < 0 || (size_t)written >= size) {
-        /* Truncated - but we return the buffer as is for telemetry */
-    }
+    (void)written;   /* a truncated record is written as far as it fits */
     return buf;
 }
 
@@ -247,9 +245,7 @@ static char* shot_result_to_json(const ShotResult* result, char* buf, size_t siz
         result->striker_pocketed ? "true" : "false",
         result->fouls, result->sim_time);
     
-    if (written < 0 || (size_t)written >= size) {
-        /* Truncated */
-    }
+    (void)written;   /* a truncated record is written as far as it fits */
     return buf;
 }
 
@@ -304,9 +300,7 @@ void trace_write_pocket_near_miss(TraceWriter* writer, uint8_t piece_id, uint8_t
         "{\"type\":\"POCKET_NEAR_MISS\",\"piece_id\":%d,\"pocket\":%d,\"distance\":%.6f,\"speed\":%.6f}",
         piece_id, pocket_index, distance, speed);
     
-    if (written < 0 || (size_t)written >= sizeof(json)) {
-        /* Truncated */
-    }
+    (void)written;   /* a truncated record is written as far as it fits */
     
     trace_write_line_internal(writer, json, strlen(json));
 
@@ -428,9 +422,7 @@ void trace_write_shot_start(TraceWriter* writer, const MatchState* match, const 
         pre_hash,
         plan_json);
     
-    if (written < 0 || (size_t)written >= sizeof(json)) {
-        /* Truncated */
-    }
+    (void)written;   /* a truncated record is written as far as it fits */
     
     trace_write_line_internal(writer, json, strlen(json));
     
@@ -469,9 +461,7 @@ void trace_write_shot_end(TraceWriter* writer, const ShotResult* result, const R
         turn_decision_to_str(outcome->turn_decision),
         (uint64_t)(outcome->next_game_state.scores.white * 100 + outcome->next_game_state.scores.black));
     
-    if (written < 0 || (size_t)written >= sizeof(json)) {
-        /* Truncated */
-    }
+    (void)written;   /* a truncated record is written as far as it fits */
     
     trace_write_line_internal(writer, json, strlen(json));
     
@@ -530,9 +520,7 @@ void trace_write_physics_state(TraceWriter* writer, uint64_t frame, uint64_t sho
         striker_vel->x, striker_vel->y,
         speed, angle);
     
-    if (written < 0 || (size_t)written >= sizeof(json)) {
-        /* Truncated */
-    }
+    (void)written;   /* a truncated record is written as far as it fits */
     
     trace_write_line_internal(writer, json, strlen(json));
 }
@@ -610,8 +598,6 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
         goto cleanup;
     }
 
-    /* DEBUG: Dump state */
-    // printf("[DEBUG] path=%s, write_offset=%lu\n", path, (unsigned long)write_offset);
 
     fseek(f, 0, SEEK_END);
     long actual_file_size = ftell(f);

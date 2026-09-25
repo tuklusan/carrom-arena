@@ -278,7 +278,7 @@ void board_remove_from_stash(BoardState* board, int piece_id) {
     int nth[4] = {0, 0, 0, 0};
     for (int q = 0; q < board->pocketed_count; q++) {
         int pk = board->pocketed_pieces[q].pocket_index;
-        if (pk < 0 || pk > 3) continue;
+        if (pk > 3) continue;
         Vec2 pos = board_stash_position(pk, nth[pk]++);
         board->pocketed_pieces[q].pocketed_position = pos;
         int id = board->pocketed_pieces[q].id;

@@ -80,7 +80,6 @@
 static void app_init_controllers(AppContext* ctx) {
     for (int i = 0; i < 4; i++) {
         const StrategyProfile* profile = strategy_by_index(seat_to_strategy((Seat)i));
-        RNGSnapshot snap = rng_snapshot(&ctx->rng.streams[i]);
         ctx->controllers[i] = arena_controller_create((Seat)i, profile, &ctx->rng.streams[i]);
     }
 }
@@ -238,7 +237,7 @@ static void app_flight_frame(AppContext* ctx, float alpha, double frame_dt) {
         FLIGHT_EVENT(ctx, FLIGHT_EV_TURN, ctx->game.turn_seat, ctx->game.active_player.team, 0, 0);
         ctx->flight_prev_seat = (int)ctx->game.turn_seat;
     }
-    if (ctx->playback_speed != ctx->flight_prev_speed) {
+    if (fabsf(ctx->playback_speed - ctx->flight_prev_speed) > 1e-6f) {
         FLIGHT_EVENT(ctx, FLIGHT_EV_SPEED, ctx->playback_speed, 0, 0, 0);
         ctx->flight_prev_speed = ctx->playback_speed;
     }
@@ -247,8 +246,8 @@ static void app_flight_frame(AppContext* ctx, float alpha, double frame_dt) {
         ctx->flight_prev_paused = ctx->paused;
     }
     Layout L = renderer_get_layout(ctx->renderer);
-    if ((float)L.board_x != ctx->flight_prev_layout[0] || (float)L.board_y != ctx->flight_prev_layout[1] ||
-        (float)L.board_size != ctx->flight_prev_layout[2]) {
+    if (fabsf((float)L.board_x - ctx->flight_prev_layout[0]) > 0.5f || fabsf((float)L.board_y - ctx->flight_prev_layout[1]) > 0.5f ||
+        fabsf((float)L.board_size - ctx->flight_prev_layout[2]) > 0.5f) {
         FLIGHT_EVENT(ctx, FLIGHT_EV_LAYOUT, L.board_x, L.board_y, L.board_size, L.sw);
         ctx->flight_prev_layout[0] = (float)L.board_x;
         ctx->flight_prev_layout[1] = (float)L.board_y;
@@ -292,7 +291,8 @@ static void app_flight_frame(AppContext* ctx, float alpha, double frame_dt) {
     unsigned int falling = effects_falling_mask();
     Vec2 pos[MAX_PIECES];
     physics_get_positions(ctx->physics, pos);
-    for (int i = 0; i < FLIGHT_PIECES && i < MAX_PIECES; i++) {
+    _Static_assert(FLIGHT_PIECES == MAX_PIECES, "the flight recorder records every piece");
+    for (int i = 0; i < FLIGHT_PIECES; i++) {
         FlightPiece* p = &f.piece[i];
         Vec2 v;
         bool alive = physics_get_piece_velocity(ctx->physics, i, &v);
@@ -556,7 +556,6 @@ int app_run_simulation(AppContext* ctx) {
     ctx->pending_shot_valid = false;
     ctx->aim_preview_active = false;
     ctx->aim_preview_timer = 0.0;
-    uint64_t debug_frame = 0;
     
     // Wall-time budget for capture mode (hard timeout to prevent hangs)
     double capture_start_wall = 0.0;
@@ -604,7 +603,7 @@ int app_run_simulation(AppContext* ctx) {
 
         if (ctx->renderer) {
             float r_speed = renderer_get_playback_speed(ctx->renderer);
-            if (r_speed != ctx->playback_speed) {
+            if (fabsf(r_speed - ctx->playback_speed) > 1e-6f) {
                 ctx->playback_speed = r_speed;
             }
         }
@@ -883,7 +882,7 @@ int app_run_simulation(AppContext* ctx) {
                     if (ctx->config.capture_dir) {
                         char stall_path[512];
                         snprintf(stall_path, sizeof(stall_path), "%s/.stall", ctx->config.capture_dir);
-                        FILE* fp = fopen(stall_path, "w");
+                        FILE* fp = platform_fopen_private(stall_path, "w");
                         if (fp) {
                             fprintf(fp, "Capture stalled at frame %lu after %.2f seconds (budget %.2fs)\n",
                                     (unsigned long)ctx->capture_frame_count, elapsed_wall, capture_max_wall);

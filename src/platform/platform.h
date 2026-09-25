@@ -1,6 +1,7 @@
 #ifndef CARROM_PLATFORM_H
 #define CARROM_PLATFORM_H
 
+#include <stdio.h>
 #include "types.h"
 
 #ifdef __cplusplus
@@ -31,6 +32,10 @@ typedef struct {
 } PlatformFile;
 
 PlatformFile* platform_fopen(const char* path, const char* mode);
+
+/* fopen for files the game CREATES (traces, flight recorder, markers): owner-only permissions (0600) on POSIX instead of
+ * the umask default of 0666. `mode` is a normal fopen mode ("w", "w+b", ...). */
+FILE* platform_fopen_private(const char* path, const char* mode);
 int platform_fclose(PlatformFile* file);
 int platform_fprintf(PlatformFile* file, const char* format, ...) __attribute__((format(printf, 2, 3)));
 int platform_fflush(PlatformFile* file);

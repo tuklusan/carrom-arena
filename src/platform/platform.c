@@ -8,6 +8,7 @@
 #include <stdarg.h>
 #include <time.h>
 #if !defined(_WIN32)
+#include <fcntl.h>
 #include <unistd.h>
 #include <limits.h>
 #include <sys/stat.h>
@@ -117,5 +118,23 @@ bool platform_mkdir(const char* path) {
     return mkdir(path) == 0;
 #else
     return mkdir(path, 0755) == 0;
+#endif
+}
+
+#if !defined(_WIN32)
+/* The build force-includes <math.h> before the feature-test macros above, which hides fdopen under strict -std=c17. */
+extern FILE* fdopen(int fd, const char* mode);
+#endif
+
+FILE* platform_fopen_private(const char* path, const char* mode) {
+#if defined(_WIN32)
+    return fopen(path, mode);
+#else
+    int flags = O_CREAT | O_TRUNC | ((strchr(mode, '+') != NULL) ? O_RDWR : O_WRONLY);
+    int fd = open(path, flags, 0600);
+    if (fd < 0) return NULL;
+    FILE* f = fdopen(fd, mode);
+    if (!f) close(fd);
+    return f;
 #endif
 }

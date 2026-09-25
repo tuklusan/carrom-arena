@@ -5,11 +5,7 @@
 int main(int argc, char* argv[]) {
     AppConfig config = app_parse_args(argc, argv);
     
-    // If no mode specified, default to rendered
-    if (config.mode == APP_MODE_RENDERED && argc == 1) {
-        // Default behavior
-    }
-    
+    // No mode given: app_parse_args already defaults to the rendered mode.
     AppContext* ctx = app_create(&config);
     if (!ctx) {
         fprintf(stderr, "Failed to create app context\n");

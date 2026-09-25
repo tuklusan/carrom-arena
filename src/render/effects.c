@@ -66,12 +66,6 @@ void effects_reset(void) {
     for (int i = 0; i <= MAX_PIECES; i++) falls[i].active = false;
 }
 
-/* Shared flash alpha computation for syncing figure and striker */
-static inline float compute_flash_alpha(double wall_time) {
-    // alpha = 0.4 + 0.6 * (0.5 + 0.5 * sin(2π * t)) where t = wall time in seconds, ~1Hz
-    float t = (float)wall_time;
-    return 0.4f + 0.6f * (0.5f + 0.5f * sinf(t * 2.0f * M_PI));
-}
 
 void effects_draw(Viewport vp, const GameState* game, double placement_timer, const Layout* L) {
     double wall_time = GetTime();  // Wall time for animations
