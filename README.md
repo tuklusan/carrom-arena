@@ -327,3 +327,6 @@ No prohibited identifier appears in any project material, trace, evidence, or co
 
 SANYALnet Labs – Autonomous Software Delivery  
 Chief Executive Officer – final delivery authority
+## Third-party code
+- third_party/minimp3 (CC0) decodes the radio stream. raylib and Box2D are fetched at build time; sound effects are Kenney CC0 (see assets/audio/CREDITS.md).
+- The in-game radio plays the public AH.FM stream (https://ah.fm); it links to their service and bundles no recording.
