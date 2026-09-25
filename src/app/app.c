@@ -1183,6 +1183,8 @@ AppConfig app_parse_args(int argc, char* argv[]) {
         }
     }
     
+    /* the window size is locked: the layout is final, and the window cannot be resized */
+    if (config.mode == APP_MODE_RENDERED) { config.window_width = 560; config.window_height = 560; }
     if (config.window_width < 400) config.window_width = 400;     /* a zero or absurd size would fail InitWindow */
     if (config.window_width > 4096) config.window_width = 4096;
     if (config.window_height < 400) config.window_height = 400;

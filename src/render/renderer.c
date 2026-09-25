@@ -283,7 +283,7 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     
     r->viewport = (Viewport){0};
     
-    unsigned int flags = FLAG_WINDOW_HIGHDPI | FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT;
+    unsigned int flags = FLAG_WINDOW_HIGHDPI | FLAG_VSYNC_HINT;
     if (hidden_window) {
         flags |= FLAG_WINDOW_HIDDEN;
     }
@@ -294,7 +294,6 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
         free(r);
         return NULL;
     }
-    SetWindowMinSize(400, 400);
     SetTargetFPS(60);
     
     if (capture_mode) {
