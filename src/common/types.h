@@ -135,6 +135,7 @@ typedef struct {
     QueenState queen_state;
     uint8_t white_on_board, black_on_board;
     bool queen_on_board;
+    bool seats_swapped;   // E/W hold the white coins this board (the breaker always plays white, ICF 43 / 49)
     uint8_t white_dues, black_dues, queen_dues;
     // Pocketed pieces for rendering
     PieceState pocketed_pieces[MAX_PIECES];
@@ -143,6 +144,13 @@ typedef struct {
     Vec2 prev_piece_positions[MAX_PIECES];
     Vec2 prev_striker_position;
 } BoardState;
+
+/* Which coin colour the seat plays on this board. N/S play white unless the board is swapped (E/W broke). */
+static inline Team board_team_of_seat(const BoardState* b, Seat s) {
+    Team base = (s == SEAT_NORTH || s == SEAT_SOUTH) ? TEAM_WHITE : TEAM_BLACK;
+    if (b && b->seats_swapped) base = (base == TEAM_WHITE) ? TEAM_BLACK : TEAM_WHITE;
+    return base;
+}
 
 /* -----------------------------------------------------------------------------
  * Shot Planning & Results (moved before GameState for complete type)

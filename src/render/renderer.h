@@ -66,7 +66,6 @@ void renderer_end(Renderer* renderer);
 
 void renderer_draw_board(Renderer* renderer, const BoardState* board, const PhysicsWorld* physics, float alpha, int game_phase, const GameState* game, double placement_timer);
 void renderer_draw_effects(Renderer* renderer, const GameState* game, double placement_timer);
-void renderer_draw_placement_banner(Renderer* renderer, const GameState* game, double placement_timer);
 
 void renderer_capture_frame(Renderer* renderer, const char* dir, uint64_t frame_num, int game_phase, double placement_timer, float playback_speed, const BoardState* board);
 

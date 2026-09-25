@@ -25,8 +25,10 @@ void match_start_board(MatchState* match, GameState* game, RNGContext* rng) {
     // Determine who breaks (alternate or based on previous board winner)
     int total_boards = match->boards_won_white + match->boards_won_black;
     game->turn_seat = (Seat)(total_boards % 4);
+    /* The breaker plays white: when E or W breaks, the pairs swap coin colours for this board */
+    game->board.seats_swapped = (game->turn_seat == SEAT_EAST || game->turn_seat == SEAT_WEST);
     game->active_player.seat = game->turn_seat;
-    game->active_player.team = (game->turn_seat == SEAT_NORTH || game->turn_seat == SEAT_SOUTH) ? TEAM_WHITE : TEAM_BLACK;
+    game->active_player.team = board_team_of_seat(&game->board, game->turn_seat);
     game->consecutive_turns = 0;
     
     // Place striker

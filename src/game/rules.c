@@ -96,7 +96,7 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
     }
     
     // Determine active team
-    Team active_team = (facts->active_seat == SEAT_NORTH || facts->active_seat == SEAT_SOUTH) ? TEAM_WHITE : TEAM_BLACK;
+    Team active_team = board_team_of_seat(&game->board, facts->active_seat);
     
     // Handle fouls first (Article 16.1)
     if (facts->fouls != FOUL_NONE) {
@@ -309,7 +309,7 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
         // Advance turn to next seat
         game->turn_seat = (game->turn_seat + 1) % 4;
         game->active_player.seat = game->turn_seat;
-        game->active_player.team = (game->turn_seat == SEAT_NORTH || game->turn_seat == SEAT_SOUTH) ? TEAM_WHITE : TEAM_BLACK;
+        game->active_player.team = board_team_of_seat(&game->board, game->turn_seat);
         
         if (outcome.event_count < 16) {
             outcome.events[outcome.event_count++] = (GameEvent){
@@ -350,7 +350,8 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
             }
             game->scores.white += bonus;
             outcome.score_delta.white += bonus;
-            match->boards_won_white++;
+            /* the board counters count PAIRS (white = N/S): a swapped board means E/W held white */
+            if (game->board.seats_swapped) match->boards_won_black++; else match->boards_won_white++;
         } else {
             // Black cleared their pieces - Black wins board
             int bonus = game->board.white_on_board;
@@ -359,7 +360,7 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
             }
             game->scores.black += bonus;
             outcome.score_delta.black += bonus;
-            match->boards_won_black++;
+            if (game->board.seats_swapped) match->boards_won_white++; else match->boards_won_black++;
         }
         
         if (outcome.event_count < 16) {

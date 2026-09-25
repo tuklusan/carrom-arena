@@ -305,6 +305,19 @@ target_include_directories(test_flight_recorder PRIVATE
 )
 add_test(NAME flight_recorder_test COMMAND test_flight_recorder)
 
+# Colour alternation (breaker plays white)
+add_executable(test_colour_rotation
+    test_colour_rotation.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_colour_rotation)
+target_link_libraries(test_colour_rotation carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_colour_rotation PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME colour_rotation_test COMMAND test_colour_rotation)
+
 # Capture regression test (spawns carrom_arena binary in capture mode)
 
 # Catches: capture-mode hang (Gap-2 renderer rewrite regression)

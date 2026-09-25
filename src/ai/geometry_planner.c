@@ -140,7 +140,7 @@ int geometry_plan_shots(const BoardState* board, Seat seat, GeomShot* out, int m
     const float rp = PIECE_RADIUS_NORM, rs = STRIKER_RADIUS_NORM;
     const float striker_bound = 0.5f - CUSHION_THICKNESS - rs;
     const float piece_bound = 0.5f - CUSHION_THICKNESS - rp;
-    Team team = (seat == SEAT_NORTH || seat == SEAT_SOUTH) ? TEAM_WHITE : TEAM_BLACK;
+    Team team = board_team_of_seat(board, seat);
     PieceColor own = (team == TEAM_WHITE) ? PIECE_WHITE : PIECE_BLACK;
 
     /* obstacles: every piece still on the board */

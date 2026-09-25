@@ -88,7 +88,7 @@ ShotPlan controller_fallback_shot(Controller* self, const DecisionSnapshot* snap
     }
     
     // Aim at the nearest own piece (or the centre) so the fallback still plays a sensible advance shot
-    Team team = (snap->active_seat == SEAT_NORTH || snap->active_seat == SEAT_SOUTH) ? TEAM_WHITE : TEAM_BLACK;
+    Team team = board_team_of_seat(snap->board, snap->active_seat);
     PieceColor own = (team == TEAM_WHITE) ? PIECE_WHITE : PIECE_BLACK;
     Vec2 aim_at = {0.0f, 0.0f};
     float best_d = 1e9f;

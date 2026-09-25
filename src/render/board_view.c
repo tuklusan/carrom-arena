@@ -610,10 +610,10 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     }
 
     // Draw human figures for all four seats
-    draw_human_figure(vp, L, north_world, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH, halo_pulse_n, figure_alpha);
-    draw_human_figure(vp, L, south_world, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, halo_pulse_s, figure_alpha);
-    draw_human_figure(vp, L, east_world, M_PI, TEAM_BLACK, current_turn_seat == SEAT_EAST, halo_pulse_e, figure_alpha);
-    draw_human_figure(vp, L, west_world, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_WEST, halo_pulse_w, figure_alpha);
+    draw_human_figure(vp, L, north_world, -M_PI / 2.0f, board_team_of_seat(board, SEAT_NORTH), current_turn_seat == SEAT_NORTH, halo_pulse_n, figure_alpha);
+    draw_human_figure(vp, L, south_world, M_PI / 2.0f, board_team_of_seat(board, SEAT_SOUTH), current_turn_seat == SEAT_SOUTH, halo_pulse_s, figure_alpha);
+    draw_human_figure(vp, L, east_world, M_PI, board_team_of_seat(board, SEAT_EAST), current_turn_seat == SEAT_EAST, halo_pulse_e, figure_alpha);
+    draw_human_figure(vp, L, west_world, 0.0f, board_team_of_seat(board, SEAT_WEST), current_turn_seat == SEAT_WEST, halo_pulse_w, figure_alpha);
     
     // Pockets
     float pocket_r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM);

@@ -198,7 +198,7 @@ float score_positional(const ShotResult* result, const BoardState* board, Team t
  * Total Score
  * --------------------------------------------------------------------------- */
 void shot_evaluator_score_candidates(ShotCandidate* candidates, int count, const DecisionSnapshot* snap, const StrategyProfile* profile) {
-    Team active_team = (snap->active_seat == SEAT_NORTH || snap->active_seat == SEAT_SOUTH) ? TEAM_WHITE : TEAM_BLACK;
+    Team active_team = board_team_of_seat(snap->board, snap->active_seat);
     
     for (int i = 0; i < count; i++) {
         if (!candidates[i].sim_valid) {

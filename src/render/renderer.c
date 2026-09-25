@@ -163,34 +163,6 @@ static void draw_footer_band(Renderer* r, const Layout* L) {
     
 }
 
-static void draw_placement_banner(Renderer* r, const GameState* game, double placement_timer, const Layout* L) {
-    if (game->phase != PHASE_PLACEMENT) return;
-    if (!game->board.striker.on_baseline || game->board.striker.pocketed) return;
-    if (game->turn_seat != SEAT_NORTH) return;  // Only show for N seat (human-readable)
-
-    Vec2 striker_pos = game->board.striker.position;
-    char countdown_text[128];
-    snprintf(countdown_text, sizeof(countdown_text),
-             "Striker placed at (%.2f, %.2f) - striking in %.1fs",
-             striker_pos.x, striker_pos.y, placement_timer);
-
-    int font_size = L->font_size_hud;  // Or scale from board_size
-    if (font_size < 16) font_size = 16;
-    int text_width = MeasureText(countdown_text, font_size);
-    int banner_w = text_width + 40;
-    int banner_h = font_size + 16;
-    int banner_x = (L->sw - banner_w) / 2;
-    int banner_y = L->placement_banner_y;
-
-    DrawRectangle(banner_x, banner_y, banner_w, banner_h, (Color){ 0, 0, 0, 200 });
-    DrawRectangleLines(banner_x, banner_y, banner_w, banner_h, (Color){ 255, 215, 0, 255 });
-    DrawText(countdown_text, banner_x + 20, banner_y + 8, font_size, (Color){ 255, 215, 0, 255 });
-}
-
-void renderer_draw_placement_banner(Renderer* r, const GameState* game, double placement_timer) {
-    Layout* L = &r->current_layout;
-    draw_placement_banner(r, game, placement_timer, L);
-}
 
 Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window, bool debug_phase, float initial_speed) {
     (void)title;

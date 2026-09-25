@@ -783,7 +783,6 @@ int app_run_simulation(AppContext* ctx) {
             renderer_draw_board(ctx->renderer, &ctx->game.board, ctx->physics, alpha, ctx->game.phase, &ctx->game, ctx->placement_timer);
             renderer_draw_effects(ctx->renderer, &ctx->game, ctx->placement_timer);
             renderer_end_board(ctx->renderer);
-            renderer_draw_placement_banner(ctx->renderer, &ctx->game, ctx->placement_timer);
             renderer_end(ctx->renderer);
             app_flight_frame(ctx, alpha, dt);
 
