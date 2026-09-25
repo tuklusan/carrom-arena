@@ -56,9 +56,10 @@ void renderer_poll_events(Renderer* renderer);
 bool renderer_should_close(Renderer* renderer);
 bool renderer_is_paused(Renderer* renderer);
 float renderer_get_playback_speed(const Renderer* renderer);
+void renderer_set_turn_team(Renderer* renderer, Team team);
+Layout renderer_get_layout(const Renderer* renderer);  /* colour of the backdrop accent */
 
 void renderer_begin(Renderer* renderer);
-void renderer_draw_hud_sidebar(Renderer* renderer, const MatchState* match, const GameState* game, float playback_speed);
 void renderer_begin_board(Renderer* renderer);
 void renderer_end_board(Renderer* renderer);
 void renderer_end(Renderer* renderer);

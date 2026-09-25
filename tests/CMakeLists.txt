@@ -292,6 +292,19 @@ target_include_directories(test_geometry_planner PRIVATE
 )
 add_test(NAME geometry_planner_test COMMAND test_geometry_planner)
 
+# Flight recorder + stash layout
+add_executable(test_flight_recorder
+    test_flight_recorder.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_flight_recorder)
+target_link_libraries(test_flight_recorder carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_flight_recorder PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME flight_recorder_test COMMAND test_flight_recorder)
+
 # Capture regression test (spawns carrom_arena binary in capture mode)
 
 # Catches: capture-mode hang (Gap-2 renderer rewrite regression)

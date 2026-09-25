@@ -23,4 +23,14 @@ static inline float aim_line_length(float power) {
     return power * AIM_LINE_FULL_POWER_LEN;
 }
 
+/* Where the nth coin (0-based) pocketed in pocket `pocket_index` is stashed: a 3x3 lineup in the outside corner beside
+ * the pocket, coins touching but never overlapping, growing away from the board. */
+static inline Vec2 pocket_stash_position(int pocket_index, int nth) {
+    const float first = 0.5f + PIECE_RADIUS_NORM + 0.012f;
+    const float step = 2.0f * PIECE_RADIUS_NORM + 0.004f;
+    float sx = (POCKET_CENTERS[pocket_index].x < 0.0f) ? -1.0f : 1.0f;
+    float sy = (POCKET_CENTERS[pocket_index].y > 0.0f) ? 1.0f : -1.0f;
+    return (Vec2){ sx * (first + (float)(nth % 3) * step), sy * (first + (float)((nth / 3) % 3) * step) };
+}
+
 #endif /* CARROM_PIECE_DRAW_H */

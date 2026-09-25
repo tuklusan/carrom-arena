@@ -10,6 +10,9 @@
 #include "physics/physics.h"
 #include "ai/controller.h"
 #include "telemetry/trace.h"
+#include "telemetry/flight.h"
+#include "board_view.h"
+#include "piece_draw.h"
 #include "render/renderer.h"
 #include "render/effects.h"
 #include <stdio.h>
@@ -27,6 +30,13 @@
     GameState game;
     PhysicsWorld* physics;
     TraceWriter* trace;
+    FlightRecorder* flight;        // binary flight recorder (per-frame state + events)
+    double flight_t0;
+    int flight_prev_phase;
+    int flight_prev_seat;
+    float flight_prev_speed;
+    bool flight_prev_paused;
+    float flight_prev_layout[3];
     Renderer* renderer;
     Controller* controllers[4];  // One per seat
     uint64_t frame_count;
@@ -116,6 +126,18 @@ static void app_setup_trace(AppContext* ctx) {
         snprintf(trace_path, sizeof(trace_path), "%s/trace_%llu.jsonl", 
                  ctx->config.trace_dir, (unsigned long long)ctx->rng.master_seed);
         ctx->trace = trace_open(trace_path, ctx->config.trace_dir, ctx->config.verbose, ctx->rng.master_seed);
+        char flight_path[512];
+        snprintf(flight_path, sizeof(flight_path), "%s/flight_%llu.bin",
+                 ctx->config.trace_dir, (unsigned long long)ctx->rng.master_seed);
+        ctx->flight = flight_open(flight_path, ctx->rng.master_seed);
+        ctx->flight_t0 = platform_time_now();
+        ctx->flight_prev_phase = -1;
+        ctx->flight_prev_seat = -1;
+        ctx->flight_prev_speed = -1.0f;
+        if (ctx->flight) {
+            flight_write_event(ctx->flight, 0.0, 0.0f, FLIGHT_EV_START, (float)(ctx->rng.master_seed & 0xFFFFFFu),
+                               (float)ctx->config.window_width, (float)ctx->config.window_height, 0.0f);
+        }
     }
 }
 
@@ -192,6 +214,94 @@ static ShotResult app_collect_shot_result(AppContext* ctx) {
     return result;
 }
 
+#define FLIGHT_EVENT(ctx, kind, a, b, c, d) \
+    do { if ((ctx)->flight) flight_write_event((ctx)->flight, platform_time_now() - (ctx)->flight_t0, \
+         (ctx)->physics ? physics_get_sim_time((ctx)->physics) : 0.0f, (kind), (float)(a), (float)(b), (float)(c), (float)(d)); } while (0)
+
+/* One FRAME record per rendered frame: physics state of everything, and what the renderer actually drew. */
+static void app_flight_frame(AppContext* ctx, float alpha, double frame_dt) {
+    if (!ctx->flight) return;
+    double wall = platform_time_now() - ctx->flight_t0;
+
+    /* change events */
+    if ((int)ctx->game.phase != ctx->flight_prev_phase) {
+        FLIGHT_EVENT(ctx, FLIGHT_EV_PHASE, ctx->flight_prev_phase, ctx->game.phase, ctx->game.turn_seat, 0);
+        ctx->flight_prev_phase = (int)ctx->game.phase;
+    }
+    if ((int)ctx->game.turn_seat != ctx->flight_prev_seat) {
+        FLIGHT_EVENT(ctx, FLIGHT_EV_TURN, ctx->game.turn_seat, ctx->game.active_player.team, 0, 0);
+        ctx->flight_prev_seat = (int)ctx->game.turn_seat;
+    }
+    if (ctx->playback_speed != ctx->flight_prev_speed) {
+        FLIGHT_EVENT(ctx, FLIGHT_EV_SPEED, ctx->playback_speed, 0, 0, 0);
+        ctx->flight_prev_speed = ctx->playback_speed;
+    }
+    if (ctx->paused != ctx->flight_prev_paused) {
+        FLIGHT_EVENT(ctx, FLIGHT_EV_PAUSE, ctx->paused ? 1 : 0, 0, 0, 0);
+        ctx->flight_prev_paused = ctx->paused;
+    }
+    Layout L = renderer_get_layout(ctx->renderer);
+    if ((float)L.board_x != ctx->flight_prev_layout[0] || (float)L.board_y != ctx->flight_prev_layout[1] ||
+        (float)L.board_size != ctx->flight_prev_layout[2]) {
+        FLIGHT_EVENT(ctx, FLIGHT_EV_LAYOUT, L.board_x, L.board_y, L.board_size, L.sw);
+        ctx->flight_prev_layout[0] = (float)L.board_x;
+        ctx->flight_prev_layout[1] = (float)L.board_y;
+        ctx->flight_prev_layout[2] = (float)L.board_size;
+    }
+
+    FlightFrame f;
+    memset(&f, 0, sizeof(f));
+    f.wall = wall;
+    f.frame = ctx->frame_count;
+    f.sim_time = physics_get_sim_time(ctx->physics);
+    f.playback_speed = ctx->playback_speed;
+    f.alpha = alpha;
+    f.frame_dt = (float)frame_dt;
+    f.placement_timer = (float)ctx->placement_timer;
+    f.thinking_timer = (float)ctx->thinking_timer;
+    f.aim_timer = (float)ctx->aim_preview_timer;
+    f.phase = (uint8_t)ctx->game.phase;
+    f.turn_seat = (uint8_t)ctx->game.turn_seat;
+
+    BoardViewDebug dbg;
+    board_view_get_debug(&dbg);
+    Vec2 sp, sv;
+    physics_get_striker_position(ctx->physics, &sp);
+    physics_get_striker_velocity(ctx->physics, &sv);
+    f.striker_pos[0] = sp.x; f.striker_pos[1] = sp.y;
+    f.striker_vel[0] = sv.x; f.striker_vel[1] = sv.y;
+    f.striker_vis[0] = dbg.striker_vis.x; f.striker_vis[1] = dbg.striker_vis.y;
+    for (int i = 0; i < 4; i++) f.figures[i] = dbg.figures[i];
+    f.aim_angle = ctx->game.computed_shot_plan.aim_angle;
+    f.aim_power = ctx->game.computed_shot_plan.power;
+    if (dbg.aim_drawn) {
+        f.aim_line[0] = dbg.aim_start.x; f.aim_line[1] = dbg.aim_start.y;
+        f.aim_line[2] = dbg.aim_end.x;   f.aim_line[3] = dbg.aim_end.y;
+    }
+    f.layout[0] = (float)L.board_x; f.layout[1] = (float)L.board_y; f.layout[2] = (float)L.board_size;
+    f.layout[3] = (float)L.sw;      f.layout[4] = (float)L.sh;
+    f.score_white = (uint16_t)ctx->match.games_won_white;
+    f.score_black = (uint16_t)ctx->match.games_won_black;
+
+    unsigned int falling = effects_falling_mask();
+    Vec2 pos[MAX_PIECES];
+    physics_get_positions(ctx->physics, pos);
+    for (int i = 0; i < FLIGHT_PIECES && i < MAX_PIECES; i++) {
+        FlightPiece* p = &f.piece[i];
+        Vec2 v;
+        bool alive = physics_get_piece_velocity(ctx->physics, i, &v);
+        p->x = alive ? pos[i].x : ctx->game.board.pieces[i].position.x;
+        p->y = alive ? pos[i].y : ctx->game.board.pieces[i].position.y;
+        p->vx = v.x; p->vy = v.y;
+        p->flags = (uint8_t)((ctx->game.board.pieces[i].on_board ? 1 : 0) | (ctx->game.board.pieces[i].pocketed ? 2 : 0) |
+                             (alive ? 4 : 0) | (((falling >> i) & 1u) ? 8 : 0) | (((dbg.drawn_from_physics_mask >> i) & 1u) ? 16 : 0));
+    }
+    f.flags = (uint8_t)((ctx->paused ? 1 : 0) | (dbg.aim_drawn ? 2 : 0) | (physics_is_striker_pocketed(ctx->physics) ? 4 : 0) |
+                        (ctx->game.board.striker.on_baseline ? 8 : 0) | (dbg.striker_valid ? 16 : 0));
+    for (int i = 0; i <= MAX_PIECES; i++) if ((falling >> i) & 1u) f.n_falling++;
+    flight_write_frame(ctx->flight, &f);
+}
+
 /* Place a freshly pocketed piece in its 3x3 corner slot outside the board (game state only). */
 static void app_register_pocket(AppContext* ctx, uint8_t piece_id, uint8_t pocket_idx) {
     if (piece_id >= MAX_PIECES || pocket_idx > 3) return;
@@ -199,19 +309,15 @@ static void app_register_pocket(AppContext* ctx, uint8_t piece_id, uint8_t pocke
     board->pieces[piece_id].on_board = false;
     board->pieces[piece_id].pocketed = true;
 
-    // Pockets: 0=top-left (NW), 1=top-right (NE), 2=bottom-left (SW), 3=bottom-right (SE)
-    Vec2 base = POCKET_CENTERS[pocket_idx];
-    Vec2 offset = {0.06f, 0.06f};
-    Vec2 spacing = {0.025f, 0.025f};
-    if (pocket_idx == 1 || pocket_idx == 3) offset.x = -0.06f;
-    if (pocket_idx == 2 || pocket_idx == 3) offset.y = -0.06f;
-
+    /* Stash: a 3x3 lineup of non-overlapping coins in the outside corner next to the pocket, growing away from
+     * the board. Pockets: 0=top-left (NW), 1=top-right (NE), 2=bottom-left (SW), 3=bottom-right (SE). */
+    int in_this_pocket = 0;
+    for (int q = 0; q < board->pocketed_count; q++) {
+        if (board->pocketed_pieces[q].pocket_index == pocket_idx) in_this_pocket++;
+    }
     int slot = board->pocketed_count;
     if (slot >= MAX_PIECES) return;
-    board->pieces[piece_id].pocketed_position = (Vec2){
-        base.x + offset.x + (slot % 3) * spacing.x,
-        base.y + offset.y + (slot / 3) * spacing.y
-    };
+    board->pieces[piece_id].pocketed_position = pocket_stash_position(pocket_idx, in_this_pocket);
     board->pieces[piece_id].pocket_index = pocket_idx;
     board->pocketed_pieces[slot] = board->pieces[piece_id];
     board->pocketed_count++;
@@ -241,6 +347,14 @@ static void app_shot_progress(AppContext* ctx) {
     uint64_t shot = ctx->shot_count ? ctx->shot_count - 1 : 0;
     for (int i = ctx->pockets_registered; i < r.pocketed_count; i++) {
         app_register_pocket(ctx, r.pocketed_ids[i], r.pocketed_pocket_indices[i]);
+        {
+            Vec2 lp, lv;
+            physics_get_pocketed_last(ctx->physics, i, &lp, &lv);
+            FLIGHT_EVENT(ctx, FLIGHT_EV_POCKET, r.pocketed_ids[i], r.pocketed_pocket_indices[i], sqrtf(lv.x * lv.x + lv.y * lv.y), t);
+            FLIGHT_EVENT(ctx, FLIGHT_EV_STASH, r.pocketed_ids[i], r.pocketed_pocket_indices[i],
+                         ctx->game.board.pieces[r.pocketed_ids[i]].pocketed_position.x,
+                         ctx->game.board.pieces[r.pocketed_ids[i]].pocketed_position.y);
+        }
         if (ctx->renderer) {
             Vec2 lp, lv;
             physics_get_pocketed_last(ctx->physics, i, &lp, &lv);
@@ -262,6 +376,7 @@ static void app_shot_progress(AppContext* ctx) {
         int spocket;
         if (physics_get_striker_pocket_info(ctx->physics, &sp, &sv, &spocket)) {
             ctx->striker_fall_registered = true;
+            FLIGHT_EVENT(ctx, FLIGHT_EV_STRIKER_POCKET, spocket, sqrtf(sv.x * sv.x + sv.y * sv.y), 0, 0);
             effects_trigger_pocket_fall(EFFECTS_STRIKER_ID, PIECE_STRIKER, sp, sv, spocket);
             if (ctx->config.verbose) { printf("[POCKET] striker pocket=%d\n", spocket); fflush(stdout); }
             effects_trigger_pocket_fade(spocket);
@@ -284,6 +399,8 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Apply outcome to match and game states
     ctx->game = outcome.next_game_state;
     ctx->match = outcome.next_match_state;
+
+    FLIGHT_EVENT(ctx, FLIGHT_EV_SHOT_END, (int)outcome.turn_decision, result->pocketed_count, result->striker_pocketed ? 1 : 0, result->sim_time);
 
     // Register any pockets not already registered mid-shot (idempotent)
     for (int i = ctx->pockets_registered; i < result->pocketed_count; i++) {
@@ -508,6 +625,13 @@ int app_run_simulation(AppContext* ctx) {
                             
                             ctx->pending_shot_plan = plan;
                             ctx->pending_shot_valid = true;
+                            FLIGHT_EVENT(ctx, FLIGHT_EV_PLAN, plan.aim_angle, plan.power, plan.placement.x, plan.placement.y);
+                            if (ctx->flight) {
+                                char note[160];
+                                snprintf(note, sizeof(note), "plan seat=%d tactic=%d aim=%.4f power=%.3f placement=(%.4f,%.4f)",
+                                         (int)seat, (int)plan.tactic, plan.aim_angle, plan.power, plan.placement.x, plan.placement.y);
+                                flight_write_text(ctx->flight, platform_time_now() - ctx->flight_t0, note);
+                            }
                             
                             if (ctx->config.verbose) {
                                 printf("[DEBUG] Frame %llu: THINKING complete for seat %d, tactic=%d\n", 
@@ -614,6 +738,7 @@ int app_run_simulation(AppContext* ctx) {
                                 trace_write_shot_start(ctx->trace, &ctx->match, &ctx->game, 
                                                        ctx->shot_count, seat, &ctx->game.computed_shot_plan);
                             }
+                            FLIGHT_EVENT(ctx, FLIGHT_EV_SHOT_START, ctx->shot_count, seat, ctx->game.computed_shot_plan.aim_angle, ctx->game.computed_shot_plan.power);
                             ctx->shot_count++;
                         }
                     }
@@ -650,8 +775,8 @@ int app_run_simulation(AppContext* ctx) {
         
         // Render (mode-specific)
         if (ctx->renderer) {
+            renderer_set_turn_team(ctx->renderer, ctx->game.active_player.team);
             renderer_begin(ctx->renderer);
-            renderer_draw_hud_sidebar(ctx->renderer, &ctx->match, &ctx->game, ctx->playback_speed);
             renderer_begin_board(ctx->renderer);
             float alpha = (float)(ctx->accumulator / PHYSICS_DT);
             if (alpha > 1.0f) alpha = 1.0f;
@@ -660,6 +785,7 @@ int app_run_simulation(AppContext* ctx) {
             renderer_end_board(ctx->renderer);
             renderer_draw_placement_banner(ctx->renderer, &ctx->game, ctx->placement_timer);
             renderer_end(ctx->renderer);
+            app_flight_frame(ctx, alpha, dt);
 
             // Capture frames if in capture mode
             if (ctx->config.mode == APP_MODE_CAPTURE && ctx->capture_frame_count < ctx->config.frames) {
@@ -763,6 +889,11 @@ void app_destroy(AppContext* ctx) {
     
     app_cleanup_controllers(ctx);
     
+    if (ctx->flight) {
+        FLIGHT_EVENT(ctx, FLIGHT_EV_CLOSE, ctx->game.phase, 0, 0, 0);
+        flight_close(ctx->flight);
+        ctx->flight = NULL;
+    }
     if (ctx->trace) {
         if (ctx->game.phase == PHASE_SHOT_EXECUTION || ctx->game.phase == PHASE_SETTLING) {
             app_snapshot_trace(ctx, true);

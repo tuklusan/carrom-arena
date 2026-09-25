@@ -53,6 +53,12 @@ bool effects_piece_falling(int id) {
     return id >= 0 && id <= MAX_PIECES && falls[id].active;
 }
 
+unsigned int effects_falling_mask(void) {
+    unsigned int mask = 0;
+    for (int i = 0; i <= MAX_PIECES; i++) if (falls[i].active) mask |= (1u << i);
+    return mask;
+}
+
 void effects_reset(void) {
     for (int i = 0; i <= MAX_PIECES; i++) falls[i].active = false;
 }

@@ -15,7 +15,6 @@ static inline float my_fminf(float a, float b) {
 }
 
 static const char* TITLE_TEXT = "SANYALnet Labs Carrom Arena";
-static const char* COPYRIGHT_TEXT = "\xC2\xA9 Supratim Sanyal";  // UTF-8 ©
 static const char* BLOG_LINK = "https://supratim-sanyal.blogspot.com/";
 
 struct Renderer {
@@ -31,6 +30,7 @@ struct Renderer {
     RenderTexture2D capture_texture;
     char capture_dir[256];
     Layout current_layout;
+    Team turn_team;
 };
 
 #define GAME_BACKGROUND (Color){ 84, 112, 140, 255 }   /* steel blue: dark pieces and figures stand out */
@@ -39,21 +39,20 @@ struct Renderer {
 void layout_compute(int sw, int sh, Layout* out) {
     out->sw = sw;
     out->sh = sh;
-    float fsw = (float)sw;
     float fsh = (float)sh;
 
     out->title_band_h = (int)(fsh * 0.055f);
-    out->footer_band_h = (int)(fsh * 0.07f);
-    out->hud_w = (int)(fsw * 0.21f);
+    out->footer_band_h = (int)(fsh * 0.055f);
+    out->hud_w = 0;                 /* no HUD: the board owns the whole window */
     out->right_sidebar_w = 0;
-    out->board_region_x = out->hud_w;
-    out->board_region_w = sw - out->hud_w - 8;
+    out->board_region_x = 0;
+    out->board_region_w = sw;
     out->body_h = sh - out->title_band_h - out->footer_band_h;
 
-    // A figure (head + torso) plus its margin extends fig_extent = FIG_MARGIN_PX + 0.105 * board beyond
-    // the board edge on every side; the board is the largest square that leaves room for all four.
-    float fig_k = 0.105f;
-    int fig_fixed = FIG_MARGIN_PX + 8;
+    /* Everything outside the board (player figures, and the pocketed-coin stashes in the four corners)
+     * extends at most fig_k * board + fig_fixed beyond each edge; the board is the largest square that fits. */
+    float fig_k = 0.15f;
+    int fig_fixed = 8;
     int vert = (int)(((float)out->body_h - 2.0f * (float)fig_fixed) / (1.0f + 2.0f * fig_k));
     int horiz = (int)(((float)out->board_region_w - 2.0f * (float)fig_fixed) / (1.0f + 2.0f * fig_k));
     int candidate = (vert < horiz) ? vert : horiz;
@@ -62,9 +61,8 @@ void layout_compute(int sw, int sh, Layout* out) {
     out->board_size = candidate;
     out->figure_band_h = fig_fixed + (int)(fig_k * (float)candidate);
 
-    // Board centred in the body (between title and footer) and in the region right of the HUD
     out->board_y = out->title_band_h + (out->body_h - out->board_size) / 2;
-    out->board_x = out->board_region_x + (out->board_region_w - out->board_size) / 2;
+    out->board_x = (sw - out->board_size) / 2;
 
     // N figure band center (above board, in the figure band)
     out->n_figure_center_y = out->title_band_h + out->figure_band_h / 2;
@@ -97,82 +95,44 @@ void layout_compute(int sw, int sh, Layout* out) {
     out->piece_r_px = board_size_f * PIECE_RADIUS_NORM / BOARD_SIDE_NORM;
 }
 
-/* Helper to convert radians to degrees+minutes string */
-static void format_angle_deg_min(float rad, char* buf, size_t buf_size) {
-    float deg_f = rad * 180.0f / M_PI;
-    if (deg_f < 0) deg_f += 360.0f;
-    int deg = (int)deg_f;
-    float min_f = (deg_f - (float)deg) * 60.0f;
-    int min = (int)(min_f + 0.5f);  // Round to nearest minute
-    if (min >= 60) { min -= 60; deg = (deg + 1) % 360; }
-    snprintf(buf, buf_size, "Angle: %d°%02d'", deg, min);
-}
 
-/* Draw HUD sidebar in window coordinates using layout */
-static void draw_hud_sidebar(const MatchState* match, const GameState* game, float playback_speed, const Layout* L) {
-    float x = (float)10;
-    float y = (float)L->hud_start_y;
-    int font = L->font_size_hud;
-    float lh = (float)L->hud_line_height;
-    
-    bool white_turn = (game->active_player.team == TEAM_WHITE);
-    Color white_color = white_turn ? (Color){ 255, 215, 0, 255 } : WHITE;
-    Color black_color = !white_turn ? (Color){ 255, 215, 0, 255 } : WHITE;
-    
-    DrawText(TextFormat("WHITE  %d", match->games_won_white), (int)x, (int)y, font, white_color);
-    y += lh;
-    DrawText(TextFormat("BLACK  %d", match->games_won_black), (int)x, (int)y, font, black_color);
-    y += lh;
-    DrawText(TextFormat("Board: W %d - B %d", game->scores.white, game->scores.black), (int)x, (int)y, font, WHITE);
-    y += lh;
-    
-    const char* seat_names[4] = { "NORTH", "EAST", "SOUTH", "WEST" };
-    const char* team_names[2] = { "WHITE", "BLACK" };
-    Color turn_color = white_turn ? (Color){ 255, 215, 0, 255 } : (Color){ 255, 165, 0, 255 };
-    DrawText(TextFormat("Turn: %s (%s)", seat_names[game->turn_seat], team_names[game->active_player.team]), (int)x, (int)y, font, turn_color);
-    y += lh;
-    
-    const char* phase_names[] = {
-        "IDLE", "THINKING", "PLACEMENT", "AIM_PREVIEW", "AIMING", "SHOT", "SETTLING", "RESOLVING",
-        "BOARD_OVER", "GAME_OVER", "MATCH_OVER"
-    };
-    DrawText(TextFormat("Phase: %s", phase_names[game->phase]), (int)x, (int)y, font, GREEN);
-    y += lh;
-    
-    // AIM_PREVIEW commentary text block
-    if (game->phase == PHASE_AIM_PREVIEW && game->computed_shot_valid) {
-        float aim_angle = game->computed_shot_plan.aim_angle;
-        float power = game->computed_shot_plan.power;
-        
-        char angle_deg_min[64];
-        format_angle_deg_min(aim_angle, angle_deg_min, sizeof(angle_deg_min));
-        
-        DrawText(TextFormat("%s  (%.3f rad)", angle_deg_min, aim_angle), (int)x, (int)y, font, YELLOW);
-        y += lh;
-        
-        DrawText(TextFormat("Power: %d%%", (int)(power * 100.0f + 0.5f)), (int)x, (int)y, font, YELLOW);
-        y += lh;
+/* Tron-style backdrop: a perspective floor and ceiling grid converging on a horizon. The bright lines use the colour
+ * of the team whose turn it is; the subdued lines use the other team's colour. Slowly scrolling. */
+static void draw_background(int sw, int sh, Team turn_team, double t) {
+    DrawRectangleGradientV(0, 0, sw, sh, (Color){ 36, 52, 84, 255 }, (Color){ 66, 92, 128, 255 });
+    Color bright = (turn_team == TEAM_WHITE) ? (Color){ 110, 225, 255, 255 } : (Color){ 255, 160, 70, 255 };
+    Color subdued = (turn_team == TEAM_WHITE) ? (Color){ 255, 160, 70, 255 } : (Color){ 110, 225, 255, 255 };
+    float horizon = (float)sh * 0.5f;
+    float vx = (float)sw * 0.5f;
+
+    /* lines running to the vanishing point (floor and ceiling) */
+    const int lanes = 14;
+    float spread = (float)sw / 5.0f;
+    for (int k = -lanes; k <= lanes; k++) {
+        bool major = (k % 4 == 0);
+        Color c = major ? bright : subdued;
+        c.a = (unsigned char)(major ? 70 : 34);
+        float xb = vx + (float)k * spread;
+        DrawLineEx((Vector2){ vx, horizon }, (Vector2){ xb, (float)sh }, 1.0f, c);
+        DrawLineEx((Vector2){ vx, horizon }, (Vector2){ xb, 0.0f }, 1.0f, c);
     }
-    
-    Color speed_color = (playback_speed <= 0.0f) ? RED : WHITE;
-    DrawText(TextFormat("Speed: %.2fx", playback_speed), (int)x, (int)y, font, speed_color);
-    y += lh;
-    
-    DrawText(TextFormat("Boards: %d/%d", match->boards_won_white + match->boards_won_black, match->target_boards_per_game), (int)x, (int)y, font, LIGHTGRAY);
-    y += lh;
-    DrawText(TextFormat("Games: %d/%d", match->games_won_white + match->games_won_black, match->target_games_per_match), (int)x, (int)y, font, LIGHTGRAY);
-    y += lh;
-    
-    const char* queen_states[] = { "ON_BOARD", "POCKETED_NO_COVER", "COVERED", "DUE" };
-    Color queen_color = (game->board.queen_state == QUEEN_STATE_COVERED) ? GOLD : WHITE;
-    DrawText(TextFormat("Queen: %s", queen_states[game->board.queen_state]), (int)x, (int)y, font, queen_color);
-    y += lh;
-    
-    DrawText(TextFormat("Dues: W=%d B=%d Q=%d", game->board.white_dues, game->board.black_dues, game->board.queen_dues), (int)x, (int)y, font, LIGHTGRAY);
-    y += lh;
-    
-    DrawText(TextFormat("Pieces: W=%d B=%d Q=%s", game->board.white_on_board, game->board.black_on_board, 
-             game->board.queen_on_board ? "YES" : "NO"), (int)x, (int)y, font, LIGHTGRAY);
+    /* cross lines, receding with perspective and scrolling toward the viewer */
+    const int rows = 12;
+    float scroll = (float)fmod(t * 0.12, 1.0);
+    for (int j = 0; j < rows; j++) {
+        float u = ((float)j + scroll) / (float)rows;          /* 0 (far) .. 1 (near) */
+        float depth = u * u;
+        Color c = (j % 4 == 0) ? bright : subdued;
+        c.a = (unsigned char)(20.0f + 70.0f * depth);
+        float yf = horizon + (float)(sh) * 0.5f * depth;
+        float yc = horizon - (float)(sh) * 0.5f * depth;
+        DrawLineEx((Vector2){ 0.0f, yf }, (Vector2){ (float)sw, yf }, 1.0f, c);
+        DrawLineEx((Vector2){ 0.0f, yc }, (Vector2){ (float)sw, yc }, 1.0f, c);
+    }
+    /* the horizon glow */
+    Color glow = bright;
+    glow.a = 90;
+    DrawLineEx((Vector2){ 0.0f, horizon }, (Vector2){ (float)sw, horizon }, 2.0f, glow);
 }
 
 static void draw_title_bar(Renderer* r, const Layout* L) {
@@ -198,13 +158,9 @@ static void draw_footer_band(Renderer* r, const Layout* L) {
     
     int blog_link_width = MeasureText(BLOG_LINK, L->font_size_footer_link);
     int link_x = (L->sw - blog_link_width) / 2;
-    int link_y = rule_y + 4;
+    int link_y = rule_y + 5;
     DrawText(BLOG_LINK, link_x, link_y, L->font_size_footer_link, LIGHTGRAY);
     
-    int copyright_width = MeasureText(COPYRIGHT_TEXT, L->font_size_footer_copyright);
-    int copyright_x = (L->sw - copyright_width) / 2;
-    int copyright_y = link_y + L->font_size_footer_link + 2;
-    DrawText(COPYRIGHT_TEXT, copyright_x, copyright_y, L->font_size_footer_copyright, (Color){ 180, 180, 180, 255 });
 }
 
 static void draw_placement_banner(Renderer* r, const GameState* game, double placement_timer, const Layout* L) {
@@ -305,6 +261,14 @@ bool renderer_is_paused(Renderer* r) {
     return r->paused;
 }
 
+Layout renderer_get_layout(const Renderer* r) {
+    return r->current_layout;
+}
+
+void renderer_set_turn_team(Renderer* r, Team team) {
+    r->turn_team = team;
+}
+
 float renderer_get_playback_speed(const Renderer* r) {
     return r->playback_speed;
 }
@@ -337,20 +301,18 @@ void renderer_begin(Renderer* r) {
         // Headless capture: render directly to texture, no main window drawing
         BeginTextureMode(r->capture_texture);
         ClearBackground(GAME_BACKGROUND);
+        draw_background(sw, sh, r->turn_team, GetTime());
     } else {
         // Interactive or windowed capture: render to main window
         BeginDrawing();
         ClearBackground(GAME_BACKGROUND);
+        draw_background(sw, sh, r->turn_team, GetTime());
     }
     
     draw_title_bar(r, L);
     draw_footer_band(r, L);
 }
 
-void renderer_draw_hud_sidebar(Renderer* r, const MatchState* match, const GameState* game, float playback_speed) {
-    Layout* L = &r->current_layout;
-    draw_hud_sidebar(match, game, playback_speed, L);
-}
 
 void renderer_begin_board(Renderer* r) {
     Layout* L = &r->current_layout;

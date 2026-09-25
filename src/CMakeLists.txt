@@ -14,6 +14,7 @@ add_library(carrom_core
     ai/arena_controller.c
     ai/shot_candidates.c
     ai/geometry_planner.c
+    telemetry/flight.c
     ai/shot_evaluator.c
     telemetry/trace.c
     platform/platform.c
@@ -168,6 +169,10 @@ if(WIN32)
     target_compile_definitions(carrom_render PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
+# Flight-recorder decoder
+add_executable(flight_dump tools/flight_dump.c)
+target_link_libraries(flight_dump carrom_core)
+
 # Main executable
 add_executable(carrom_arena
     app/main.c
@@ -215,6 +220,15 @@ endif()
 set_target_properties(carrom_arena PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
 )
+set_target_properties(flight_dump PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(flight_dump PRIVATE -Wno-error=implicit-function-declaration)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        target_link_options(flight_dump PRIVATE -fsanitize=address,undefined)
+    endif()
+endif()
 
 # Disable -Werror=implicit-function-declaration for targets including Box2D headers
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")

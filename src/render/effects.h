@@ -18,6 +18,7 @@ void effects_trigger_pocket_fall(int id, PieceColor color, Vec2 from, Vec2 vel, 
 void effects_update(float sim_dt);
 bool effects_piece_falling(int id);
 void effects_reset(void);
+unsigned int effects_falling_mask(void);   /* bit i set while piece i (bit MAX_PIECES = striker) is falling in */
 
 #ifdef __cplusplus
 }

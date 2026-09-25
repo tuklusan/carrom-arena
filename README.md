@@ -244,6 +244,25 @@ Based on **International Carrom Federation Laws of Carrom** (https://www.carrom.
 
 ---
 
+## Flight Recorder (binary, for debugging what happened and what was drawn)
+
+Next to the JSONL trace, every run with a trace directory also writes `flight_<seed>.bin`: an 8 MiB circular binary log.
+It holds one FRAME record per rendered frame (wall time, frame delta, phase, game speed, sim time; for all 19 coins and
+the striker the physics position and velocity, whether each is on the board, pocketed, alive in physics, sinking into a
+pocket, or drawn from physics; where the striker, the four players and the aim line were actually drawn; timers; layout),
+plus EVENT records (phase changes, turn changes, plans, shot start/end, every pocket and stash slot, striker pockets,
+speed and pause changes, layout changes, shutdown) and TEXT notes. Decode it with the bundled tool:
+
+    flight_dump flight_<seed>.bin              # events, notes and one summary line per frame
+    flight_dump flight_<seed>.bin --events     # events and notes only
+    flight_dump flight_<seed>.bin --frame 1234 # every field of frame 1234 (all coins, striker, players, aim line)
+    flight_dump flight_<seed>.bin --csv        # one CSV row per frame (positions, velocities, flags)
+
+The file wraps around when full (oldest data overwritten, checksummed records, the reader resynchronises).
+Format details are in `src/telemetry/flight.h`.
+
+---
+
 ## Verification & Evidence (Articles 16–17)
 
 | Suite | Command | Target |

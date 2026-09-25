@@ -195,6 +195,14 @@ typedef struct {
 } VisualState;
 
 static VisualState g_vis;
+static BoardViewDebug g_dbg;
+
+void board_view_get_debug(BoardViewDebug* out) {
+    *out = g_dbg;
+    out->striker_valid = g_vis.striker_valid;
+    out->striker_vis = g_vis.striker;
+    for (int i = 0; i < 4; i++) out->figures[i] = g_vis.fig[i];
+}
 
 static float approach_f(float cur, float target, float max_step) {
     float d = target - cur;
@@ -263,6 +271,9 @@ static void draw_aim_preview_line(Viewport vp, const GameState* game, const Layo
     Vec2 start_screen = math_world_to_screen(vp, striker_pos);
     Vec2 end_world = { striker_pos.x + cosf(aim_angle) * clamped_len, striker_pos.y + sinf(aim_angle) * clamped_len };
     Vec2 end_screen = math_world_to_screen(vp, end_world);
+    g_dbg.aim_drawn = true;
+    g_dbg.aim_start = striker_pos;
+    g_dbg.aim_end = end_world;
     
     // Line thickness in screen pixels (at least 3px)
     float thickness = my_fmaxf(3.0f, math_world_to_screen_dist(vp, 0.01f));
@@ -307,6 +318,8 @@ static void draw_aim_preview_line(Viewport vp, const GameState* game, const Layo
 }
 
 void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* L, int game_phase, const GameState* game, double placement_timer) {
+    g_dbg.aim_drawn = false;
+    g_dbg.drawn_from_physics_mask = 0;
     // Determine current turn seat from game turn (not striker owner, which is stale during THINKING/PLACEMENT/AIM_PREVIEW)
     Seat current_turn_seat = game ? game->turn_seat : board->striker.owner_seat;
     
@@ -618,6 +631,7 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
                                        prev_positions[i], curr_positions[i], alpha, &pos)) {
             continue;
         }
+        if (use_physics) g_dbg.drawn_from_physics_mask |= (1u << i);
         
         Vec2 screen = math_world_to_screen(vp, pos);
         float piece_r = math_world_to_screen_dist(vp, PIECE_RADIUS_NORM);
