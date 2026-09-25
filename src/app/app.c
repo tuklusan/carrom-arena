@@ -136,7 +136,7 @@ static void app_setup_renderer(AppContext* ctx) {
  * --------------------------------------------------------------------------- */
 // Use physics.h definitions: PHYSICS_HZ, PHYSICS_DT, MAX_SUBSTEPS
 
-/* The configured game speed (default 0.1x) applies only from striker LAUNCH until the board
+/* The configured game speed (default 1x) applies only from striker LAUNCH until the board
  * SETTLES. Thinking, placement and aim preview always run at full (1x) speed. */
 static double app_phase_speed(const AppContext* ctx) {
     if (ctx->game.phase == PHASE_SHOT_EXECUTION || ctx->game.phase == PHASE_SETTLING) {
@@ -715,8 +715,8 @@ AppContext* app_create(const AppConfig* config) {
     if (config->playback_speed > 0.0f) {
         ctx->playback_speed = config->playback_speed;
     } else {
-        // Default to 0.1x for all modes
-        ctx->playback_speed = 0.1f;
+        // Default to real time (1x)
+        ctx->playback_speed = 1.0f;
     }
     printf("[DEBUG] App created with playback_speed=%.2fx\n", ctx->playback_speed);
     fflush(stdout);
@@ -943,7 +943,7 @@ void app_print_usage(const char* prog_name) {
     printf("  --frames <n>          Frames to capture (capture mode, default: 300)\n");
     printf("  --trace-dir <path>    Trace output directory (default: traces)\n");
     printf("  --capture-dir <path>  Capture output directory (default: captures)\n");
-    printf("  --playback-speed <x>  Sim speed multiplier 0.05-4.0 (default: 0.1 rendered/capture, 1.0 soak/diagnostic)\n");
+    printf("  --playback-speed <x>  Sim speed multiplier 0.05-4.0 (default: 1.0)\n");
     printf("  --ai-budget-ms <n>    AI decision time budget in ms (default: 150, range: 10-10000)\n");
     printf("  --verbose             Verbose logging\n");
     printf("  --headless            Force headless mode\n");
