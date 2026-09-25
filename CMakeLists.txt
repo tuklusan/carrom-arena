@@ -91,7 +91,10 @@ add_compile_definitions(B2_USE_FIXED_POINT=1)
 # Build ID from git (for telemetry)
 # =============================================================================
 find_package(Git QUIET)
-if(GIT_FOUND)
+if(CARROM_BUILD_ID)
+    # stamped by the caller: a source tarball has no .git to describe (cmake -DCARROM_BUILD_ID=$(git describe --always --tags))
+    set(BUILD_ID "${CARROM_BUILD_ID}")
+elseif(GIT_FOUND)
     execute_process(
         COMMAND ${GIT_EXECUTABLE} describe --dirty --always --tags
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}

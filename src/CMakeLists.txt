@@ -19,7 +19,6 @@ add_library(carrom_core
     ai/shot_evaluator.c
     telemetry/trace.c
     platform/platform.c
-    common/types.c
     common/rng.c
     common/math.c
     common/strategy_profiles.c

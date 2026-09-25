@@ -12,7 +12,7 @@
 2. Commit, then `bash ~/clean_verify.sh` (clones the committed HEAD, builds, runs all tests; needs `100% tests passed`, currently 16/16). Then `bash ~/bin/push_all.sh`, then fast-forward the H: clone, then check CI.
 3. CI is serialized ("one CI job per runner architecture at a time"): `.github/workflows/ci.yml` with the composite action `.github/actions/ci-cell`.
 4. Look at the real game: run `carrom_arena --mode=rendered` on Xvfb via a SCRIPT FILE (never inline in an ssh command: `scripts/kill-all-runs.sh` kills any process whose command line contains the binary name, including your own shell), screenshot with `import -window root`, and Read the PNGs. `--mode=capture` currently writes blank white frames (open bug: the capture texture is only drawn when the window is hidden).
-5. Windows build: tar `git ls-files` on Linux, scp to the W11 box (`vagab@192.168.4.103`), extract to `C:/Users/vagab/carrom_wip`, `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release`, build target `carrom_arena`, copy the exe to `build_fresh`, delete the scratch on both machines.
+5. Windows build: tar `git ls-files` on Linux, scp to the W11 box (`vagab@192.168.4.103`), extract to `C:/Users/vagab/carrom_wip`, `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCARROM_BUILD_ID=<git describe>` (a tarball has no .git), build target `carrom_arena`, copy the exe to `build_fresh`, delete the scratch on both machines.
 6. Never write the shared machine password anywhere. Never push kimi config. No attribution lines in commits. Do not squash GitHub history (the operator said hold off).
 
 ## What is done (2026-09-22 to 2026-09-24)
@@ -50,6 +50,7 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
   point and leaked a FILE*; reader trusted a corrupt index; NaN passed `match_validate_shot`; `board_get_legal_placements(.., 1)` divided by zero;
   evaluator scored coins pocketed in the simulation as lying at (0,0); planner cap silently dropped later placements; `pcg32_random_float`
   could return 1.0; `--seed 5` (space form, as in --help) was ignored; window size unclamped; window/audio init failure crashed instead of a message.
+- Dead duplicate definitions removed: `common/types.c` redefined seven init functions that `board.c`/`rules.c`/`match.c` also define (which copy linked depended on archive order).
 - Console: the exe is a GUI-subsystem program on Windows (`-mwindows`; borrows the parent terminal only for --help/--version/soak).
   All debug output goes to `traces/debug_<seed>.log` (`platform_diag_logf`; raylib's log is routed there too). Old trace/flight/log files
   are pruned to the newest 20 per kind at start-up.
