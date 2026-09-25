@@ -54,6 +54,7 @@
     bool aim_preview_active;         // Whether we're in the aim preview phase
     double aim_preview_start_wall;   // Wall time when aim preview started (for figure animation)
     double thinking_min_wall;        // Minimum wall time for THINKING phase visualization
+    bool striker_fall_registered;    // striker pocket animation already started for this shot
     int pockets_registered;          // Pockets of the running shot already registered in game state
     float next_progress_time;        // Sim time of the next SHOT_PROGRESS trace record
 };
@@ -135,6 +136,8 @@ static void app_setup_renderer(AppContext* ctx) {
  * Core Simulation Step (Fixed Timestep)
  * --------------------------------------------------------------------------- */
 // Use physics.h definitions: PHYSICS_HZ, PHYSICS_DT, MAX_SUBSTEPS
+
+#define AIM_PREVIEW_SECONDS 2.0   /* the launch line + arrow are shown for 2 s before the shot */
 
 /* The configured game speed (default 1x) applies only from striker LAUNCH until the board
  * SETTLES. Thinking, placement and aim preview always run at full (1x) speed. */
@@ -238,12 +241,32 @@ static void app_shot_progress(AppContext* ctx) {
     uint64_t shot = ctx->shot_count ? ctx->shot_count - 1 : 0;
     for (int i = ctx->pockets_registered; i < r.pocketed_count; i++) {
         app_register_pocket(ctx, r.pocketed_ids[i], r.pocketed_pocket_indices[i]);
+        if (ctx->renderer) {
+            Vec2 lp, lv;
+            physics_get_pocketed_last(ctx->physics, i, &lp, &lv);
+            effects_trigger_pocket_fall(r.pocketed_ids[i], (PieceColor)r.pocketed_colors[i], lp, lv, r.pocketed_pocket_indices[i]);
+            effects_trigger_pocket_fade(r.pocketed_pocket_indices[i]);
+        }
+        if (ctx->config.verbose) {
+            printf("[POCKET] id=%d pocket=%d\n", (int)r.pocketed_ids[i], (int)r.pocketed_pocket_indices[i]);
+            fflush(stdout);
+        }
         if (ctx->trace) {
             trace_write_pocket(ctx->trace, shot, r.pocketed_ids[i], r.pocketed_colors[i],
                                r.pocketed_pocket_indices[i], t);
         }
     }
     ctx->pockets_registered = r.pocketed_count;
+    if (ctx->renderer && !ctx->striker_fall_registered) {
+        Vec2 sp, sv;
+        int spocket;
+        if (physics_get_striker_pocket_info(ctx->physics, &sp, &sv, &spocket)) {
+            ctx->striker_fall_registered = true;
+            effects_trigger_pocket_fall(EFFECTS_STRIKER_ID, PIECE_STRIKER, sp, sv, spocket);
+            if (ctx->config.verbose) { printf("[POCKET] striker pocket=%d\n", spocket); fflush(stdout); }
+            effects_trigger_pocket_fade(spocket);
+        }
+    }
     if (t >= ctx->next_progress_time) {
         app_snapshot_trace(ctx, false);
         ctx->next_progress_time = t + 2.0f;
@@ -267,6 +290,7 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
         app_register_pocket(ctx, result->pocketed_ids[i], result->pocketed_pocket_indices[i]);
     }
     ctx->pockets_registered = 0;
+    ctx->striker_fall_registered = false;
     ctx->next_progress_time = 0.0f;
 
     // Fresh striker for the next turn (a pocketed striker is a foul, but the next player still gets one)
@@ -322,24 +346,6 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Write shot result to trace
     if (ctx->trace) {
         trace_write_shot_end(ctx->trace, result, &outcome);
-    }
-    
-    // Trigger pocket fade effects
-    if (ctx->renderer) {
-        for (int i = 0; i < result->pocketed_count; i++) {
-            // Use the actual pocket index for effects
-            uint8_t pocket_idx = result->pocketed_pocket_indices[i];
-            effects_trigger_pocket_fade(pocket_idx);
-        }
-        if (result->queen_pocketed) {
-            // Find queen's pocket index
-            for (int i = 0; i < result->pocketed_count; i++) {
-                if (result->pocketed_ids[i] == QUEEN_ID) {
-                    effects_trigger_pocket_fade(result->pocketed_pocket_indices[i]);
-                    break;
-                }
-            }
-        }
     }
     
     // Start next board if needed
@@ -430,6 +436,7 @@ int app_run_simulation(AppContext* ctx) {
             
             // Fixed timestep physics
             app_simulation_step(ctx, dt);
+            if (ctx->renderer) effects_update((float)(dt * app_phase_speed(ctx)));
             if (ctx->game.phase == PHASE_SHOT_EXECUTION || ctx->game.phase == PHASE_SETTLING) {
                 app_shot_progress(ctx);
             }
@@ -551,7 +558,7 @@ int app_run_simulation(AppContext* ctx) {
                         // computed_shot_valid will be set to true when AIM_PREVIEW phase starts
                         
                         // Start AIM_PREVIEW phase (5 seconds scaled time)
-                        ctx->aim_preview_timer = 5.0;
+                        ctx->aim_preview_timer = AIM_PREVIEW_SECONDS;
                         ctx->aim_preview_active = true;
                         ctx->game.phase = PHASE_AIM_PREVIEW;
                         ctx->pending_shot_valid = false;
@@ -572,7 +579,7 @@ int app_run_simulation(AppContext* ctx) {
                         // Progress for renderer (0.0 to 1.0 over 0.3s)
                         // Based on inverse of timer: timer starts at 5.0, ends at 0.0
                         //’s progress = (5.0 - timer) / 0.3
-                        double elapsed_scaled = 5.0 - ctx->aim_preview_timer;
+                        double elapsed_scaled = AIM_PREVIEW_SECONDS - ctx->aim_preview_timer;
                         ctx->game.aim_preview_progress = (float)(elapsed_scaled / 0.3);
                         if (ctx->game.aim_preview_progress > 1.0f) ctx->game.aim_preview_progress = 1.0f;
                         if (ctx->game.aim_preview_progress < 0.0f) ctx->game.aim_preview_progress = 0.0f;

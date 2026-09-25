@@ -1,6 +1,7 @@
 #include <math.h>
 #include "board_view.h"
 #include "piece_draw.h"
+#include "effects.h"
 #include "renderer.h"
 #include "common/types.h"
 #include "common/vecmath.h"
@@ -242,8 +243,6 @@ static Vec2 thinking_striker_world(Seat seat, double wall_time) {
  * Draw solid line >=3px thick with visible arrowhead at far end.
  * Color: high contrast (YELLOW with dark outline).
  */
-#define AIM_LINE_FULL_POWER_LEN 0.55f
-
 /* raylib culls clockwise triangles, so draw both windings to be sure the arrowhead is visible */
 static void draw_tri_any_winding(Vector2 a, Vector2 b, Vector2 c, Color col) {
     DrawTriangle(a, b, c, col);
@@ -257,7 +256,7 @@ static void draw_aim_preview_line(Viewport vp, const GameState* game, const Layo
     float power = game->computed_shot_plan.power;
 
     /* Length is strictly proportional to the strike force: full power = AIM_LINE_FULL_POWER_LEN board widths */
-    float clamped_len = power * AIM_LINE_FULL_POWER_LEN;
+    float clamped_len = aim_line_length(power);
     (void)L;
 
     // Convert to screen coordinates
@@ -635,6 +634,8 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     // Pocketed pieces (drawn at their pocketed positions near corners)
     for (int i = 0; i < board->pocketed_count; i++) {
         if (!board->pocketed_pieces[i].pocketed) continue;
+        /* still sliding/sinking into the pocket: the slot copy appears when that ends */
+        if (effects_piece_falling(board->pocketed_pieces[i].id)) continue;
         
         Vec2 pos = board->pocketed_pieces[i].pocketed_position;
         Vec2 screen = math_world_to_screen(vp, pos);

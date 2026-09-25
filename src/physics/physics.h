@@ -59,6 +59,10 @@ void physics_apply_shot(PhysicsWorld* pw, float aim_angle, float power);
 void physics_collect_pocketed(PhysicsWorld* pw, ShotResult* result);
 bool physics_is_piece_pocketed(const PhysicsWorld* pw, int id);
 bool physics_is_striker_pocketed(const PhysicsWorld* pw);
+/* Position and velocity of the index-th pocketed piece (as listed by physics_collect_pocketed) at the moment it fell in */
+void physics_get_pocketed_last(const PhysicsWorld* pw, int index, Vec2* pos, Vec2* vel);
+/* Same for the striker; returns false when the striker has not been pocketed */
+bool physics_get_striker_pocket_info(const PhysicsWorld* pw, Vec2* pos, Vec2* vel, int* pocket_index);
 /* Live linear velocity of a piece; returns false (vel zeroed) if it is pocketed or absent */
 bool physics_get_piece_velocity(const PhysicsWorld* pw, int id, Vec2* vel);
 void physics_consume_pocketed(PhysicsWorld* pw);

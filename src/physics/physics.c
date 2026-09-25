@@ -32,6 +32,10 @@ struct PhysicsWorld {
     uint8_t pocketed_ids[19];
     PieceColor pocketed_colors[19];
     uint8_t pocketed_pocket_indices[19];  // Which pocket each piece went into (0-3)
+    Vec2 pocketed_last_pos[19];           // where / how fast each pocketed piece was at the moment it fell in
+    Vec2 pocketed_last_vel[19];
+    Vec2 striker_last_pos, striker_last_vel;
+    int striker_pocket_index;
     
     // Previous-frame positions for render interpolation
     Vec2 prev_piece_positions[MAX_PIECES];
@@ -344,6 +348,12 @@ static void physics_check_pocket_events(PhysicsWorld* pw) {
                 pw->piece_pocketed[p] = true;
                 pw->pocketed_ids[pw->pocketed_count] = (uint8_t)p;
                 pw->pocketed_pocket_indices[pw->pocketed_count] = (uint8_t)pocket_idx;
+                {
+                    b2Vec2 bp = b2Body_GetPosition(pw->piece_bodies[p]);
+                    b2Vec2 bv = b2Body_GetLinearVelocity(pw->piece_bodies[p]);
+                    pw->pocketed_last_pos[pw->pocketed_count] = (Vec2){ bp.x, bp.y };
+                    pw->pocketed_last_vel[pw->pocketed_count] = (Vec2){ bv.x, bv.y };
+                }
                 
                 if (p == QUEEN_ID) {
                     pw->pocketed_colors[pw->pocketed_count] = PIECE_QUEEN;
@@ -364,6 +374,13 @@ static void physics_check_pocket_events(PhysicsWorld* pw) {
         if (!pw->striker_pocketed && b2Body_IsValid(pw->striker_body) &&
             B2_ID_EQUALS(pw->striker_body, visitor_body)) {
             pw->striker_pocketed = true;
+            pw->striker_pocket_index = pocket_idx;
+            {
+                b2Vec2 bp = b2Body_GetPosition(pw->striker_body);
+                b2Vec2 bv = b2Body_GetLinearVelocity(pw->striker_body);
+                pw->striker_last_pos = (Vec2){ bp.x, bp.y };
+                pw->striker_last_vel = (Vec2){ bv.x, bv.y };
+            }
             b2DestroyBody(pw->striker_body);
             pw->striker_body = (b2BodyId){0};
         }
@@ -405,6 +422,25 @@ bool physics_get_piece_velocity(const PhysicsWorld* pw, int id, Vec2* vel) {
     if (pw->piece_pocketed[id] || !b2Body_IsValid(pw->piece_bodies[id])) return false;
     b2Vec2 v = b2Body_GetLinearVelocity(pw->piece_bodies[id]);
     *vel = (Vec2){ v.x, v.y };
+    return true;
+}
+
+void physics_get_pocketed_last(const PhysicsWorld* pw, int index, Vec2* pos, Vec2* vel) {
+    *pos = (Vec2){ 0, 0 };
+    *vel = (Vec2){ 0, 0 };
+    if (!pw || index < 0 || index >= pw->pocketed_count) return;
+    *pos = pw->pocketed_last_pos[index];
+    *vel = pw->pocketed_last_vel[index];
+}
+
+bool physics_get_striker_pocket_info(const PhysicsWorld* pw, Vec2* pos, Vec2* vel, int* pocket_index) {
+    *pos = (Vec2){ 0, 0 };
+    *vel = (Vec2){ 0, 0 };
+    *pocket_index = 0;
+    if (!pw || !pw->striker_pocketed) return false;
+    *pos = pw->striker_last_pos;
+    *vel = pw->striker_last_vel;
+    *pocket_index = pw->striker_pocket_index;
     return true;
 }
 

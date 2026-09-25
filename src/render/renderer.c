@@ -33,6 +33,8 @@ struct Renderer {
     Layout current_layout;
 };
 
+#define GAME_BACKGROUND (Color){ 84, 112, 140, 255 }   /* steel blue: dark pieces and figures stand out */
+
 /* Compute dynamic layout from actual screen dimensions */
 void layout_compute(int sw, int sh, Layout* out) {
     out->sw = sw;
@@ -334,11 +336,11 @@ void renderer_begin(Renderer* r) {
     if (r->capture_mode && r->hidden_window) {
         // Headless capture: render directly to texture, no main window drawing
         BeginTextureMode(r->capture_texture);
-        ClearBackground((Color){ 30, 30, 40, 255 });
+        ClearBackground(GAME_BACKGROUND);
     } else {
         // Interactive or windowed capture: render to main window
         BeginDrawing();
-        ClearBackground((Color){ 30, 30, 40, 255 });
+        ClearBackground(GAME_BACKGROUND);
     }
     
     draw_title_bar(r, L);

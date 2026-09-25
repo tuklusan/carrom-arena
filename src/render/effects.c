@@ -6,7 +6,8 @@
 #include <stdio.h>
 #include "common/vecmath.h"
 
-#define MAX_POCKET_FADE_TIME 0.2f  // 200ms fade
+#define MAX_POCKET_FADE_TIME 0.4f  // pocket flash: 400 ms (twice the original 200 ms)
+#define POCKET_SINK_TIME 0.4f      // sim seconds the piece takes to sink out of sight in the hole
 #define PLACEMENT_HOLD_TIME 1.0f   // 1 second at 1x playback
 
 typedef struct {
@@ -16,6 +17,45 @@ typedef struct {
 } PocketFadeEffect;
 
 static PocketFadeEffect pocket_fades[4] = {0};
+
+typedef struct {
+    bool active;
+    PieceColor color;
+    Vec2 from, pocket;
+    float slide_time;   /* sim seconds to slide from the capture point to the pocket centre */
+    float t;            /* sim seconds since the piece fell in */
+} FallEffect;
+
+static FallEffect falls[MAX_PIECES + 1];
+
+void effects_trigger_pocket_fall(int id, PieceColor color, Vec2 from, Vec2 vel, int pocket_index) {
+    if (id < 0 || id > MAX_PIECES || pocket_index < 0 || pocket_index > 3) return;
+    Vec2 pc = POCKET_CENTERS[pocket_index];
+    float dx = pc.x - from.x, dy = pc.y - from.y;
+    float dist = sqrtf(dx * dx + dy * dy);
+    float speed = sqrtf(vel.x * vel.x + vel.y * vel.y);
+    if (speed < 0.3f) speed = 0.3f;
+    float slide = dist / speed;   /* keeps the speed the piece had, so it does not seem to accelerate */
+    if (slide < 0.04f) slide = 0.04f;
+    if (slide > 0.4f) slide = 0.4f;
+    falls[id] = (FallEffect){ true, color, from, pc, slide, 0.0f };
+}
+
+void effects_update(float sim_dt) {
+    for (int i = 0; i <= MAX_PIECES; i++) {
+        if (!falls[i].active) continue;
+        falls[i].t += sim_dt;
+        if (falls[i].t >= falls[i].slide_time + POCKET_SINK_TIME) falls[i].active = false;
+    }
+}
+
+bool effects_piece_falling(int id) {
+    return id >= 0 && id <= MAX_PIECES && falls[id].active;
+}
+
+void effects_reset(void) {
+    for (int i = 0; i <= MAX_PIECES; i++) falls[i].active = false;
+}
 
 /* Shared flash alpha computation for syncing figure and striker */
 static inline float compute_flash_alpha(double wall_time) {
@@ -56,6 +96,33 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
         DrawRectangleLines((int)bar_pos.x, (int)bar_pos.y, (int)bar_w, (int)bar_h, WHITE);
     }
     
+    // Pieces / striker falling into a pocket
+    for (int i = 0; i <= MAX_PIECES; i++) {
+        const FallEffect* f = &falls[i];
+        if (!f->active) continue;
+        Vec2 pos;
+        float scale = 1.0f, alpha = 1.0f;
+        if (f->t < f->slide_time) {
+            float u = f->t / f->slide_time;
+            pos = (Vec2){ f->from.x + (f->pocket.x - f->from.x) * u, f->from.y + (f->pocket.y - f->from.y) * u };
+        } else {
+            float u = (f->t - f->slide_time) / POCKET_SINK_TIME;
+            if (u > 1.0f) u = 1.0f;
+            pos = f->pocket;
+            scale = 1.0f - 0.7f * u;      /* shrinks as it drops into the hole */
+            alpha = 1.0f - u;
+        }
+        Vec2 sp = math_world_to_screen(vp, pos);
+        float r = ((i == EFFECTS_STRIKER_ID) ? L->striker_r_px : L->piece_r_px) * scale;
+        Color col = (f->color == PIECE_WHITE) ? (Color){ 240, 240, 240, 255 }
+                  : (f->color == PIECE_BLACK) ? (Color){ 30, 30, 30, 255 }
+                  : (f->color == PIECE_QUEEN) ? (Color){ 220, 30, 30, 255 }
+                  : (Color){ 255, 215, 0, 255 };
+        col.a = (unsigned char)(255.0f * alpha);
+        DrawCircle((int)sp.x, (int)sp.y, r, col);
+        DrawCircleLines((int)sp.x, (int)sp.y, r, (Color){ 20, 20, 20, col.a });
+    }
+
     // Pocket fade effects for recently pocketed pieces
     for (int i = 0; i < 4; i++) {
         if (pocket_fades[i].active) {
@@ -64,9 +131,9 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
                 pocket_fades[i].active = false;
             } else {
                 float alpha = pocket_fades[i].timer / MAX_POCKET_FADE_TIME;
-                float r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM * 1.5f);
+                float r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM * 1.8f);
                 Vec2 p = math_world_to_screen(vp, POCKET_CENTERS[i]);
-                DrawCircle((int)p.x, (int)p.y, r, (Color){255, 255, 0, (unsigned char)(alpha * 100)});
+                DrawCircle((int)p.x, (int)p.y, r, (Color){255, 255, 0, (unsigned char)(alpha * 170)});
             }
         }
     }

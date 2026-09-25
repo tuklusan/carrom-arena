@@ -87,10 +87,46 @@ void test_trace_pocket_progress_interrupted(void) {
     remove(path);
 }
 
+
+void test_aim_line_length_is_proportional_to_power(void) {
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, aim_line_length(0.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, aim_line_length(1.0f), 2.0f * aim_line_length(0.5f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, aim_line_length(0.6f), 3.0f * aim_line_length(0.2f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, aim_line_length(1.0f), aim_line_length(1.7f));  /* clamped */
+}
+
+void test_pocket_records_where_piece_and_striker_fell_in(void) {
+    GameState game;
+    game_state_init(&game, 99);
+    board_state_init(&game.board);
+    board_setup_initial_formation(&game.board, NULL);
+    game.board.pieces[0].position = POCKET_CENTERS[3];
+    PhysicsWorld* pw = physics_create();
+    physics_sync_from_board(pw, &game.board, SEAT_NORTH);
+    physics_place_striker(pw, SEAT_NORTH, POCKET_CENTERS[2]);
+    physics_step(pw, PHYSICS_DT);
+
+    ShotResult r;
+    shot_result_init(&r);
+    physics_collect_pocketed(pw, &r);
+    TEST_ASSERT_TRUE(r.pocketed_count >= 1);
+    Vec2 pos, vel;
+    physics_get_pocketed_last(pw, 0, &pos, &vel);
+    TEST_ASSERT_TRUE(hypotf(pos.x - POCKET_CENTERS[r.pocketed_pocket_indices[0]].x, pos.y - POCKET_CENTERS[r.pocketed_pocket_indices[0]].y) < 0.06f);
+
+    Vec2 sp, sv;
+    int spocket = -1;
+    TEST_ASSERT_TRUE(physics_get_striker_pocket_info(pw, &sp, &sv, &spocket));
+    TEST_ASSERT_EQUAL_INT(2, spocket);
+    physics_destroy(pw);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_draw_pos_never_lerps_pocketed_piece);
     RUN_TEST(test_physics_reports_pocketed_while_other_piece_moves);
     RUN_TEST(test_trace_pocket_progress_interrupted);
+    RUN_TEST(test_aim_line_length_is_proportional_to_power);
+    RUN_TEST(test_pocket_records_where_piece_and_striker_fell_in);
     return UNITY_END();
 }
