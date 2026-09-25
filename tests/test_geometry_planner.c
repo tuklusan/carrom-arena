@@ -98,6 +98,42 @@ void test_planned_shots_pocket_in_simulation(void) {
     TEST_ASSERT_TRUE(pocketed * 10 >= tried * 7); /* at least 70% */
 }
 
+/* Every legal baseline placement must survive being placed: the pocket sensor must not capture the striker */
+void test_legal_placements_are_never_captured_by_a_pocket(void) {
+    const Seat seats[4] = { SEAT_NORTH, SEAT_EAST, SEAT_SOUTH, SEAT_WEST };
+    int legal = 0, illegal = 0;
+    for (int s = 0; s < 4; s++) {
+        for (int k = 0; k <= 200; k++) {
+            float off = -BASELINE_MAX_OFFSET + (float)k / 200.0f * 2.0f * BASELINE_MAX_OFFSET;
+            Vec2 pos;
+            switch (seats[s]) {
+                case SEAT_NORTH: pos = (Vec2){ off, BASELINE_Y_NORTH }; break;
+                case SEAT_SOUTH: pos = (Vec2){ off, BASELINE_Y_SOUTH }; break;
+                case SEAT_EAST:  pos = (Vec2){ BASELINE_X_EAST, off }; break;
+                default:         pos = (Vec2){ BASELINE_X_WEST, off }; break;
+            }
+            PhysicsWorld* pw = physics_create();
+            BoardState b;
+            board_state_init(&b);
+            for (int i = 0; i < MAX_PIECES; i++) b.pieces[i].on_board = false;
+            physics_sync_from_board(pw, &b, seats[s]);
+            physics_place_striker(pw, seats[s], pos);
+            physics_step(pw, PHYSICS_DT);
+            physics_step(pw, PHYSICS_DT);
+            bool captured = physics_is_striker_pocketed(pw);
+            physics_destroy(pw);
+            if (board_is_legal_placement(seats[s], pos)) {
+                legal++;
+                TEST_ASSERT_FALSE_MESSAGE(captured, "a legal placement is inside a pocket capture zone");
+            } else {
+                illegal++;
+            }
+        }
+    }
+    TEST_ASSERT_TRUE(legal > 400);      /* most of the baseline is still usable */
+    TEST_ASSERT_TRUE(illegal > 0);      /* the pocket ends are excluded */
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_ghost_ball_is_behind_target_on_pocket_line);
@@ -105,5 +141,6 @@ int main(void) {
     RUN_TEST(test_power_grows_with_distance);
     RUN_TEST(test_blocked_pocket_line_is_not_planned);
     RUN_TEST(test_planned_shots_pocket_in_simulation);
+    RUN_TEST(test_legal_placements_are_never_captured_by_a_pocket);
     return UNITY_END();
 }

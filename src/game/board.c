@@ -222,7 +222,10 @@ int board_get_legal_placements(Seat seat, Vec2* out_placements, int max_placemen
 
 bool board_is_legal_placement(Seat seat, Vec2 pos) {
     // Check distance from pockets (must not overlap pocket sensor radius)
-    float pocket_sensor_radius = POCKET_RADIUS_NORM + STRIKER_RADIUS_NORM;
+    /* The pocket sensor (POCKET_CAPTURE_RADIUS_NORM = pocket + coin radius, see physics.h) captures anything it
+     * overlaps, so a striker centre must stay outside sensor radius + striker radius, or it is "pocketed" the
+     * moment it is placed. (The old bound, pocket + striker radius, let positions up to 2 cm too deep through.) */
+    float pocket_sensor_radius = POCKET_RADIUS_NORM + PIECE_RADIUS_NORM + STRIKER_RADIUS_NORM + 0.003f;
     
     for (int i = 0; i < 4; i++) {
         float dx = pos.x - POCKET_CENTERS[i].x;
