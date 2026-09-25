@@ -7,12 +7,14 @@
 #include "common/vecmath.h"
 
 #define MAX_POCKET_FADE_TIME 0.4f  // pocket flash: 400 ms (twice the original 200 ms)
-#define POCKET_SINK_TIME 0.4f      // sim seconds the piece takes to sink out of sight in the hole
+#define POCKET_SINK_TIME 0.4f      // sim seconds a coin takes to sink out of sight in the hole
+#define STRIKER_SINK_TIME 1.1f     // the striker is heavier and drops to the floor: a longer fall
 #define PLACEMENT_HOLD_TIME 1.0f   // 1 second at 1x playback
 
 typedef struct {
     Vec2 pocket_center;
     float timer;
+    float duration;
     bool active;
 } PocketFadeEffect;
 
@@ -23,6 +25,7 @@ typedef struct {
     PieceColor color;
     Vec2 from, pocket;
     float slide_time;   /* sim seconds to slide from the capture point to the pocket centre */
+    float sink_time;    /* sim seconds spent sinking in the hole */
     float t;            /* sim seconds since the piece fell in */
 } FallEffect;
 
@@ -38,14 +41,14 @@ void effects_trigger_pocket_fall(int id, PieceColor color, Vec2 from, Vec2 vel, 
     float slide = dist / speed;   /* keeps the speed the piece had, so it does not seem to accelerate */
     if (slide < 0.04f) slide = 0.04f;
     if (slide > 0.4f) slide = 0.4f;
-    falls[id] = (FallEffect){ true, color, from, pc, slide, 0.0f };
+    falls[id] = (FallEffect){ true, color, from, pc, slide, (id == EFFECTS_STRIKER_ID) ? STRIKER_SINK_TIME : POCKET_SINK_TIME, 0.0f };
 }
 
 void effects_update(float sim_dt) {
     for (int i = 0; i <= MAX_PIECES; i++) {
         if (!falls[i].active) continue;
         falls[i].t += sim_dt;
-        if (falls[i].t >= falls[i].slide_time + POCKET_SINK_TIME) falls[i].active = false;
+        if (falls[i].t >= falls[i].slide_time + falls[i].sink_time) falls[i].active = false;
     }
 }
 
@@ -112,11 +115,16 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
             float u = f->t / f->slide_time;
             pos = (Vec2){ f->from.x + (f->pocket.x - f->from.x) * u, f->from.y + (f->pocket.y - f->from.y) * u };
         } else {
-            float u = (f->t - f->slide_time) / POCKET_SINK_TIME;
+            float u = (f->t - f->slide_time) / f->sink_time;
             if (u > 1.0f) u = 1.0f;
             pos = f->pocket;
-            scale = 1.0f - 0.7f * u;      /* shrinks as it drops into the hole */
-            alpha = 1.0f - u;
+            if (i == EFFECTS_STRIKER_ID) {
+                scale = 1.0f - 0.8f * u;                       /* a slow drop down the hole... */
+                alpha = (u < 0.55f) ? 1.0f : 1.0f - (u - 0.55f) / 0.45f;   /* ...then out of sight */
+            } else {
+                scale = 1.0f - 0.7f * u;      /* coins shrink as they drop into the hole */
+                alpha = 1.0f - u;
+            }
         }
         Vec2 sp = math_world_to_screen(vp, pos);
         float r = ((i == EFFECTS_STRIKER_ID) ? L->striker_r_px : L->piece_r_px) * scale;
@@ -136,7 +144,7 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
             if (pocket_fades[i].timer <= 0) {
                 pocket_fades[i].active = false;
             } else {
-                float alpha = pocket_fades[i].timer / MAX_POCKET_FADE_TIME;
+                float alpha = pocket_fades[i].timer / pocket_fades[i].duration;
                 float r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM * 1.8f);
                 Vec2 p = math_world_to_screen(vp, POCKET_CENTERS[i]);
                 DrawCircle((int)p.x, (int)p.y, r, (Color){255, 255, 0, (unsigned char)(alpha * 170)});
@@ -145,10 +153,20 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
     }
 }
 
+void effects_trigger_pocket_fade_long(int pocket_index, float seconds) {
+    if (pocket_index >= 0 && pocket_index < 4) {
+        pocket_fades[pocket_index].pocket_center = POCKET_CENTERS[pocket_index];
+        pocket_fades[pocket_index].timer = seconds;
+        pocket_fades[pocket_index].duration = seconds;
+        pocket_fades[pocket_index].active = true;
+    }
+}
+
 void effects_trigger_pocket_fade(int pocket_index) {
     if (pocket_index >= 0 && pocket_index < 4) {
         pocket_fades[pocket_index].pocket_center = POCKET_CENTERS[pocket_index];
         pocket_fades[pocket_index].timer = MAX_POCKET_FADE_TIME;
+        pocket_fades[pocket_index].duration = MAX_POCKET_FADE_TIME;
         pocket_fades[pocket_index].active = true;
     }
 }

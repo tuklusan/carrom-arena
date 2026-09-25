@@ -30,9 +30,11 @@ Several numbered variants exist per sound and are rotated so repeated impacts do
 | `flick_1.ogg` | `impact pack: impactGeneric_light_000.ogg` |
 | `flick_2.ogg` | `impact pack: impactGeneric_light_001.ogg` |
 | `flick_3.ogg` | `impact pack: impactGeneric_light_002.ogg` |
-| `striker_pocket_1.ogg` | `impact pack: impactSoft_heavy_000.ogg` |
-| `striker_pocket_2.ogg` | `impact pack: impactSoft_heavy_001.ogg` |
-| `striker_pocket_3.ogg` | `impact pack: impactSoft_heavy_002.ogg` |
+| `striker_pocket_1.ogg` | `impact pack: impactWood_heavy_000.ogg` |
+| `striker_pocket_2.ogg` | `impact pack: impactWood_heavy_001.ogg` |
+| `striker_pocket_3.ogg` | `impact pack: impactWood_heavy_002.ogg` |
+| `striker_bounce_1.ogg` | `impact pack: impactWood_medium_003.ogg` |
+| `striker_bounce_2.ogg` | `impact pack: impactWood_medium_004.ogg` |
 | `coin_pocket_1.ogg` | `casino pack: chips-stack-1.ogg` |
 | `coin_pocket_2.ogg` | `casino pack: chips-stack-2.ogg` |
 | `coin_pocket_3.ogg` | `casino pack: chips-stack-3.ogg` |
@@ -42,6 +44,6 @@ Several numbered variants exist per sound and are rotated so repeated impacts do
 | `board_won_1.ogg` | `interface pack: confirmation_002.ogg` |
 
 Mapping by game event: `flick_*` striker flick; `striker_coin_*` striker hits coin; `coin_coin_*` coin hits coin;
-`striker_wall_*` striker hits side; `coin_wall_*` coin hits side; `striker_pocket_*` striker falls into pocket;
+`striker_wall_*` striker hits side; `coin_wall_*` coin hits side; `striker_pocket_*` striker falls through the pocket to the floor (heavy wood thud) and `striker_bounce_*` its two floor bounces;
 `coin_pocket_*` coin falls into pocket; `queen_1` queen pocketed; `foul_1` foul; `board_won_1` board won.
 To swap a sound, replace the .ogg with the same name and rebuild.

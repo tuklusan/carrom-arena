@@ -36,6 +36,8 @@ static inline float compute_flash_alpha(double wall_time) {
 #define COLOR_QUEEN (Color){ 220, 30, 30, 255 }       // Red
 #define COLOR_STRIKER (Color){ 255, 215, 0, 255 }     // Gold
 #define COLOR_LINE (Color){ 255, 255, 255, 100 }      // White translucent
+#define COLOR_WHITE_COIN_OUTLINE (Color){ 50, 50, 50, 230 }   // thin dark rim: light coins look bigger than dark ones otherwise
+static Color coin_outline_color(PieceColor c) { return c == PIECE_WHITE ? COLOR_WHITE_COIN_OUTLINE : COLOR_LINE; }
 #define COLOR_BASELINE (Color){ 100, 255, 100, 150 }  // Green translucent (muted for baseline)
 #define COLOR_BASELINE_MUTED (Color){ 100, 255, 100, 76 }  // 30% alpha of team color
 
@@ -192,9 +194,11 @@ typedef struct {
     Vec2 striker;
     float fig[4];
     bool fig_valid;
+    bool was_gone;      /* the striker fell into a pocket during the last shot */
+    float appear;       /* 0..1 fade-in of a fresh striker handed to the next player */
 } VisualState;
 
-static VisualState g_vis;
+static VisualState g_vis = { .appear = 1.0f };
 static BoardViewDebug g_dbg;
 
 void board_view_get_debug(BoardViewDebug* out) {
@@ -581,13 +585,17 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         float step = VISUAL_SLIDE_SPEED * frame_dt;
         bool planning = is_thinking || is_placement || is_aim_preview;
         bool striker_gone = physics && physics_is_striker_pocketed(physics);
+        if (striker_gone && !planning) g_vis.was_gone = true;
+        if (g_vis.appear < 1.0f) { g_vis.appear += frame_dt / 0.6f; if (g_vis.appear > 1.0f) g_vis.appear = 1.0f; }
 
         if (game && is_thinking) {
             Vec2 target = thinking_striker_world(game->turn_seat, wall_time);
+            if (g_vis.was_gone) { g_vis.striker = target; g_vis.appear = 0.0f; g_vis.was_gone = false; g_vis.striker_valid = true; }
             g_vis.striker = g_vis.striker_valid ? approach_v(g_vis.striker, target, step) : target;
             g_vis.striker_valid = true;
         } else if (game && (is_placement || is_aim_preview)) {
             Vec2 target = board->striker.position;
+            if (g_vis.was_gone) { g_vis.striker = target; g_vis.appear = 0.0f; g_vis.was_gone = false; g_vis.striker_valid = true; }
             g_vis.striker = g_vis.striker_valid ? approach_v(g_vis.striker, target, step) : target;
             g_vis.striker_valid = true;
         } else if (use_physics && !striker_gone && !board->striker.pocketed) {
@@ -642,7 +650,7 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         else c = COLOR_QUEEN;
         
         DrawCircle((int)screen.x, (int)screen.y, piece_r, c);
-        DrawCircleLines((int)screen.x, (int)screen.y, piece_r, COLOR_LINE);
+        DrawCircleLines((int)screen.x, (int)screen.y, piece_r, coin_outline_color(board->pieces[i].color));
     }
     
     // Pocketed pieces (drawn at their pocketed positions near corners)
@@ -661,21 +669,24 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         else c = COLOR_QUEEN;
         
         DrawCircle((int)screen.x, (int)screen.y, piece_r, c);
-        DrawCircleLines((int)screen.x, (int)screen.y, piece_r, COLOR_LINE);
+        DrawCircleLines((int)screen.x, (int)screen.y, piece_r, coin_outline_color(board->pocketed_pieces[i].color));
     }
     
     // Striker: drawn at its tracked visual position (glides between turns, follows physics during a shot)
     if (board->striker.on_baseline && !board->striker.pocketed && g_vis.striker_valid &&
-        !(physics && physics_is_striker_pocketed(physics))) {
+        !(physics && physics_is_striker_pocketed(physics) && !(is_thinking || is_placement || is_aim_preview))) {
         Vec2 screen = math_world_to_screen(vp, g_vis.striker);
         float striker_r = math_world_to_screen_dist(vp, STRIKER_RADIUS_NORM);
         if (is_thinking) {
             float fa = compute_flash_alpha(wall_time);
-            DrawCircle((int)screen.x, (int)screen.y, striker_r, (Color){ 255, 215, 0, (unsigned char)(fa * 255) });
-            DrawCircleLines((int)screen.x, (int)screen.y, striker_r, (Color){ 255, 255, 255, (unsigned char)(fa * 100) });
+            DrawCircle((int)screen.x, (int)screen.y, striker_r, (Color){ 255, 215, 0, (unsigned char)(fa * g_vis.appear * 255) });
+            DrawCircleLines((int)screen.x, (int)screen.y, striker_r, (Color){ 255, 255, 255, (unsigned char)(fa * g_vis.appear * 100) });
         } else {
-            DrawCircle((int)screen.x, (int)screen.y, striker_r, COLOR_STRIKER);
-            DrawCircleLines((int)screen.x, (int)screen.y, striker_r, COLOR_LINE);
+            Color sc = COLOR_STRIKER, lc = COLOR_LINE;
+            sc.a = (unsigned char)(sc.a * g_vis.appear);
+            lc.a = (unsigned char)(lc.a * g_vis.appear);
+            DrawCircle((int)screen.x, (int)screen.y, striker_r, sc);
+            DrawCircleLines((int)screen.x, (int)screen.y, striker_r, lc);
         }
     }
 

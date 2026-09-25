@@ -24,6 +24,7 @@ typedef enum {
     CUE_QUEEN,
     CUE_FOUL,
     CUE_BOARD_WON,
+    CUE_STRIKER_BOUNCE,   /* the striker bouncing on the floor after it fell out of the pocket */
     CUE_COUNT
 } AudioCue;
 

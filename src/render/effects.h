@@ -10,6 +10,7 @@ extern "C" {
 
 void effects_draw(Viewport vp, const GameState* game, double placement_timer, const Layout* layout);
 void effects_trigger_pocket_fade(int pocket_index);
+void effects_trigger_pocket_fade_long(int pocket_index, float seconds);
 
 /* Piece (id 0..MAX_PIECES-1) or striker (id EFFECTS_STRIKER_ID) falling into a pocket: it keeps its
  * speed into the hole, then sinks. Timed in SIMULATION seconds so it follows the game speed. */

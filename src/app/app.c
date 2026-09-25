@@ -31,6 +31,8 @@
     GameState game;
     PhysicsWorld* physics;
     TraceWriter* trace;
+    struct { double at; float speed; } bounce[4];   // striker floor bounces still to be heard
+    int bounce_count;
     AudioPolicy audio_policy;      // which sound / how loud / rate limiting
     bool prev_muted;
     FlightRecorder* flight;        // binary flight recorder (per-frame state + events)
@@ -314,12 +316,26 @@ static void app_cue(AppContext* ctx, AudioCue cue, float speed) {
     if (!audio_policy_admit(&ctx->audio_policy, cue, speed, now, audio_variant_count(cue), &volume, &variant)) return;
     audio_play(cue, volume, variant);
     FLIGHT_EVENT(ctx, FLIGHT_EV_SOUND, cue, speed, volume, variant);
+    if (cue == CUE_STRIKER_POCKET && ctx->bounce_count == 0) {
+        /* the striker dropped through the pocket to the floor: two bounces, each quieter */
+        ctx->bounce[0].at = now + 0.32; ctx->bounce[0].speed = 1.5f;
+        ctx->bounce[1].at = now + 0.58; ctx->bounce[1].speed = 0.7f;
+        ctx->bounce_count = 2;
+    }
 }
 
 /* Drain the sounds physics recorded since the last frame and play them. */
 static void app_play_sounds(AppContext* ctx) {
     SoundEvent ev[64];
     int n;
+    for (int i = 0; i < ctx->bounce_count; ) {
+        if (platform_time_now() >= ctx->bounce[i].at) {
+            app_cue(ctx, CUE_STRIKER_BOUNCE, ctx->bounce[i].speed);
+            ctx->bounce[i] = ctx->bounce[--ctx->bounce_count];
+        } else {
+            i++;
+        }
+    }
     while ((n = physics_drain_sound_events(ctx->physics, ev, 64)) > 0) {
         for (int i = 0; i < n; i++) {
             app_cue(ctx, audio_cue_for_sound_kind(ev[i].kind), ev[i].speed);
@@ -409,7 +425,7 @@ static void app_shot_progress(AppContext* ctx) {
             FLIGHT_EVENT(ctx, FLIGHT_EV_STRIKER_POCKET, spocket, sqrtf(sv.x * sv.x + sv.y * sv.y), 0, 0);
             effects_trigger_pocket_fall(EFFECTS_STRIKER_ID, PIECE_STRIKER, sp, sv, spocket);
             if (ctx->config.verbose) { printf("[POCKET] striker pocket=%d\n", spocket); fflush(stdout); }
-            effects_trigger_pocket_fade(spocket);
+            effects_trigger_pocket_fade_long(spocket, 0.9f);
         }
     }
     if (t >= ctx->next_progress_time) {
