@@ -1,41 +1,37 @@
-# Carrom Arena: PAUSE / RESUME Playbook
+# Carrom Arena: RESUME playbook
 
-**Updated:** 2026-09-19 (UTC). Paused by the operator to upgrade kimi. Nothing is running for carrom (kimi stopped, stall-watchdog stopped). The unrelated ZX-UX kimi process on the same Linux box must not be touched.
+**Updated:** 2026-09-24 (UTC). Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
 
 ## Repo state
-- `main` head `7d3237c` ("docs: R14a full code review report"), on top of R12 `5763f4a`. Tags: `beta-0.0.1`..`beta-0.0.5`, `BETA-0.0.1` (accidental duplicate), `TURNS-OK` (de5a2b7, turn sequencing confirmed on real hardware).
-- Uncommitted partial R14b work in the Linux working tree (`~/SOFTWARE-DEVELOPMENT/carrom`), saved as `wip_r14b_partial.patch` (untracked): `board.c` (generated two-ring layout), `physics_snapshot.c`, `rules.c`, `shot_candidates.c`, `telemetry/replay.c`, `telemetry/trace.c`, `tests/test_trace_circular.c`. It compiles and passes ctest 7/7. NOT reviewed. Known concern: `INNER_RING_RADIUS 0.04` is less than 2*PIECE_RADIUS_NORM (0.042), so inner pieces overlap the queen by 0.002; the layout must have ICF geometry (inner ring 6 touching the queen, outer ring 12) and a unit test. Decide: continue from this tree or reset with `git checkout -- src tests` (the patch stays on disk).
-- Other saved artifacts (untracked, Linux repo dir): `wip_r13_broken.patch` (R13 attempt the operator found broken, reference only), `.kimi_directive.md` (R14b, current), `.kimi_directive_r14c_staged.md` (R14c, staged, not yet run).
-- Windows 11 build box was deep-cleaned (build dirs, logs, scratch, old helper scripts). Next build there reconfigures from scratch (about a minute). Local `build_fresh/` holds `carrom_arena.exe` (R12) and `carrom_arena_WIP.exe` (R13 attempt, broken; safe to delete).
+- `main` head `0b3a50c` ("default game speed 1.0x (real time)"), identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. Latest tag `beta-0.0.6`; the next tag is `beta-0.0.7` (never move existing tags).
+- The Linux box is ephemeral. "Push" means `bash ~/bin/push_all.sh` (GitHub + the guard against secrets) and then fast-forwarding the H: clone. The blog lives at `H:\My Documents\SOFTWARE-DEVELOPMENT\Carrom\SANYALnet-Labs-Dev-Blog.md` and is kept up to date as a story for a future blog post (no secrets).
+- Fresh Windows 11 build for the operator: `H:\My Documents\SOFTWARE-DEVELOPMENT\Carrom\build_fresh\carrom_arena.exe`.
 
-## What the operator reports on real hardware (R12 build; all still open)
-1. Physics wrong: pieces/strikers change direction or speed without cause, launches do not settle, weak/no reaction on collision. Law: straight-line deceleration only until a piece, cushion, or pocket.
-2. Initial piece placement wrong (root cause found: `board.c` hand-written tables, ring radius 0.08 vs touching 0.043, a white piece on the queen spot plus a hack offset).
-3. Pieces reaching a pocket bounce back.
-4. A roughly 15 s startup countdown (real source NOT yet found; not `thinking_min_wall`).
+## How to work (the evidence discipline)
+1. Edit on the Linux repo. Build with `cmake --build build_debug` (Debug + ASan/UBSan + -Werror), run `ctest` in `build_debug`.
+2. Commit, then `bash ~/clean_verify.sh` (clones the committed HEAD, builds, runs all tests; needs `100% tests passed`, currently 16/16). Then `bash ~/bin/push_all.sh`, then fast-forward the H: clone, then check CI.
+3. CI is serialized ("one CI job per runner architecture at a time"): `.github/workflows/ci.yml` with the composite action `.github/actions/ci-cell`.
+4. Look at the real game: run `carrom_arena --mode=rendered` on Xvfb via a SCRIPT FILE (never inline in an ssh command: `scripts/kill-all-runs.sh` kills any process whose command line contains the binary name, including your own shell), screenshot with `import -window root`, and Read the PNGs. `--mode=capture` currently writes blank white frames (open bug: the capture texture is only drawn when the window is hidden).
+5. Windows build: tar `git ls-files` on Linux, scp to the W11 box (`vagab@192.168.4.103`), extract to `C:/Users/vagab/carrom_wip`, `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release`, build target `carrom_arena`, copy the exe to `build_fresh`, delete the scratch on both machines.
+6. Never write the shared machine password anywhere. Never push kimi config. No attribution lines in commits. Do not squash GitHub history (the operator said hold off).
 
-## Work plan (the operator's three-step instruction)
-1. R14b (`.kimi_directive.md`): address the sensible review comments. Rejects GL-001 (radii: report used diameters as radii; current radii 0.021/0.028/0.030 already match ICF on 74 cm). Fixes GL-002 layout (with test), PH-01 snapshot half-angle, TEL-04 replay use-after-free, TEL-01/02/03, AI-02/04, MA-04, real tests instead of stubs. Defers PH-02, timing, render polish.
-2. R14c (`.kimi_directive_r14c_staged.md`): thorough second review of the code that decides the symptoms (physics step, fixed-step accumulator vs playback speed, manual board-resistance loop, pocket detection, app timing and the 15 s countdown, shot-to-impulse path), then fix with deterministic physics-law tests.
-3. Then a fresh Windows 11 build for the operator, and re-enable the deferred CI cells.
+## What is done (2026-09-22 to 2026-09-24)
+- Pockets work end to end: sensor events in physics, `rules_resolve` marks pieces pocketed, pocketed pieces are registered in the game state the moment physics pockets them and drawn in their 3x3 slot by the pocket (the "looping pieces" bug is fixed; a piece physics reports pocketed is never drawn from physics).
+- Trace: 8 MiB circular JSONL with `POCKET` (immediate), `SHOT_PROGRESS` (every 2 s of sim time) and `SHOT_INTERRUPTED` (flushed on close mid-shot) records.
+- Game speed: the configured speed (default 1.0x, `--playback-speed`, keys 0.05x-4x) applies only from striker launch to board settle; thinking, placement and aim preview run at 1x. The app runs at 60 FPS.
+- Physics: constant board deceleration 1.3 u/s^2 (about mu 0.10 for a 0.74 m board, no viscous term). No international coefficient exists; the ICF only requires 3.5 runs of a 15 g striker from a base line at maximum force. Full-power measurement (test `striker_realism_test`): crosses the board in 0.18 s, rests after 3.0 s, 7 cushion hits (possibly slightly slippery).
+- Layout: compact 800x560 canvas, smaller player figures close to the board, no text occluded.
+- Motion: players and the striker never teleport; they glide (2.0 board widths/s) between turns; the thinking slide is a continuous triangle wave; the striker is placed at the planned spot when thinking ends so the drawn striker, the aim line and the launch agree.
+- Aim line: length proportional to power (full power = 0.55 board width) with a visible arrowhead (drawn in screen space; raylib culls one triangle winding so both are drawn).
 
-## Verified findings of the first review (docs/CODE_REVIEW_R14.md)
-Confirmed real: GL-002, PH-01, TEL-04. Wrong: GL-001. Missed: root causes of physics symptoms and the 15 s countdown. The report gave no chunk ranges despite the protocol.
+## Open items
+- Blank frames in `--mode=capture` (see above).
+- Aim preview holds 5 s per turn; the operator may want it shorter.
+- Outer-ring colour pattern of the ICF layout (W,W,B,B pairs vs alternating) is undecided and cosmetic.
+- Trace writer: in the split-record branch `fwrite(line + space_to_end, 1, remaining_len, ...)` can write a NUL instead of a newline when the line lacks a trailing newline.
+- Remaining `-Wno-unused-function` hides dead statics (for example `distance_to_board_boundary` in `board_view.c` is now unused).
+- Possibly tag `beta-0.0.7` once the operator confirms the current build on real hardware.
+- The operator said earlier there are "many issues": collect more from hands-on testing of the latest exe.
 
-## Model and provider facts (kimi 0.38.0, provider NVIDIA NIM, `~/.kimi-code/config.toml`; backups `config.toml.bak_*`)
-- The old default `nemotron-3-ultra-550b-a55b` is dead (404). The config's model catalog is stale: many entries are end-of-life (410) and some are listed by `/v1/models` but 404 when used (`kimi-k2.6`, `nemotron-ultra-253b`).
-- Works and is the current default: `nvidia/google/gemma-4-31b-it` (vision + thinking + tools, 256K, 16K output). It completed the full review and made steady progress on R14b.
-- Unusable: `z-ai/glm-5.3` (answers a tiny prompt, then hangs silently on real requests), `kimi-k3` and `deepseek-v4-flash-0731` (silent hang), `nemotron-3-super-120b` (runs away to the token ceiling, about 28 min, then dies), `nemotron-3-nano-omni-30b` (cannot orchestrate subagents), `gpt-oss-20b` (works, no vision, small).
-- DeepSeek provider is configured (`deepseek/deepseek-flash`, `deepseek/deepseek-v4-pro`, key from Linux `.bashrc`, credentials must live in config.toml because kimi ignores shell env) but the account returned 402 Insufficient Balance; needs a top-up.
-- A session pins its model and thinking effort at creation (change model => `FORCE_FRESH_KIMI_SESSION=1`); output cap is re-read on resume.
-- Silent provider hangs happen (no error, process idle). Use the stall watchdog `/tmp/watchdog.sh` (restarts with `--continue` after 8 min of log silence; exits and writes `/tmp/watchdog.done`). `/tmp` may be cleared by a reboot; recreate it from this description if missing.
-
-## Resume procedure
-1. After the kimi upgrade re-check: `kimi --version`, that `~/.kimi-code/config.toml` still has the gemma default and providers, `agents/*.md` and `OPERATOR_CANONICAL_PREAMBLE.md` intact, and `bash /tmp/relaunch.sh` exists. Smoke-test with `kimi -m nvidia/google/gemma-4-31b-it --agent ceo -p "reply OK"`; a newer version may support other models or fix silent hangs, so re-test the model list before trusting the table above.
-2. Existing session for `--continue`: `session_84a3bc55-ad2e-4e86-8658-b8d1e0e111d7` (gemma, R14b partial). If the upgrade breaks session compatibility use `FORCE_FRESH_KIMI_SESSION=1`; the working tree and patches hold the state.
-3. Relaunch R14b only via `bash /tmp/relaunch.sh` (never call kimi directly; CEO-only and parallel-subagent gates are enforced by the wrapper and the preamble). Optionally re-arm `/tmp/watchdog.sh` in the background.
-4. Verify every claim yourself before believing kimi (read the code, run ctest, build on Windows 11). Real hardware is the only reliable arbiter; Xvfb gives false positives.
-5. Re-arm the 6-hour supervision cron (session-scoped, does not survive a session change) if the operator still wants it; every report states the current phase and step. Keep the blog `H:\My Documents\SOFTWARE-DEVELOPMENT\Carrom\SANYALnet-Labs-Dev-Blog.md` updated.
-
-## Canonical rules (unchanged)
-Interact only with the kimi CEO; the CEO must spawn the full company in parallel; never invoke kimi directly; run `scripts/kill-all-runs.sh` before local carrom_arena runs (pre-push hook does it); no attribution lines in commits; do not touch tags; LOCKED_INVARIANTS.md items 1-6 are operator-confirmed, items 7-10 are unconfirmed kimi claims.
+## Locked
+Board, piece and striker dimensions are operator-locked (LOCKED_INVARIANTS.md, guard test `tests/test_locked_dimensions.c`): normalized radii piece 0.021, striker 0.028, pocket 0.030, cushion 0.025, board 1.0 = 74 cm.
