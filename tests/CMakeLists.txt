@@ -387,5 +387,5 @@ set_tests_properties(capture_test PROPERTIES LABELS "regression" TIMEOUT 120)
 set_tests_properties(capture_test PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
 # Full AI-vs-AI boards must finish (guards against the endgame loop: stale positions, queen never returned, repeated misses)
-add_test(NAME selfplay_boards_finish COMMAND selfplay --seed 1 --seeds 2 --max-turns 120 --expect-finish)
+add_test(NAME selfplay_boards_finish COMMAND selfplay --seed 1 --seeds 2 --boards 2 --max-turns 250 --expect-finish)
 set_tests_properties(selfplay_boards_finish PROPERTIES TIMEOUT 600)

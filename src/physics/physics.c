@@ -642,12 +642,32 @@ void physics_get_striker_position(const PhysicsWorld* pw, Vec2* pos) {
     }
 }
 
+static void physics_create_piece_body(PhysicsWorld* pw, int i, Vec2 position) {
+    b2BodyDef body_def = b2DefaultBodyDef();
+    body_def.type = b2_dynamicBody;
+    body_def.linearDamping = 0.0f;
+    body_def.angularDamping = 0.0f;
+    body_def.fixedRotation = true;
+    body_def.position = (b2Vec2){ position.x, position.y };
+    b2ShapeDef shape_def = physics_make_shape_def(0.95f, 0.1f, true);
+    shape_def.density = 1.0f;
+    shape_def.userData = (void*)(intptr_t)(i + 1);
+    b2Circle circle = { .radius = PIECE_RADIUS_NORM };
+    pw->piece_bodies[i] = b2CreateBody(pw->world_id, &body_def);
+    b2CreateCircleShape(pw->piece_bodies[i], &shape_def, &circle);
+}
+
 void physics_sync_from_board(PhysicsWorld* pw, const BoardState* board, Seat striker_seat) {
     // Sync all pieces
     for (int i = 0; i < MAX_PIECES; i++) {
         pw->piece_colors[i] = board->pieces[i].color;
         if (board->pieces[i].on_board && !board->pieces[i].pocketed) {
-            if (b2Body_IsValid(pw->piece_bodies[i])) {
+            if (!b2Body_IsValid(pw->piece_bodies[i])) {
+                /* A coin pocketed earlier has no body any more: a new board (or a queen returned to the centre) needs a
+                 * fresh one. (This used to be skipped, so the second board began with only the coins that happened to
+                 * survive the first, and every other coin existed in the game state but not in the physics.) */
+                physics_create_piece_body(pw, i, board->pieces[i].position);
+            } else {
                 b2Body_SetTransform(pw->piece_bodies[i], 
                     (b2Vec2){ board->pieces[i].position.x, board->pieces[i].position.y },
                     b2Rot_identity);

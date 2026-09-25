@@ -121,12 +121,59 @@ void test_pocket_records_where_piece_and_striker_fell_in(void) {
     physics_destroy(pw);
 }
 
+/* A new board must put ALL nineteen coins into the physics world, including the ones pocketed on the previous board */
+void test_sync_recreates_coins_pocketed_on_the_previous_board(void) {
+    GameState game;
+    game_state_init(&game, 5);
+    board_state_init(&game.board);
+    board_setup_initial_formation(&game.board, NULL);
+    PhysicsWorld* pw = physics_create();
+    physics_sync_from_board(pw, &game.board, SEAT_NORTH);
+    /* first board: everything but coins 2 and 4 gets pocketed (their bodies are destroyed) */
+    for (int i = 0; i < MAX_PIECES; i++) {
+        if (i == 2 || i == 4) continue;
+        game.board.pieces[i].on_board = false;
+        game.board.pieces[i].pocketed = true;
+    }
+    physics_sync_from_board(pw, &game.board, SEAT_NORTH);
+    Vec2 v;
+    int alive = 0;
+    for (int i = 0; i < MAX_PIECES; i++) if (physics_get_piece_velocity(pw, i, &v)) alive++;
+    TEST_ASSERT_EQUAL_INT(2, alive);
+    /* second board: a fresh rack */
+    board_state_init(&game.board);
+    board_setup_initial_formation(&game.board, NULL);
+    physics_sync_from_board(pw, &game.board, SEAT_EAST);
+    alive = 0;
+    for (int i = 0; i < MAX_PIECES; i++) {
+        if (physics_get_piece_velocity(pw, i, &v)) alive++;
+        TEST_ASSERT_FALSE(physics_is_piece_pocketed(pw, i));
+    }
+    TEST_ASSERT_EQUAL_INT(MAX_PIECES, alive);
+    Vec2 pos[MAX_PIECES];
+    physics_get_positions(pw, pos);
+    for (int i = 0; i < MAX_PIECES; i++) {
+        TEST_ASSERT_FLOAT_WITHIN(1e-4f, game.board.pieces[i].position.x, pos[i].x);
+        TEST_ASSERT_FLOAT_WITHIN(1e-4f, game.board.pieces[i].position.y, pos[i].y);
+    }
+    /* and the queen returned to the centre after an uncovered pocket gets her body back too */
+    game.board.pieces[QUEEN_ID].on_board = false; game.board.pieces[QUEEN_ID].pocketed = true;
+    physics_sync_from_board(pw, &game.board, SEAT_EAST);
+    TEST_ASSERT_FALSE(physics_get_piece_velocity(pw, QUEEN_ID, &v));
+    game.board.pieces[QUEEN_ID].on_board = true; game.board.pieces[QUEEN_ID].pocketed = false;
+    game.board.pieces[QUEEN_ID].position = (Vec2){ 0.0f, 0.0f };
+    physics_sync_from_board(pw, &game.board, SEAT_EAST);
+    TEST_ASSERT_TRUE(physics_get_piece_velocity(pw, QUEEN_ID, &v));
+    physics_destroy(pw);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_draw_pos_never_lerps_pocketed_piece);
     RUN_TEST(test_physics_reports_pocketed_while_other_piece_moves);
     RUN_TEST(test_trace_pocket_progress_interrupted);
     RUN_TEST(test_aim_line_length_is_proportional_to_power);
+    RUN_TEST(test_sync_recreates_coins_pocketed_on_the_previous_board);
     RUN_TEST(test_pocket_records_where_piece_and_striker_fell_in);
     return UNITY_END();
 }

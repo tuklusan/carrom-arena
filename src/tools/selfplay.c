@@ -1,6 +1,6 @@
 /* selfplay: headless AI-vs-AI board, no timers or window, to find stalls.
- *   selfplay [--seed N] [--seeds K] [--max-turns T] [--stale] [--verbose] [--expect-finish]
- * Plays one board per seed with the arena AI and reports turns used, coins pocketed and whether the board finished.
+ *   selfplay [--seed N] [--seeds K] [--max-turns T] [--stale] [--verbose] [--expect-finish] [--boards B]
+  * Plays B boards (default 1) per seed with the arena AI and reports turns used, coins pocketed and whether the board finished.
  * A "stall" is 6 consecutive turns in which no coin moved. --stale reproduces the old bug in which the AI was shown
  * the initial rack positions forever instead of where the coins really are. */
 #include "common/types.h"
@@ -21,14 +21,15 @@
 
 typedef struct { int turns, pocketed, stalls, finished, max_still; } Report;
 
-static Report play_board(uint64_t seed, int max_turns, bool stale, bool verbose) {
+static Report play_board(uint64_t seed, int max_turns, bool stale, bool verbose, int boards) {
     Report rep = {0, 0, 0, 0, 0};
     RNGContext rng;
     rng_context_init(&rng, seed);
     MatchState match;
     match_state_init(&match);
-    match.target_boards_per_game = 1;
-    match.target_games_per_match = 1;
+    match.target_boards_per_game = 8;   /* boards are counted by this tool; the game never ends first */
+    match.target_games_per_match = 3;
+    int boards_done = 0;
     GameState game;
     game_state_init(&game, seed);
     PhysicsWorld* pw = physics_create();
@@ -119,8 +120,20 @@ static Report play_board(uint64_t seed, int max_turns, bool stale, bool verbose)
                    game.board.white_on_board, game.board.black_on_board);
         }
         if (out.turn_decision == TURN_BOARD_OVER || out.turn_decision == TURN_GAME_OVER || out.turn_decision == TURN_MATCH_OVER) {
-            rep.finished = 1;
-            break;
+            boards_done++;
+            if (boards_done >= boards || out.turn_decision != TURN_BOARD_OVER) { rep.finished = 1; break; }
+            /* next board, exactly as the app does it: fresh rack, coins back in the physics world, striker and timer reset */
+            match_start_board(&match, &game, &rng);
+            physics_sync_from_board(pw, &game.board, game.turn_seat);
+            physics_reset_turn_timer(pw);
+            int alive = 0;
+            for (int i = 0; i < MAX_PIECES; i++) { Vec2 v; if (physics_get_piece_velocity(pw, i, &v)) alive++; }
+            if (alive != MAX_PIECES) {
+                printf("  BROKEN NEW BOARD %d: only %d of %d coins exist in the physics world%s\n", boards_done + 1, alive, MAX_PIECES, "");
+                rep.stalls += 100;
+                break;
+            }
+            still = 0;
         }
     }
     for (int i = 0; i < 4; i++) controller_destroy(ctl[i]);
@@ -133,17 +146,19 @@ int main(int argc, char** argv) {
     uint64_t seed = 1;
     int seeds = 1, max_turns = 300;
     bool stale = false, verbose = false, expect_finish = false;
+    int boards = 1;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--seed") && i + 1 < argc) seed = strtoull(argv[++i], NULL, 10);
         else if (!strcmp(argv[i], "--seeds") && i + 1 < argc) seeds = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--max-turns") && i + 1 < argc) max_turns = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--stale")) stale = true;
         else if (!strcmp(argv[i], "--verbose")) verbose = true;
+        else if (!strcmp(argv[i], "--boards") && i + 1 < argc) boards = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--expect-finish")) expect_finish = true;   /* exit 1 if any board fails to finish (CI) */
     }
     int finished = 0, total_turns = 0, total_stalls = 0;
     for (int k = 0; k < seeds; k++) {
-        Report r = play_board(seed + (uint64_t)k, max_turns, stale, verbose);
+        Report r = play_board(seed + (uint64_t)k, max_turns, stale, verbose, boards);
         printf("seed %llu: %s after %d turns, %d coins pocketed, longest motionless run %d turns%s\n",
                (unsigned long long)(seed + (uint64_t)k), r.finished ? "FINISHED" : "NOT FINISHED", r.turns, r.pocketed, r.max_still,
                r.stalls ? "  <-- STALL" : "");
