@@ -4,55 +4,9 @@
 #include <string.h>
 #include <stdint.h>
 #include "common/vecmath.h"
-#include "physics.h"
 #include "types.h"
 
-/* -----------------------------------------------------------------------------
- * PhysicsWorld Structure
- * --------------------------------------------------------------------------- */
-#define SOUND_QUEUE_MAX 128
-
-struct PhysicsWorld {
-    b2WorldId world_id;
-    float accumulator;
-    uint64_t step_count;
-    int substeps;
-    
-    // Body tracking
-    b2BodyId piece_bodies[MAX_PIECES];
-    b2BodyId striker_body;
-    b2BodyId cushion_bodies[4];
-    b2BodyId pocket_sensors[4];
-    
-    // Piece colors for pocketing (must match board->pieces[i].color)
-    PieceColor piece_colors[MAX_PIECES];
-
-    // Pocketed tracking
-    bool piece_pocketed[MAX_PIECES];
-    bool striker_pocketed;
-    int pocketed_count;
-    uint8_t pocketed_ids[19];
-    PieceColor pocketed_colors[19];
-    uint8_t pocketed_pocket_indices[19];  // Which pocket each piece went into (0-3)
-    Vec2 pocketed_last_pos[19];           // where / how fast each pocketed piece was at the moment it fell in
-    Vec2 pocketed_last_vel[19];
-    Vec2 striker_last_pos, striker_last_vel;
-    int striker_pocket_index;
-    
-    // Previous-frame positions for render interpolation
-    Vec2 prev_piece_positions[MAX_PIECES];
-    Vec2 prev_striker_position;
-    
-    // Sound events recorded while stepping (drained by the app once per frame)
-    SoundEvent sound_queue[SOUND_QUEUE_MAX];
-    int sound_count;
-
-    // Simulation time
-    float sim_time;
-    
-    // Settling tracking
-    uint32_t settle_confirm_steps;
-};
+#include "physics_internal.h"
 
 /* Forward declarations */
 #define SHAPE_TAG_STRIKER 100
@@ -60,6 +14,7 @@ struct PhysicsWorld {
 static void physics_create_board_geometry(PhysicsWorld* pw);
 static void physics_create_pieces(PhysicsWorld* pw);
 static void physics_create_striker(PhysicsWorld* pw);
+_Static_assert(MAX_PIECES == 19, "pocketed_ids etc. are sized by MAX_PIECES");
 static b2ShapeDef physics_make_shape_def(float restitution, float friction, bool enable_sensors);
 static b2ShapeDef physics_make_sensor_shape_def(void);
 static void physics_check_pocket_events(PhysicsWorld* pw);
@@ -183,6 +138,7 @@ static void physics_create_board_geometry(PhysicsWorld* pw) {
         pw->pocket_sensors[i] = b2CreateBody(pw->world_id, &sensor_def);
         b2ShapeDef sensor_shape = physics_make_sensor_shape_def();
         b2ShapeId shape_id = b2CreateCircleShape(pw->pocket_sensors[i], &sensor_shape, &circle);
+        pw->pocket_sensor_shapes[i] = shape_id;
         // Enable sensor events on the shape (Box2D v3 API)
         b2Shape_EnableSensorEvents(shape_id, true);
     }
@@ -211,25 +167,28 @@ static void physics_create_pieces(PhysicsWorld* pw) {
     }
 }
 
-static void physics_create_striker(PhysicsWorld* pw) {
+void physics_internal_make_striker_body(PhysicsWorld* pw, Vec2 position) {
     b2BodyDef body_def = b2DefaultBodyDef();
     body_def.type = b2_dynamicBody;
     body_def.linearDamping = 0.0f;
     body_def.angularDamping = 0.0f;
     body_def.fixedRotation = true;
-    body_def.isBullet = true;
-    body_def.position = (b2Vec2){0, 0};
-    
+    body_def.isBullet = true;   /* 5 u/s is 4 cm per step: without continuous collision a full-power shot could pass through a coin */
+    body_def.position = (b2Vec2){ position.x, position.y };
+
     // Striker shape: restitution=0.95, friction=0.1
     b2ShapeDef shape_def = physics_make_shape_def(0.95f, 0.1f, true);
     shape_def.density = 1.0f;
-    
-    b2Circle circle = { .radius = STRIKER_RADIUS_NORM };
-    
     shape_def.userData = (void*)(intptr_t)SHAPE_TAG_STRIKER;
+
+    b2Circle circle = { .radius = STRIKER_RADIUS_NORM };
     pw->striker_body = b2CreateBody(pw->world_id, &body_def);
     b2CreateCircleShape(pw->striker_body, &shape_def, &circle);
     pw->striker_pocketed = false;
+}
+
+static void physics_create_striker(PhysicsWorld* pw) {
+    physics_internal_make_striker_body(pw, (Vec2){ 0.0f, 0.0f });
 }
 
 /* -----------------------------------------------------------------------------
@@ -358,26 +317,13 @@ static void physics_check_pocket_events(PhysicsWorld* pw) {
     // Get sensor events from Box2D v3
     b2SensorEvents sensor_events = b2World_GetSensorEvents(pw->world_id);
     
-    // Pre-compute pocket sensor shape IDs for comparison
-    b2ShapeId pocket_shape_ids[4] = {0};
-    for (int p = 0; p < 4; p++) {
-        if (b2Body_IsValid(pw->pocket_sensors[p])) {
-            int shape_count = b2Body_GetShapeCount(pw->pocket_sensors[p]);
-            if (shape_count > 0) {
-                b2ShapeId shapes[1];
-                b2Body_GetShapes(pw->pocket_sensors[p], shapes, 1);
-                pocket_shape_ids[p] = shapes[0];
-            }
-        }
-    }
-    
     for (int i = 0; i < sensor_events.beginCount; i++) {
         b2SensorBeginTouchEvent event = sensor_events.beginEvents[i];
         
         // Find which pocket sensor triggered
         int pocket_idx = -1;
         for (int p = 0; p < 4; p++) {
-            if (B2_ID_EQUALS(pocket_shape_ids[p], event.sensorShapeId)) {
+            if (B2_ID_EQUALS(pw->pocket_sensor_shapes[p], event.sensorShapeId)) {
                 pocket_idx = p;
                 break;
             }
@@ -517,25 +463,8 @@ void physics_get_final_positions(PhysicsWorld* pw, Vec2* positions) {
  * --------------------------------------------------------------------------- */
 void physics_place_striker(PhysicsWorld* pw, Seat seat, Vec2 placement) {
     // Recreate striker body if it was pocketed and destroyed
-    if (!b2Body_IsValid(pw->striker_body)) {
-        b2BodyDef body_def = b2DefaultBodyDef();
-        body_def.type = b2_dynamicBody;
-        body_def.linearDamping = 0.0f;
-        body_def.angularDamping = 0.0f;
-        body_def.fixedRotation = true;
-        body_def.position = (b2Vec2){placement.x, placement.y};
-        
-        b2ShapeDef shape_def = physics_make_shape_def(0.95f, 0.1f, true);
-        shape_def.density = 1.0f;
-        
-        b2Circle circle = { .radius = STRIKER_RADIUS_NORM };
-        
-        shape_def.userData = (void*)(intptr_t)SHAPE_TAG_STRIKER;
-        pw->striker_body = b2CreateBody(pw->world_id, &body_def);
-        b2CreateCircleShape(pw->striker_body, &shape_def, &circle);
-        pw->striker_pocketed = false;
-    }
-    
+    if (!b2Body_IsValid(pw->striker_body)) physics_internal_make_striker_body(pw, placement);
+
     b2Body_SetTransform(pw->striker_body, (b2Vec2){placement.x, placement.y}, b2Rot_identity);
     pw->prev_striker_position = placement;
     b2Body_SetLinearVelocity(pw->striker_body, (b2Vec2){0, 0});
@@ -642,7 +571,7 @@ void physics_get_striker_position(const PhysicsWorld* pw, Vec2* pos) {
     }
 }
 
-static void physics_create_piece_body(PhysicsWorld* pw, int i, Vec2 position) {
+void physics_internal_make_piece_body(PhysicsWorld* pw, int i, Vec2 position) {
     b2BodyDef body_def = b2DefaultBodyDef();
     body_def.type = b2_dynamicBody;
     body_def.linearDamping = 0.0f;
@@ -666,7 +595,7 @@ void physics_sync_from_board(PhysicsWorld* pw, const BoardState* board, Seat str
                 /* A coin pocketed earlier has no body any more: a new board (or a queen returned to the centre) needs a
                  * fresh one. (This used to be skipped, so the second board began with only the coins that happened to
                  * survive the first, and every other coin existed in the game state but not in the physics.) */
-                physics_create_piece_body(pw, i, board->pieces[i].position);
+                physics_internal_make_piece_body(pw, i, board->pieces[i].position);
             } else {
                 b2Body_SetTransform(pw->piece_bodies[i], 
                     (b2Vec2){ board->pieces[i].position.x, board->pieces[i].position.y },
@@ -686,7 +615,9 @@ void physics_sync_from_board(PhysicsWorld* pw, const BoardState* board, Seat str
     
     // Sync striker
     if (!board->striker.pocketed) {
-        if (b2Body_IsValid(pw->striker_body)) {
+        if (!b2Body_IsValid(pw->striker_body)) {
+            physics_internal_make_striker_body(pw, board->striker.position);
+        } else {
             b2Body_SetTransform(pw->striker_body,
                 (b2Vec2){ board->striker.position.x, board->striker.position.y },
                 b2Rot_identity);

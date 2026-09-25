@@ -389,3 +389,16 @@ set_tests_properties(capture_test PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DI
 # Full AI-vs-AI boards must finish (guards against the endgame loop: stale positions, queen never returned, repeated misses)
 add_test(NAME selfplay_boards_finish COMMAND selfplay --seed 1 --seeds 2 --boards 2 --max-turns 250 --expect-finish)
 set_tests_properties(selfplay_boards_finish PROPERTIES TIMEOUT 600)
+
+# Regression tests for the adversarial code review
+add_executable(test_review_fixes
+    test_review_fixes.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_review_fixes)
+target_link_libraries(test_review_fixes carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_review_fixes PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME review_fixes_test COMMAND test_review_fixes)

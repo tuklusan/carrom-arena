@@ -21,15 +21,19 @@ extern "C" {
 #define STRATEGY_TRICKSTER    3  // WEST  (Black)
 #define NUM_STRATEGIES        4
 
-/* Default imperfection parameters (tuned for each archetype) */
-#define AGGRESSIVE_AIM_NOISE   0.02f   // ~1.1 degrees
-#define AGGRESSIVE_POWER_NOISE 0.03f
-#define BALANCED_AIM_NOISE     0.03f   // ~1.7 degrees
-#define BALANCED_POWER_NOISE   0.04f
-#define DEFENSIVE_AIM_NOISE    0.04f   // ~2.3 degrees
-#define DEFENSIVE_POWER_NOISE  0.05f
-#define TRICKSTER_AIM_NOISE    0.05f   // ~2.9 degrees
-#define TRICKSTER_POWER_NOISE  0.06f
+/* Imperfection: ONE skill level for all four seats, expert to championship standard. The error is uniform in
+ * +/-noise: +/-0.45 degrees of aim and +/-2% of power. The seats differ in playing style (the weights below) but never
+ * in accuracy. */
+#define EXPERT_AIM_NOISE       0.008f
+#define EXPERT_POWER_NOISE     0.02f
+#define AGGRESSIVE_AIM_NOISE   EXPERT_AIM_NOISE
+#define AGGRESSIVE_POWER_NOISE EXPERT_POWER_NOISE
+#define BALANCED_AIM_NOISE     EXPERT_AIM_NOISE
+#define BALANCED_POWER_NOISE   EXPERT_POWER_NOISE
+#define DEFENSIVE_AIM_NOISE    EXPERT_AIM_NOISE
+#define DEFENSIVE_POWER_NOISE  EXPERT_POWER_NOISE
+#define TRICKSTER_AIM_NOISE    EXPERT_AIM_NOISE
+#define TRICKSTER_POWER_NOISE  EXPERT_POWER_NOISE
 
 /* Immutable strategy profile table */
 static const StrategyProfile STRATEGY_PROFILES[NUM_STRATEGIES] = {

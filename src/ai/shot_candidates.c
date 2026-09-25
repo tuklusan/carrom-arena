@@ -41,9 +41,12 @@ int shot_candidates_variants(const DecisionSnapshot* snap, ShotCandidate* base, 
 int shot_candidates_generate(const DecisionSnapshot* snap, ShotCandidate* out_candidates, int max_candidates, PCG32* rng) {
     if (!snap || !snap->board || !out_candidates || max_candidates <= 0) return 0;
 
-    GeomShot* geom = malloc(sizeof(GeomShot) * 512);
+    /* room for every shot the planner can construct (15 placements x 19 targets x 4 pockets x 9 families would be the
+     * theoretical bound, far above what geometry allows): a smaller cap silently dropped the last placements */
+    const int geom_cap = 4096;
+    GeomShot* geom = malloc(sizeof(GeomShot) * (size_t)geom_cap);
     if (!geom) return 0;
-    int gcount = geometry_plan_shots(snap->board, snap->active_seat, geom, 512);
+    int gcount = geometry_plan_shots(snap->board, snap->active_seat, geom, geom_cap);
 
     int total = 0;
     for (int pass = 0; pass < 3; pass++) {

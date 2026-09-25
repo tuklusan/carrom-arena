@@ -1,9 +1,11 @@
 #include "renderer.h"
+#include "platform/platform.h"
 #include "board_view.h"
 #include "effects.h"
 #include "common/vecmath.h"
 #include "common/types.h"
 #include <raylib.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -161,6 +163,13 @@ static void draw_footer_band(Renderer* r, const Layout* L) {
 }
 
 
+/* raylib logs to stdout by default; the game must not write to a console, so its log goes to the debug file */
+static void raylib_log_to_file(int level, const char* text, va_list args) {
+    char line[512];
+    vsnprintf(line, sizeof(line), text, args);
+    platform_diag_logf("[raylib %d] %s\n", level, line);
+}
+
 Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window, bool debug_phase, float initial_speed) {
     (void)title;
     
@@ -182,8 +191,14 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     if (hidden_window) {
         flags |= FLAG_WINDOW_HIDDEN;
     }
+    SetTraceLogCallback(raylib_log_to_file);
     SetConfigFlags(flags);
     InitWindow(width, height, "SANYALnet Labs Carrom Arena");
+    if (!IsWindowReady()) {
+        free(r);
+        return NULL;
+    }
+    SetWindowMinSize(400, 400);
     SetTargetFPS(60);
     
     if (capture_mode) {
@@ -261,7 +276,7 @@ void renderer_begin(Renderer* r) {
     
     // Debug phase logging for first 30 frames
     if (r->debug_phase && r->debug_frame_count < 30) {
-        fprintf(stderr, "[DEBUG-PHASE] frame=%d sw=%d sh=%d board_size=%d board_x=%d board_y=%d board_region_w=%d hud_w=%d title_band_h=%d footer_band_h=%d figure_band_h=%d\n",
+        platform_diag_logf("[DEBUG-PHASE] frame=%d sw=%d sh=%d board_size=%d board_x=%d board_y=%d board_region_w=%d hud_w=%d title_band_h=%d footer_band_h=%d figure_band_h=%d\n",
                 r->debug_frame_count, sw, sh, L->board_size, L->board_x, L->board_y,
                 L->board_region_w, L->hud_w, L->title_band_h, L->footer_band_h, L->figure_band_h);
         r->debug_frame_count++;
@@ -353,7 +368,7 @@ void renderer_capture_frame(Renderer* r, const char* dir, uint64_t frame_num, in
     
     // Debug phase logging
     if (r->debug_phase) {
-        fprintf(stderr, "frame=%llu phase=%d placement_timer=%.3f playback_speed=%.2f striker_x=%.4f striker_y=%.4f\n",
+        platform_diag_logf("frame=%llu phase=%d placement_timer=%.3f playback_speed=%.2f striker_x=%.4f striker_y=%.4f\n",
                 (unsigned long long)frame_num, game_phase, placement_timer, playback_speed, 
                 board->striker.position.x, board->striker.position.y);
     }

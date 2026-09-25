@@ -81,6 +81,13 @@ void shot_evaluator_evaluate(ShotCandidate* candidate, const DecisionSnapshot* s
 /* -----------------------------------------------------------------------------
  * Scoring Components
  * --------------------------------------------------------------------------- */
+/* final_positions holds (0,0) for a coin that was pocketed in the simulation: such a coin must not be scored as if it lay
+ * in the middle of the board */
+static bool pocketed_in_result(const ShotResult* r, int id) {
+    for (int k = 0; k < r->pocketed_count; k++) if (r->pocketed_ids[k] == id) return true;
+    return false;
+}
+
 float score_pocket_value(const ShotResult* result, Team team, const StrategyProfile* profile) {
     float score = 0.0f;
     
@@ -153,7 +160,7 @@ float score_opponent_leave(const ShotResult* result, const BoardState* board, Te
     PieceColor opp_color = (opponent == TEAM_WHITE) ? PIECE_WHITE : PIECE_BLACK;
     
     for (int i = 0; i < MAX_PIECES; i++) {
-        if (board->pieces[i].on_board && board->pieces[i].color == opp_color) {
+        if (board->pieces[i].on_board && board->pieces[i].color == opp_color && !pocketed_in_result(result, i)) {
             Vec2 pos = result->final_positions[i];
             // Check distance to pockets
             for (int p = 0; p < 4; p++) {
@@ -177,7 +184,7 @@ float score_positional(const ShotResult* result, const BoardState* board, Team t
     PieceColor opp_color = (team == TEAM_WHITE) ? PIECE_BLACK : PIECE_WHITE;
     
     for (int i = 0; i < MAX_PIECES; i++) {
-        if (board->pieces[i].on_board) {
+        if (board->pieces[i].on_board && !pocketed_in_result(result, i)) {
             Vec2 pos = result->final_positions[i];
             float dist_from_center = sqrtf(pos.x * pos.x + pos.y * pos.y);
             

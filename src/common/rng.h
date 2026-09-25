@@ -33,7 +33,7 @@ static inline void pcg32_init(PCG32* rng, uint64_t seed, uint64_t seq) {
 
 /* Generate random float in [0, 1) */
 static inline float pcg32_random_float(PCG32* rng) {
-    return (float)pcg32_random(rng) / 4294967296.0f;
+    return (float)(pcg32_random(rng) >> 8) * (1.0f / 16777216.0f);   /* 24 bits: exactly representable, never reaches 1.0 */
 }
 
 /* Generate random float in [min, max) */

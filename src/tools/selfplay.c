@@ -19,16 +19,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct { int turns, pocketed, stalls, finished, max_still; } Report;
+typedef struct { int turns, pocketed, stalls, finished, max_still; int seat_shots[4], seat_pocketed[4]; } Report;
 
-static Report play_board(uint64_t seed, int max_turns, bool stale, bool verbose, int boards) {
-    Report rep = {0, 0, 0, 0, 0};
+static Report play_board(uint64_t seed, int max_turns, bool stale, bool verbose, int boards, int first_seat) {
+    Report rep;
+    memset(&rep, 0, sizeof rep);
     RNGContext rng;
     rng_context_init(&rng, seed);
     MatchState match;
     match_state_init(&match);
     match.target_boards_per_game = 8;   /* boards are counted by this tool; the game never ends first */
     match.target_games_per_match = 3;
+    match.boards_won_white = (uint8_t)first_seat;   /* the breaker rotates with the boards played: this picks who breaks (E/W break = seats swapped) */
     int boards_done = 0;
     GameState game;
     game_state_init(&game, seed);
@@ -48,6 +50,7 @@ static Report play_board(uint64_t seed, int max_turns, bool stale, bool verbose,
         if (!match_validate_shot(&game, &plan)) plan = controller_fallback_shot(ctl[game.turn_seat], &ds, &rng.streams[game.turn_seat]);
         physics_snapshot_destroy(snap);
 
+        int plan_seat = (int)game.turn_seat;
         Vec2 before[MAX_PIECES];
         physics_get_positions(pw, before);
         physics_place_striker(pw, game.turn_seat, plan.placement);
@@ -101,6 +104,9 @@ static Report play_board(uint64_t seed, int max_turns, bool stale, bool verbose,
             }
         }
 
+        rep.seat_shots[plan_seat]++;
+        rep.seat_pocketed[plan_seat] += res.pocketed_count;
+        if (!stale) board_apply_shot_positions(&game.board, &res);
         ShotFacts facts;
         match_extract_facts(&game, &res, &facts);
         RulesOutcome out = rules_resolve(&match, &game, &facts);
@@ -108,10 +114,15 @@ static Report play_board(uint64_t seed, int max_turns, bool stale, bool verbose,
         match = out.next_match_state;
         rep.pocketed += res.pocketed_count;
         physics_consume_pocketed(pw);
+        for (int i = 0; i < MAX_PIECES; i++) {
+            if (game.board.pieces[i].on_board && physics_is_piece_pocketed(pw, i)) {
+                physics_sync_from_board(pw, &game.board, game.turn_seat);   /* the queen / a paid-back coin returned */
+                break;
+            }
+        }
         physics_reset_turn_timer(pw);   /* as the app does; without it the 30 s settle timeout ends every later shot instantly */
         striker_state_init(&game.board.striker, game.turn_seat);
         board_place_striker_on_baseline(&game.board.striker, game.turn_seat);
-        if (!stale) board_apply_final_positions(&game.board, res.final_positions);
         if (game.board.pieces[QUEEN_ID].on_board && physics_is_piece_pocketed(pw, QUEEN_ID)) physics_sync_from_board(pw, &game.board, game.turn_seat);
         rep.turns++;
         if (verbose) {
@@ -142,10 +153,12 @@ static Report play_board(uint64_t seed, int max_turns, bool stale, bool verbose,
 }
 
 int main(int argc, char** argv) {
+    setvbuf(stdout, NULL, _IOLBF, 0);   /* progress is visible while a long run is going */
     setvbuf(stdout, NULL, _IOLBF, 0);
     uint64_t seed = 1;
     int seeds = 1, max_turns = 300;
     bool stale = false, verbose = false, expect_finish = false;
+    int first_seat = 0;
     int boards = 1;
     int i = 1;
     while (i < argc) {
@@ -153,21 +166,26 @@ int main(int argc, char** argv) {
         if (!strcmp(arg_cur, "--seed") && i < argc) seed = strtoull(argv[i++], NULL, 10);
         else if (!strcmp(arg_cur, "--seeds") && i < argc) seeds = atoi(argv[i++]);
         else if (!strcmp(arg_cur, "--max-turns") && i < argc) max_turns = atoi(argv[i++]);
+        else if (!strcmp(arg_cur, "--first-seat") && i < argc) first_seat = atoi(argv[i++]) & 3;
         else if (!strcmp(arg_cur, "--stale")) stale = true;
         else if (!strcmp(arg_cur, "--verbose")) verbose = true;
         else if (!strcmp(arg_cur, "--boards") && i < argc) boards = atoi(argv[i++]);
         else if (!strcmp(arg_cur, "--expect-finish")) expect_finish = true;   /* exit 1 if any board fails to finish (CI) */
     }
-    int finished = 0, total_turns = 0, total_stalls = 0;
+    int finished = 0, total_turns = 0, total_stalls = 0, tot_shots[4] = {0}, tot_pk[4] = {0};
     for (int k = 0; k < seeds; k++) {
-        Report r = play_board(seed + (uint64_t)k, max_turns, stale, verbose, boards);
+        Report r = play_board(seed + (uint64_t)k, max_turns, stale, verbose, boards, first_seat);
         printf("seed %llu: %s after %d turns, %d coins pocketed, longest motionless run %d turns%s\n",
                (unsigned long long)(seed + (uint64_t)k), r.finished ? "FINISHED" : "NOT FINISHED", r.turns, r.pocketed, r.max_still,
                r.stalls ? "  <-- STALL" : "");
         finished += r.finished;
+        for (int q = 0; q < 4; q++) { tot_shots[q] += r.seat_shots[q]; tot_pk[q] += r.seat_pocketed[q]; }
         total_turns += r.turns;
         total_stalls += r.stalls;
     }
+    static const char* const seat_names[4] = { "north", "east", "south", "west" };
+    for (int q = 0; q < 4; q++)
+        printf("%s: %d shots, %d coins pocketed, %.3f coins/shot\n", seat_names[q], tot_shots[q], tot_pk[q], tot_shots[q] ? (double)tot_pk[q] / tot_shots[q] : 0.0);
     printf("%s mode: %d/%d boards finished, %d turns total, %d stalls\n", stale ? "STALE-POSITIONS" : "FIXED", finished, seeds, total_turns, total_stalls);
     return (expect_finish && finished != seeds) ? 1 : 0;
 }

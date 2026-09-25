@@ -221,6 +221,11 @@ target_link_libraries(carrom_arena
     raylib
 )
 
+# Windows: a GUI-subsystem program, so no console window opens next to the game window (debug output goes to the trace directory)
+if(WIN32 AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_link_options(carrom_arena PRIVATE -mwindows)
+endif()
+
 # Suppress double-promotion warnings from Box2D headers - GNU/Clang
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(carrom_arena PRIVATE -Wno-double-promotion)

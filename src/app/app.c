@@ -126,9 +126,18 @@ static void app_init_match(AppContext* ctx) {
 static void app_setup_trace(AppContext* ctx) {
     if (ctx->config.trace_dir) {
         platform_mkdir(ctx->config.trace_dir);
+        {
+            static const char* const kept[] = { "trace_", "flight_", "seed_", "debug_" };
+            platform_prune_old_files(ctx->config.trace_dir, kept, 4, 20);   /* the 20 newest sessions of each kind stay */
+        }
         char trace_path[512];
         snprintf(trace_path, sizeof(trace_path), "%s/trace_%llu.jsonl", 
                  ctx->config.trace_dir, (unsigned long long)ctx->rng.master_seed);
+        char diag_path[512];
+        snprintf(diag_path, sizeof(diag_path), "%s/debug_%llu.log", ctx->config.trace_dir, (unsigned long long)ctx->rng.master_seed);
+        platform_diag_open(diag_path);
+        platform_diag_logf("Carrom Arena %s seed=%llu speed=%.2fx window=%dx%d\n", BUILD_ID,
+                           (unsigned long long)ctx->rng.master_seed, ctx->playback_speed, ctx->config.window_width, ctx->config.window_height);
         ctx->trace = trace_open(trace_path, ctx->config.trace_dir, ctx->config.verbose, ctx->rng.master_seed);
         char flight_path[512];
         snprintf(flight_path, sizeof(flight_path), "%s/flight_%llu.bin",
@@ -408,8 +417,7 @@ static void app_shot_progress(AppContext* ctx) {
             effects_trigger_pocket_fade(r.pocketed_pocket_indices[i]);
         }
         if (ctx->config.verbose) {
-            printf("[POCKET] id=%d pocket=%d\n", (int)r.pocketed_ids[i], (int)r.pocketed_pocket_indices[i]);
-            fflush(stdout);
+            platform_diag_logf("[POCKET] id=%d pocket=%d\n", (int)r.pocketed_ids[i], (int)r.pocketed_pocket_indices[i]);
         }
         if (ctx->trace) {
             trace_write_pocket(ctx->trace, shot, r.pocketed_ids[i], r.pocketed_colors[i],
@@ -424,7 +432,7 @@ static void app_shot_progress(AppContext* ctx) {
             ctx->striker_fall_registered = true;
             FLIGHT_EVENT(ctx, FLIGHT_EV_STRIKER_POCKET, spocket, sqrtf(sv.x * sv.x + sv.y * sv.y), 0, 0);
             effects_trigger_pocket_fall(EFFECTS_STRIKER_ID, PIECE_STRIKER, sp, sv, spocket);
-            if (ctx->config.verbose) { printf("[POCKET] striker pocket=%d\n", spocket); fflush(stdout); }
+            if (ctx->config.verbose) { platform_diag_logf("[POCKET] striker pocket=%d\n", spocket); }
             effects_trigger_pocket_fade_long(spocket, 0.9f);
         }
     }
@@ -439,14 +447,16 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     ShotFacts facts;
     match_extract_facts(&ctx->game, result, &facts);
     
+    // The coins have moved: the game state (what the AI plans from, and where the rules place a coin paid back) must show
+    // where they really are now
+    board_apply_shot_positions(&ctx->game.board, result);
+
     // Resolve through rules engine
     RulesOutcome outcome = rules_resolve(&ctx->match, &ctx->game, &facts);
     
     // Apply outcome to match and game states
     ctx->game = outcome.next_game_state;
     ctx->match = outcome.next_match_state;
-    // The coins have moved: the game state (what the AI plans from) must show where they really are now
-    board_apply_final_positions(&ctx->game.board, result->final_positions);
 
     FLIGHT_EVENT(ctx, FLIGHT_EV_SHOT_END, (int)outcome.turn_decision, result->pocketed_count, result->striker_pocketed ? 1 : 0, result->sim_time);
 
@@ -455,6 +465,7 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
 
     // Register any pockets not already registered mid-shot (idempotent)
     for (int i = ctx->pockets_registered; i < result->pocketed_count; i++) {
+        if (result->pocketed_ids[i] < MAX_PIECES && ctx->game.board.pieces[result->pocketed_ids[i]].on_board) continue;   /* paid back */
         app_register_pocket(ctx, result->pocketed_ids[i], result->pocketed_pocket_indices[i]);
     }
     ctx->pockets_registered = 0;
@@ -464,9 +475,13 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Fresh striker for the next turn (a pocketed striker is a foul, but the next player still gets one)
     striker_state_init(&ctx->game.board.striker, ctx->game.turn_seat);
     board_place_striker_on_baseline(&ctx->game.board.striker, ctx->game.turn_seat);
-    // The rules may have put the queen back on the board (she was not covered): put her back in the physics world too
-    if (ctx->game.board.pieces[QUEEN_ID].on_board && physics_is_piece_pocketed(ctx->physics, QUEEN_ID)) {
-        physics_sync_from_board(ctx->physics, &ctx->game.board, ctx->game.turn_seat);
+    // The rules may have put coins back on the board (the queen, not covered; a coin paid back for a pocketed striker):
+    // put them back in the physics world too
+    for (int i = 0; i < MAX_PIECES; i++) {
+        if (ctx->game.board.pieces[i].on_board && physics_is_piece_pocketed(ctx->physics, i)) {
+            physics_sync_from_board(ctx->physics, &ctx->game.board, ctx->game.turn_seat);
+            break;
+        }
     }
 
     // Set phase for next turn based on turn decision
@@ -579,8 +594,7 @@ int app_run_simulation(AppContext* ctx) {
     ctx->thinking_min_wall += platform_time_now();  // Absolute wall time when min thinking ends
     
     if (ctx->config.verbose) {
-        printf("[DEBUG] Starting simulation, seed=%llu\n", (unsigned long long)ctx->rng.master_seed);
-        fflush(stdout);
+        platform_diag_logf("[DEBUG] Starting simulation, seed=%llu\n", (unsigned long long)ctx->rng.master_seed);
     }
     
     while (ctx->running) {
@@ -612,10 +626,9 @@ int app_run_simulation(AppContext* ctx) {
         if (!ctx->paused) {
             // Periodic debug output
             if (ctx->config.verbose && (ctx->frame_count % 1000 == 0)) {
-                printf("[DEBUG] Frame %llu: phase=%d, sim_time=%.2f, shots=%llu\n", 
+                platform_diag_logf("[DEBUG] Frame %llu: phase=%d, sim_time=%.2f, shots=%llu\n", 
                        (unsigned long long)ctx->frame_count, ctx->game.phase, 
                        physics_get_sim_time(ctx->physics), (unsigned long long)ctx->shot_count);
-                fflush(stdout);
             }
             
             // Fixed timestep physics
@@ -673,18 +686,22 @@ int app_run_simulation(AppContext* ctx) {
                             Seat seat = ctx->game.turn_seat;
                             Controller* controller = ctx->controllers[seat];
                             
+                            PhysicsSnapshot* psnap = physics_snapshot(ctx->physics);
                             DecisionSnapshot snap = {
                                 .match = &ctx->match,
                                 .game = &ctx->game,
                                 .board = &ctx->game.board,
-                                .physics = physics_snapshot(ctx->physics),
+                                .physics = psnap,
                                 .active_seat = seat,
                                 .ai_budget_ms = ctx->config.ai_budget_ms,
                                 .max_candidates = ctx->max_candidates
                             };
                             
                             // AI decides shot plan
-                            ShotPlan plan = controller_decide(controller, &snap, &ctx->rng.streams[seat]);
+                            ShotPlan plan;
+                            if (psnap) plan = controller_decide(controller, &snap, &ctx->rng.streams[seat]);
+                            else plan = controller_fallback_shot(controller, &snap, &ctx->rng.streams[seat]);
+                            physics_snapshot_destroy(psnap);   /* one snapshot per decision: it used to leak */
                             
                             // Validate shot plan
                             if (!match_validate_shot(&ctx->game, &plan)) {
@@ -702,9 +719,8 @@ int app_run_simulation(AppContext* ctx) {
                             }
                             
                             if (ctx->config.verbose) {
-                                printf("[DEBUG] Frame %llu: THINKING complete for seat %d, tactic=%d\n", 
+                                platform_diag_logf("[DEBUG] Frame %llu: THINKING complete for seat %d, tactic=%d\n", 
                                        (unsigned long long)ctx->frame_count, seat, plan.tactic);
-                                fflush(stdout);
                             }
                         }
                         
@@ -725,9 +741,8 @@ int app_run_simulation(AppContext* ctx) {
                         ctx->placement_timer = 1.0;
                         ctx->placement_phase_active = true;
                         if (ctx->config.verbose) {
-                            printf("[DEBUG] Frame %llu: Placement phase started for seat %d, timer=%.2fs\n", 
+                            platform_diag_logf("[DEBUG] Frame %llu: Placement phase started for seat %d, timer=%.2fs\n", 
                                    (unsigned long long)ctx->frame_count, ctx->game.turn_seat, ctx->placement_timer);
-                            fflush(stdout);
                         }
                     }
                     
@@ -740,9 +755,8 @@ int app_run_simulation(AppContext* ctx) {
                     if (ctx->placement_timer <= 0.0) {
                         ctx->placement_phase_active = false;
                         if (ctx->config.verbose) {
-                            printf("[DEBUG] Frame %llu: Placement complete, entering AIM_PREVIEW for seat %d\n", 
+                            platform_diag_logf("[DEBUG] Frame %llu: Placement complete, entering AIM_PREVIEW for seat %d\n", 
                                    (unsigned long long)ctx->frame_count, ctx->game.turn_seat);
-                            fflush(stdout);
                         }
                         
                         // Store the computed shot plan in GameState for renderer access
@@ -780,9 +794,8 @@ int app_run_simulation(AppContext* ctx) {
                             // 5 seconds elapsed (scaled) - execute the shot
                             ctx->aim_preview_active = false;
                             if (ctx->config.verbose) {
-                                printf("[DEBUG] Frame %llu: AIM_PREVIEW complete, executing shot for seat %d\n", 
+                                platform_diag_logf("[DEBUG] Frame %llu: AIM_PREVIEW complete, executing shot for seat %d\n", 
                                        (unsigned long long)ctx->frame_count, ctx->game.turn_seat);
-                                fflush(stdout);
                             }
                             
                             // FIRST: Invalidate computed shot so aim line clears BEFORE striker gains velocity
@@ -863,8 +876,7 @@ int app_run_simulation(AppContext* ctx) {
                 // Check if we've captured enough frames - exit simulation loop
                 if (ctx->capture_frame_count >= ctx->config.frames) {
                     if (ctx->config.verbose) {
-                        printf("[DEBUG] Capture complete: %lu frames captured\n", (unsigned long)ctx->capture_frame_count);
-                        fflush(stdout);
+                        platform_diag_logf("[DEBUG] Capture complete: %lu frames captured\n", (unsigned long)ctx->capture_frame_count);
                     }
                     ctx->running = false;
                 }
@@ -875,7 +887,7 @@ int app_run_simulation(AppContext* ctx) {
             if (ctx->config.mode == APP_MODE_CAPTURE) {
                 double elapsed_wall = platform_time_now() - capture_start_wall;
                 if (elapsed_wall > capture_max_wall) {
-                    fprintf(stderr, "[ERROR] Capture wall-time budget exceeded: %.2fs > %.2fs (frames=%lu)\n",
+                    platform_diag_logf("[ERROR] Capture wall-time budget exceeded: %.2fs > %.2fs (frames=%lu)\n",
                             elapsed_wall, capture_max_wall, (unsigned long)ctx->capture_frame_count);
                     
                     // Write .stall marker file
@@ -922,9 +934,7 @@ AppContext* app_create(const AppConfig* config) {
         // Default to real time (1x)
         ctx->playback_speed = 1.0f;
     }
-    printf("[DEBUG] App created with playback_speed=%.2fx\n", ctx->playback_speed);
-    fflush(stdout);
-    ctx->speed_paused = false;
+ctx->speed_paused = false;
     audio_policy_init(&ctx->audio_policy);
     ctx->placement_timer = 0.0;
     ctx->placement_phase_active = false;
@@ -933,19 +943,29 @@ AppContext* app_create(const AppConfig* config) {
     
     // Initialize RNG
     uint64_t seed = config->seed;
-    printf("[DEBUG] CLI parsed seed: %llu\n", (unsigned long long)seed);
-    fflush(stdout);
-    if (seed == 0) {
+if (seed == 0) {
         seed = platform_time_us();
     }
     rng_context_init(&ctx->rng, seed);
     
     // Initialize physics
     ctx->physics = physics_create();
-    
+    if (!ctx->physics) {
+        platform_fatal("Could not create the physics world.");
+        free(ctx);
+        return NULL;
+    }
+
     // Setup subsystems
     app_setup_trace(ctx);
     app_setup_renderer(ctx);
+    if ((config->mode == APP_MODE_RENDERED && !config->headless) || config->mode == APP_MODE_CAPTURE) {
+        if (!ctx->renderer) {
+            platform_fatal("Could not open the game window (graphics initialisation failed).");
+            app_destroy(ctx);
+            return NULL;
+        }
+    }
     app_init_controllers(ctx);
     app_init_match(ctx);
     
@@ -978,6 +998,7 @@ void app_destroy(AppContext* ctx) {
         physics_destroy(ctx->physics);
     }
     
+    platform_diag_close();
     free(ctx);
 }
 
@@ -1031,8 +1052,7 @@ int app_run_capture(AppContext* ctx) {
     platform_mkdir(ctx->config.capture_dir);
     
     if (ctx->config.verbose) {
-        printf("[DEBUG] app_run_capture: target frames=%u\n", ctx->config.frames);
-        fflush(stdout);
+        platform_diag_logf("[DEBUG] app_run_capture: target frames=%u\n", ctx->config.frames);
     }
     
     uint32_t target_frames = ctx->config.frames;
@@ -1054,9 +1074,8 @@ int app_run_capture(AppContext* ctx) {
         total_frames += frames_this_board;
         
         if (ctx->config.verbose) {
-            printf("[DEBUG] Board complete: captured %u frames this board, total %u/%u\n", 
+            platform_diag_logf("[DEBUG] Board complete: captured %u frames this board, total %u/%u\n", 
                    frames_this_board, total_frames, target_frames);
-            fflush(stdout);
         }
         
         // If no frames captured, break to avoid infinite loop
@@ -1071,24 +1090,18 @@ int app_run_capture(AppContext* ctx) {
 /* -----------------------------------------------------------------------------
  * CLI Parsing
  * --------------------------------------------------------------------------- */
-static const char* get_arg_value(const char* arg, const char* prefix) {
-    size_t len = strlen(prefix);
-    if (strncmp(arg, prefix, len) == 0) {
-        if (arg[len] == '=') {
-            return arg + len + 1;
-        }
-    }
+/* "--name=value" or "--name value" (the usage text shows the second form). Advances *i past a separate value. */
+static const char* get_arg_value(int argc, char* argv[], int* i, const char* name) {
+    const char* arg = argv[*i];
+    size_t len = strlen(name);
+    if (strncmp(arg, name, len) != 0) return NULL;
+    if (arg[len] == '=') return arg + len + 1;
+    if (arg[len] == '\0' && *i + 1 < argc) return argv[++*i];
     return NULL;
 }
 
 AppConfig app_parse_args(int argc, char* argv[]) {
     AppConfig config = app_config_default();
-    
-    printf("[DEBUG] argc=%d\n", argc);
-    for (int i = 0; i < argc; i++) {
-        printf("[DEBUG] argv[%d]=%s\n", i, argv[i]);
-    }
-    fflush(stdout);
     
     for (int i = 1; i < argc; i++) {
         const char* val;
@@ -1098,35 +1111,35 @@ AppConfig app_parse_args(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
             app_print_version();
             exit(0);
-        } else if ((val = get_arg_value(argv[i], "--mode")) != 0) {
+        } else if ((val = get_arg_value(argc, argv, &i, "--mode")) != 0) {
             if (strcmp(val, "rendered") == 0) config.mode = APP_MODE_RENDERED;
             else if (strcmp(val, "diagnostic") == 0) config.mode = APP_MODE_DIAGNOSTIC;
             else if (strcmp(val, "soak") == 0) config.mode = APP_MODE_SOAK;
             else if (strcmp(val, "capture") == 0) config.mode = APP_MODE_CAPTURE;
-        } else if ((val = get_arg_value(argv[i], "--seed")) != 0) {
+        } else if ((val = get_arg_value(argc, argv, &i, "--seed")) != 0) {
             config.seed = strtoull(val, NULL, 10);
-        } else if ((val = get_arg_value(argv[i], "--boards")) != 0) {
+        } else if ((val = get_arg_value(argc, argv, &i, "--boards")) != 0) {
             config.boards = (uint32_t)strtoul(val, NULL, 10);
-        } else if ((val = get_arg_value(argv[i], "--seeds")) != 0) {
+        } else if ((val = get_arg_value(argc, argv, &i, "--seeds")) != 0) {
             config.seeds = (uint32_t)strtoul(val, NULL, 10);
-        } else if ((val = get_arg_value(argv[i], "--matches")) != 0) {
+        } else if ((val = get_arg_value(argc, argv, &i, "--matches")) != 0) {
             config.matches = (uint32_t)strtoul(val, NULL, 10);
-        } else if ((val = get_arg_value(argv[i], "--frames")) != 0) {
+        } else if ((val = get_arg_value(argc, argv, &i, "--frames")) != 0) {
             config.frames = (uint32_t)strtoul(val, NULL, 10);
-        } else if ((val = get_arg_value(argv[i], "--trace-dir")) != 0) {
+        } else if ((val = get_arg_value(argc, argv, &i, "--trace-dir")) != 0) {
             config.trace_dir = val;
-        } else if ((val = get_arg_value(argv[i], "--capture-dir")) != 0) {
+        } else if ((val = get_arg_value(argc, argv, &i, "--capture-dir")) != 0) {
             config.capture_dir = val;
-        } else if ((val = get_arg_value(argv[i], "--width")) != 0) {
+        } else if ((val = get_arg_value(argc, argv, &i, "--width")) != 0) {
             config.window_width = atoi(val);
-        } else if ((val = get_arg_value(argv[i], "--height")) != 0) {
+        } else if ((val = get_arg_value(argc, argv, &i, "--height")) != 0) {
             config.window_height = atoi(val);
-        } else if ((val = get_arg_value(argv[i], "--playback-speed")) != 0) {
+        } else if ((val = get_arg_value(argc, argv, &i, "--playback-speed")) != 0) {
             float speed = strtof(val, NULL);
             if (speed < 0.05f) speed = 0.05f;
             if (speed > 4.0f) speed = 4.0f;
             config.playback_speed = speed;
-        } else if ((val = get_arg_value(argv[i], "--ai-budget-ms")) != 0) {
+        } else if ((val = get_arg_value(argc, argv, &i, "--ai-budget-ms")) != 0) {
             config.ai_budget_ms = (uint32_t)strtoul(val, NULL, 10);
             if (config.ai_budget_ms < 10) config.ai_budget_ms = 10;
             if (config.ai_budget_ms > 10000) config.ai_budget_ms = 10000;
@@ -1139,6 +1152,10 @@ AppConfig app_parse_args(int argc, char* argv[]) {
         }
     }
     
+    if (config.window_width < 400) config.window_width = 400;     /* a zero or absurd size would fail InitWindow */
+    if (config.window_width > 4096) config.window_width = 4096;
+    if (config.window_height < 400) config.window_height = 400;
+    if (config.window_height > 4096) config.window_height = 4096;
     return config;
 }
 
@@ -1159,7 +1176,7 @@ void app_print_usage(const char* prog_name) {
     printf("  --verbose             Verbose logging\n");
     printf("  --headless            Force headless mode\n");
     printf("  --debug-phase         Enable per-frame phase debug logging in capture mode\n");
-    printf("  --width <n>           Window width (default: 800)\n");
+    printf("  --width <n>           Window width (default: 560)\n");
     printf("  --height <n>          Window height (default: 560)\n");
     printf("  --help, -h            Show this help\n");
     printf("  --version, -v         Show version\n");

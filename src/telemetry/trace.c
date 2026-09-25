@@ -57,6 +57,7 @@ static bool trace_init_file(TraceWriter* w) {
         w->write_offset = 0;
         w->file_size = 0;
         w->wrapped = false;
+        fclose(f);   /* reopened through the platform layer below (the handle used to leak) */
     } else {
         /* Read existing index */
         uint64_t index;
@@ -104,6 +105,23 @@ static void trace_update_index(TraceWriter* w) {
     fseek(f, pos, SEEK_SET);
 }
 
+/* Copy n bytes into the data area at the write position, wrapping at its end */
+static void trace_ring_put(TraceWriter* w, FILE* f, const char* data, size_t n) {
+    while (n > 0) {
+        uint64_t room = TRACE_MAX_SIZE - w->write_offset;
+        size_t chunk = (n < room) ? n : (size_t)room;
+        fseek(f, (long)(TRACE_INDEX_SIZE + w->write_offset), SEEK_SET);
+        fwrite(data, 1, chunk, f);
+        w->write_offset += chunk;
+        data += chunk;
+        n -= chunk;
+        if (w->write_offset >= TRACE_MAX_SIZE) {
+            w->write_offset = 0;
+            w->wrapped = true;
+        }
+    }
+}
+
 static size_t trace_write_line_internal(TraceWriter* w, const char* line, size_t line_len) {
     if (!w->jsonl_file || !w->jsonl_file->handle) return 0;
     
@@ -122,32 +140,11 @@ static size_t trace_write_line_internal(TraceWriter* w, const char* line, size_t
         total_len = TRACE_MAX_SIZE;
     }
     
-    uint64_t data_start = TRACE_INDEX_SIZE;
-    uint64_t end_of_data = data_start + TRACE_MAX_SIZE;
-    uint64_t current_pos = data_start + w->write_offset;
-    uint64_t space_to_end = end_of_data - current_pos;
-    
-    if (total_len <= space_to_end) {
-        /* Fits in remaining space - write directly */
-        fseek(f, (long)current_pos, SEEK_SET);
-        fwrite(line, 1, line_len, f);
-        if (!has_newline) fwrite(&newline, 1, 1, f);
-        w->write_offset += total_len;
-    } else {
-        /* Record spans the wrap point - split the write */
-        /* Write first part at the end of the buffer */
-        fseek(f, (long)current_pos, SEEK_SET);
-        fwrite(line, 1, space_to_end, f);
-        
-        /* Write remaining part at the beginning of the data area */
-        size_t remaining_len = total_len - space_to_end;
-        fseek(f, (long)data_start, SEEK_SET);
-        fwrite(line + space_to_end, 1, remaining_len, f);
-        
-        w->write_offset = remaining_len;
-        w->wrapped = true;
-    }
-    
+    /* Write the line, then its newline, each through the ring: a record may straddle the wrap point, and the newline that
+     * ends it may be the byte that lands on the far side (it used to be copied from past the end of the string: a NUL). */
+    trace_ring_put(w, f, line, total_len - (has_newline ? 0 : 1));
+    if (!has_newline) trace_ring_put(w, f, &newline, 1);
+
     /* Ensure we don't exceed TRACE_MAX_SIZE if we just wrote a line 
        that's exactly the size of the buffer (though unlikely) */
     if (w->write_offset >= TRACE_MAX_SIZE) {
@@ -171,17 +168,27 @@ static size_t trace_write_line_internal(TraceWriter* w, const char* line, size_t
     return total_len;
 }
 
+static const char* tactic_to_str(TacticType tactic) {
+    switch (tactic) {
+        case TACTIC_BREAK:      return "BREAK";
+        case TACTIC_DIRECT:     return "DIRECT";
+        case TACTIC_CUT:        return "CUT";
+        case TACTIC_BANK:       return "BANK";
+        case TACTIC_QUEEN:      return "QUEEN";
+        case TACTIC_COVER:      return "COVER";
+        case TACTIC_DEFENSIVE:  return "DEFENSIVE";
+        case TACTIC_FALLBACK:   return "FALLBACK";
+        default:                return "UNKNOWN";
+    }
+}
+
 static char* shot_plan_to_json(const ShotPlan* plan, char* buf, size_t size) {
-    const char* tactic_names[] = {
-        "BREAK", "DIRECT", "CUT", "BANK", "QUEEN", "COVER", "DEFENSIVE", "FALLBACK"
-    };
-    
     int written = snprintf(buf, size,
         "{\"placement\":{\"x\":%.6f,\"y\":%.6f},\"aim_angle\":%.6f,\"power\":%.6f,"
         "\"tactic\":\"%s\",\"imperfection_draw\":%u}",
         plan->placement.x, plan->placement.y,
         plan->aim_angle, plan->power,
-        tactic_names[plan->tactic], plan->rng_draw);
+        tactic_to_str(plan->tactic), plan->rng_draw);
     
     (void)written;   /* a truncated record is written as far as it fits */
     return buf;
@@ -261,20 +268,6 @@ static const char* seat_to_str(Seat seat) {
 
 static const char* team_to_str(Seat seat) {
     return (seat == SEAT_NORTH || seat == SEAT_SOUTH) ? "WHITE" : "BLACK";
-}
-
-static const char* tactic_to_str(TacticType tactic) {
-    switch (tactic) {
-        case TACTIC_BREAK:      return "BREAK";
-        case TACTIC_DIRECT:     return "DIRECT";
-        case TACTIC_CUT:        return "CUT";
-        case TACTIC_BANK:       return "BANK";
-        case TACTIC_QUEEN:      return "QUEEN";
-        case TACTIC_COVER:      return "COVER";
-        case TACTIC_DEFENSIVE:  return "DEFENSIVE";
-        case TACTIC_FALLBACK:   return "FALLBACK";
-        default:                return "UNKNOWN";
-    }
 }
 
 static const char* turn_decision_to_str(TurnDecision td) {
@@ -594,8 +587,8 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
     if (!f) goto cleanup;
 
     uint64_t write_offset;
-    if (fread(&write_offset, 1, TRACE_INDEX_SIZE, f) != TRACE_INDEX_SIZE) {
-        goto cleanup;
+    if (fread(&write_offset, 1, TRACE_INDEX_SIZE, f) != TRACE_INDEX_SIZE || write_offset > TRACE_MAX_SIZE) {
+        goto cleanup;   /* short or corrupt index: reading on with it would index outside the buffer */
     }
 
 

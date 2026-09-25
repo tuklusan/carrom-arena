@@ -36,6 +36,20 @@ PlatformFile* platform_fopen(const char* path, const char* mode);
 /* fopen for files the game CREATES (traces, flight recorder, markers): owner-only permissions (0600) on POSIX instead of
  * the umask default of 0666. `mode` is a normal fopen mode ("w", "w+b", ...). */
 FILE* platform_fopen_private(const char* path, const char* mode);
+
+/* Debug log sink. All debugging output goes to a file (next to the trace), never to a console window: the game is a
+ * windowed program. Lines logged before platform_diag_open, or with no file open, are dropped. */
+void platform_diag_open(const char* path);
+void platform_diag_close(void);
+void platform_diag_logf(const char* fmt, ...);
+
+/* A fatal start-up problem the player must be told about: a message box on Windows (there is no console), stderr elsewhere.
+ * Also written to the debug log. */
+void platform_fatal(const char* message);
+
+/* Housekeeping for the trace directory: of the files in `dir` whose names start with any of the prefixes, keep only the
+ * `keep` most recently modified per prefix and delete the rest. Every run leaves up to ~20 MB of trace and flight files. */
+void platform_prune_old_files(const char* dir, const char* const* prefixes, int prefix_count, int keep);
 int platform_fclose(PlatformFile* file);
 int platform_fprintf(PlatformFile* file, const char* format, ...) __attribute__((format(printf, 2, 3)));
 int platform_fflush(PlatformFile* file);

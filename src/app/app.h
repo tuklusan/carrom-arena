@@ -51,7 +51,7 @@ static inline AppConfig app_config_default(void) {
         .capture_dir = "captures",
         .verbose = false,
         .headless = false,
-        .window_width = 800,
+        .window_width = 560,
         .window_height = 560,
         .playback_speed = 1.0f,   // real-time (1x) default; keys change it, 0.05x-4x
         .ai_budget_ms = 150,      // R5: Default AI budget: 150ms (lowered from 250)

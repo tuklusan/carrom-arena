@@ -36,8 +36,9 @@ typedef struct PhysicsSnapshot {
     
     // Pocketed tracking
     int pocketed_count;
-    uint8_t pocketed_ids[19];
-    PieceColor pocketed_colors[19];
+    uint8_t pocketed_ids[MAX_PIECES];
+    PieceColor pocketed_colors[MAX_PIECES];
+    uint8_t pocketed_pocket_indices[MAX_PIECES];
     bool striker_pocketed;
     
     float sim_time;

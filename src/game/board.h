@@ -21,6 +21,10 @@ void striker_state_init(StrikerState* striker, Seat seat);
  * the shot planner see the current board and not the initial rack. Coins off the board are left alone. */
 void board_apply_final_positions(BoardState* board, const Vec2* positions);
 
+/* The same, straight from a shot result and skipping the coins that shot pocketed (their entry is a placeholder). Called
+ * before the rules run, so that anything the rules put back on the board is placed among the coins where they really are. */
+void board_apply_shot_positions(BoardState* board, const ShotResult* result);
+
 /* Where the nth coin (0-based) pocketed in pocket `pocket_index` is stashed: a 3x3 lineup in the outside corner beside
  * the pocket, coins touching but never overlapping, growing away from the board. */
 static inline Vec2 board_stash_position(int pocket_index, int nth) {
@@ -30,6 +34,10 @@ static inline Vec2 board_stash_position(int pocket_index, int nth) {
     float sy = (POCKET_CENTERS[pocket_index].y > 0.0f) ? 1.0f : -1.0f;
     return (Vec2){ sx * (first + (float)(nth % 3) * step), sy * (first + (float)((nth / 3) % 3) * step) };
 }
+
+/* The free spot nearest to `target` (the centre, for a returned coin or queen) where a coin fits without touching another
+ * coin on the board: the target itself when it is free, otherwise the nearest of a widening ring search. */
+Vec2 board_find_free_spot(const BoardState* board, Vec2 target);
 
 /* Take a coin out of the stash (it goes back on the board) and close the gap in its lineup */
 void board_remove_from_stash(BoardState* board, int piece_id);

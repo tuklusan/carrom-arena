@@ -220,11 +220,42 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
         game->board.queen_on_board = true;
         game->board.queen_dues = 0;
         PieceState* q = &game->board.pieces[QUEEN_ID];
+        Vec2 spot = board_find_free_spot(&game->board, (Vec2){ 0.0f, 0.0f });   /* before she counts as on the board again */
         q->pocketed = false;
         q->on_board = true;
-        q->position = (Vec2){ 0.0f, 0.0f };
+        q->position = spot;
         q->velocity = (Vec2){ 0.0f, 0.0f };
         board_remove_from_stash(&game->board, QUEEN_ID);
+    }
+
+    /* A pocketed striker is a foul (ICF 46): the stroke ends the turn and the player pays one coin: a coin he has already
+     * pocketed (the one from this very stroke first) goes back to the centre and its point is taken away again. With no
+     * coin of his own to give back the due stays on the books. */
+    if (facts->fouls & FOUL_STRIKER_POCKETED) {
+        PieceColor own = (active_team == TEAM_WHITE) ? PIECE_WHITE : PIECE_BLACK;
+        int give_back = -1;
+        for (int i = facts->pocketed_count - 1; i >= 0 && give_back < 0; i--) {
+            if (facts->pocketed_colors[i] == own && facts->pocketed_ids[i] < MAX_PIECES) give_back = facts->pocketed_ids[i];
+        }
+        for (int q = game->board.pocketed_count - 1; q >= 0 && give_back < 0; q--) {
+            const PieceState* pc = &game->board.pocketed_pieces[q];
+            if (pc->color == own && pc->id < MAX_PIECES && game->board.pieces[pc->id].pocketed) give_back = pc->id;
+        }
+        for (int i = MAX_PIECES - 1; i >= 0 && give_back < 0; i--) {
+            const PieceState* pc = &game->board.pieces[i];
+            if (pc->color == own && pc->pocketed && !pc->on_board) give_back = i;
+        }
+        if (give_back >= 0) {
+            PieceState* pc = &game->board.pieces[give_back];
+            Vec2 spot = board_find_free_spot(&game->board, (Vec2){ 0.0f, 0.0f });
+            pc->pocketed = false;
+            pc->on_board = true;
+            pc->velocity = (Vec2){ 0.0f, 0.0f };
+            pc->position = spot;
+            board_remove_from_stash(&game->board, give_back);
+            if (active_team == TEAM_WHITE) { game->board.white_on_board++; white_score_delta--; game->board.white_dues = (game->board.white_dues > 0) ? (uint8_t)(game->board.white_dues - 1) : 0; }
+            else { game->board.black_on_board++; black_score_delta--; game->board.black_dues = (game->board.black_dues > 0) ? (uint8_t)(game->board.black_dues - 1) : 0; }
+        }
     }
 
     // Apply score deltas
@@ -317,8 +348,8 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
     bool black_cleared_now = (game->board.black_on_board == 0);
 
     bool exactly_one_cleared = (white_cleared_now != black_cleared_now);  // XOR
-    bool queen_resolved = true;   /* ICF 52a: whoever pockets all his coins first wins the board; only the queen bonus depends on the cover */
-    // Queen must be covered if it was pocketed, or still on board
+    /* ICF 52a: whoever pockets all his coins first wins the board; only the queen bonus depends on the cover */
+    const bool queen_resolved = true;
     
     bool white_cleared_this_shot = (game->board.white_on_board == 0 && prior_white_on_board > 0);
     bool black_cleared_this_shot = (game->board.black_on_board == 0 && prior_black_on_board > 0);
@@ -423,7 +454,7 @@ void match_extract_facts(const GameState* game, const ShotResult* result, ShotFa
     facts->pocketed_count = result->pocketed_count;
     facts->queen_pocketed = result->queen_pocketed;
     facts->striker_pocketed = result->striker_pocketed;
-    facts->fouls = result->fouls;
+    facts->fouls = result->fouls | (result->striker_pocketed ? FOUL_STRIKER_POCKETED : FOUL_NONE);
     
     for (int i = 0; i < result->pocketed_count; i++) {
         facts->pocketed_ids[i] = result->pocketed_ids[i];
@@ -439,28 +470,28 @@ bool match_validate_shot(const GameState* game, const ShotPlan* plan) {
     // Check baseline bounds
     switch (seat) {
         case SEAT_NORTH:
-            if (math_fabsf(p.y - BASELINE_Y_NORTH) > 0.01f) return false;
-            if (p.x < -BASELINE_MAX_OFFSET || p.x > BASELINE_MAX_OFFSET) return false;
+            if (!(math_fabsf(p.y - BASELINE_Y_NORTH) <= 0.01f)) return false;
+            if (!(p.x >= -BASELINE_MAX_OFFSET && p.x <= BASELINE_MAX_OFFSET)) return false;
             break;
         case SEAT_SOUTH:
-            if (math_fabsf(p.y - BASELINE_Y_SOUTH) > 0.01f) return false;
-            if (p.x < -BASELINE_MAX_OFFSET || p.x > BASELINE_MAX_OFFSET) return false;
+            if (!(math_fabsf(p.y - BASELINE_Y_SOUTH) <= 0.01f)) return false;
+            if (!(p.x >= -BASELINE_MAX_OFFSET && p.x <= BASELINE_MAX_OFFSET)) return false;
             break;
         case SEAT_EAST:
-            if (math_fabsf(p.x - BASELINE_X_EAST) > 0.01f) return false;
-            if (p.y < -BASELINE_MAX_OFFSET || p.y > BASELINE_MAX_OFFSET) return false;
+            if (!(math_fabsf(p.x - BASELINE_X_EAST) <= 0.01f)) return false;
+            if (!(p.y >= -BASELINE_MAX_OFFSET && p.y <= BASELINE_MAX_OFFSET)) return false;
             break;
         case SEAT_WEST:
-            if (math_fabsf(p.x - BASELINE_X_WEST) > 0.01f) return false;
-            if (p.y < -BASELINE_MAX_OFFSET || p.y > BASELINE_MAX_OFFSET) return false;
+            if (!(math_fabsf(p.x - BASELINE_X_WEST) <= 0.01f)) return false;
+            if (!(p.y >= -BASELINE_MAX_OFFSET && p.y <= BASELINE_MAX_OFFSET)) return false;
             break;
     }
     
     // Validate power range
-    if (plan->power < 0.0f || plan->power > 1.0f) return false;
+    if (!(plan->power >= 0.0f && plan->power <= 1.0f)) return false;   /* written so that NaN fails */
     
     // Validate aim angle
-    if (plan->aim_angle < -M_PI || plan->aim_angle > M_PI) return false;
+    if (!(plan->aim_angle >= -M_PI && plan->aim_angle <= M_PI)) return false;
     
     return true;
 }

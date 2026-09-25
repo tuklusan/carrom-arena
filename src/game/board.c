@@ -1,3 +1,4 @@
+#include <math.h>
 #include "board.h"
 #include "types.h"
 #include "common/vecmath.h"
@@ -179,8 +180,8 @@ void board_place_striker_on_baseline(StrikerState* striker, Seat seat) {
 
 int board_get_legal_placements(Seat seat, Vec2* out_placements, int max_placements) {
     int count = 0;
-    float baseline_coord, min_offset, max_offset;
-    bool horizontal;
+    float baseline_coord = 0.0f, min_offset, max_offset;
+    bool horizontal = true;
     
     switch (seat) {
         case SEAT_NORTH:
@@ -201,6 +202,7 @@ int board_get_legal_placements(Seat seat, Vec2* out_placements, int max_placemen
     
     // Generate PLACEMENTS_PER_SEAT positions along baseline
     int num_placements = (max_placements < 8) ? max_placements : 8;
+    if (num_placements < 2) return 0;   /* the spacing below divides by (num_placements - 1) */
     for (int i = 0; i < num_placements; i++) {
         float t = (float)i / (float)(num_placements - 1);
         float offset = math_lerp(min_offset, max_offset, t);
@@ -283,5 +285,44 @@ void board_remove_from_stash(BoardState* board, int piece_id) {
         board->pocketed_pieces[q].pocketed_position = pos;
         int id = board->pocketed_pieces[q].id;
         if (id < MAX_PIECES) board->pieces[id].pocketed_position = pos;
+    }
+}
+
+Vec2 board_find_free_spot(const BoardState* board, Vec2 target) {
+    const float gap = 2.0f * PIECE_RADIUS_NORM - 0.0005f;    /* touching coins are fine: the rack itself packs them edge to edge */
+    const float step = 2.0f * PIECE_RADIUS_NORM + 0.002f;
+    const float limit = 0.5f - CUSHION_THICKNESS - PIECE_RADIUS_NORM - 0.01f;
+    Vec2 best = target;
+    float best_d = 1e9f;
+    for (int ring = 0; ring <= 8; ring++) {
+        int samples = (ring == 0) ? 1 : 12 * ring;
+        for (int k = 0; k < samples; k++) {
+            float ang = 2.0f * (float)M_PI * (float)k / (float)samples;
+            Vec2 c = { target.x + (float)ring * step * cosf(ang), target.y + (float)ring * step * sinf(ang) };
+            if (fabsf(c.x) > limit || fabsf(c.y) > limit) continue;
+            bool free_spot = true;
+            for (int i = 0; i < MAX_PIECES && free_spot; i++) {
+                if (!board->pieces[i].on_board || board->pieces[i].pocketed) continue;
+                float dx = board->pieces[i].position.x - c.x, dy = board->pieces[i].position.y - c.y;
+                if (dx * dx + dy * dy < gap * gap) free_spot = false;
+            }
+            if (free_spot) {
+                float d = (c.x - target.x) * (c.x - target.x) + (c.y - target.y) * (c.y - target.y);
+                if (d < best_d) { best_d = d; best = c; }
+            }
+        }
+        if (best_d < 1e8f) break;   /* the nearest ring that has a free spot wins */
+    }
+    return best;
+}
+
+void board_apply_shot_positions(BoardState* board, const ShotResult* result) {
+    for (int i = 0; i < MAX_PIECES; i++) {
+        if (!board->pieces[i].on_board || board->pieces[i].pocketed) continue;
+        bool pocketed_now = false;
+        for (int k = 0; k < result->pocketed_count; k++) if (result->pocketed_ids[k] == i) pocketed_now = true;
+        if (pocketed_now) continue;
+        board->pieces[i].position = result->final_positions[i];
+        board->pieces[i].velocity = (Vec2){ 0.0f, 0.0f };
     }
 }
