@@ -123,9 +123,9 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
         }
         Vec2 sp = math_world_to_screen(vp, pos);
         float r = ((i == EFFECTS_STRIKER_ID) ? L->striker_r_px : L->piece_r_px) * scale;
-        Color col = (f->color == PIECE_WHITE) ? THEME_RED
-                  : (f->color == PIECE_BLACK) ? THEME_BLUE
-                  : (f->color == PIECE_QUEEN) ? THEME_QUEEN
+        Color col = (f->color == PIECE_WHITE) ? (Color){ 240, 240, 240, 255 }
+                  : (f->color == PIECE_BLACK) ? (Color){ 30, 30, 30, 255 }
+                  : (f->color == PIECE_QUEEN) ? (Color){ 220, 30, 30, 255 }
                   : (Color){ 255, 215, 0, 255 };
         col.a = (unsigned char)(255.0f * alpha);
         DrawCircle((int)sp.x, (int)sp.y, r, col);

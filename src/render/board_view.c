@@ -29,13 +29,13 @@ static inline float compute_flash_alpha(double wall_time) {
 #define COLOR_BOARD (Color){ 139, 105, 70, 255 }      // Wood brown
 #define COLOR_CUSHION (Color){ 100, 70, 40, 255 }     // Darker brown
 #define COLOR_POCKET (Color){ 0, 0, 0, 255 }          // Black
-#define COLOR_WHITE_PIECE THEME_RED       /* the white team is red on screen */
-#define COLOR_BLACK_PIECE THEME_BLUE      /* the black team is blue */
-#define COLOR_QUEEN THEME_QUEEN            // green: red is a team colour now
+#define COLOR_WHITE_PIECE (Color){ 240, 240, 240, 255 }
+#define COLOR_BLACK_PIECE (Color){ 30, 30, 30, 255 }
+#define COLOR_QUEEN (Color){ 220, 30, 30, 255 }       // Red
 #define COLOR_STRIKER (Color){ 255, 215, 0, 255 }     // Gold
 #define COLOR_LINE (Color){ 255, 255, 255, 100 }      // White translucent
-#define COLOR_COIN_RIM THEME_COIN_RIM
-static Color coin_outline_color(PieceColor c) { (void)c; return COLOR_COIN_RIM; }
+#define COLOR_WHITE_COIN_OUTLINE (Color){ 50, 50, 50, 230 }   // thin dark rim: light coins look bigger than dark ones otherwise
+static Color coin_outline_color(PieceColor c) { return c == PIECE_WHITE ? COLOR_WHITE_COIN_OUTLINE : COLOR_LINE; }
 #define COLOR_BASELINE (Color){ 100, 255, 100, 150 }  // Green translucent (muted for baseline)
 #define COLOR_BASELINE_MUTED (Color){ 100, 255, 100, 76 }  // 30% alpha of team color
 

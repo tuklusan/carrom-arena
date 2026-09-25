@@ -103,8 +103,8 @@ void layout_compute(int sw, int sh, Layout* out) {
  * of the team whose turn it is; the subdued lines use the other team's colour. Slowly scrolling. */
 static void draw_background(int sw, int sh, Team turn_team, double t) {
     DrawRectangleGradientV(0, 0, sw, sh, (Color){ 36, 52, 84, 255 }, (Color){ 66, 92, 128, 255 });
-    Color bright = (turn_team == TEAM_WHITE) ? (Color){ 255, 110, 104, 255 } : (Color){ 110, 160, 255, 255 };
-    Color subdued = (turn_team == TEAM_WHITE) ? (Color){ 110, 160, 255, 255 } : (Color){ 255, 110, 104, 255 };
+    Color bright = (turn_team == TEAM_WHITE) ? (Color){ 110, 225, 255, 255 } : (Color){ 255, 160, 70, 255 };
+    Color subdued = (turn_team == TEAM_WHITE) ? (Color){ 255, 160, 70, 255 } : (Color){ 110, 225, 255, 255 };
     float horizon = (float)sh * 0.5f;
     float vx = (float)sw * 0.5f;
 
@@ -142,7 +142,10 @@ static void draw_background(int sw, int sh, Team turn_team, double t) {
  * Scoreboard (top left) and radio button (bottom right)
  * --------------------------------------------------------------------------- */
 static Rectangle radio_rect(int sw, int sh) {
-    return (Rectangle){ (float)(sw - 58), (float)(sh - 34), 50.0f, 28.0f };
+    /* just above the horizontal rule of the footer (title band + body + 5 px, rounded up to even, see draw_footer_band) */
+    int rule_y = (sh - (int)((float)sh * 0.055f)) + 5;
+    if (rule_y % 2 != 0) rule_y++;
+    return (Rectangle){ (float)(sw - 58), (float)(rule_y - 32), 50.0f, 28.0f };
 }
 
 static void draw_scoreboard(const Renderer* r) {
