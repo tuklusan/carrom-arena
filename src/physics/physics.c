@@ -395,6 +395,10 @@ bool physics_is_piece_pocketed(const PhysicsWorld* pw, int id) {
     return pw->piece_pocketed[id];
 }
 
+bool physics_is_striker_pocketed(const PhysicsWorld* pw) {
+    return pw && pw->striker_pocketed;
+}
+
 bool physics_get_piece_velocity(const PhysicsWorld* pw, int id, Vec2* vel) {
     *vel = (Vec2){ 0, 0 };
     if (!pw || id < 0 || id >= MAX_PIECES) return false;

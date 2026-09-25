@@ -179,6 +179,37 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     }
 }
 
+/* -----------------------------------------------------------------------------
+ * Smooth visual state: nothing on screen teleports. The striker and each player figure keep a
+ * tracked position and glide toward wherever they should be at VISUAL_SLIDE_SPEED (board units
+ * per wall-clock second); during a shot the striker simply follows the physics body.
+ * --------------------------------------------------------------------------- */
+#define VISUAL_SLIDE_SPEED 1.2f
+
+typedef struct {
+    bool striker_valid;
+    Vec2 striker;
+    float fig[4];
+    bool fig_valid;
+} VisualState;
+
+static VisualState g_vis;
+
+static float approach_f(float cur, float target, float max_step) {
+    float d = target - cur;
+    if (d > max_step) return cur + max_step;
+    if (d < -max_step) return cur - max_step;
+    return target;
+}
+
+static Vec2 approach_v(Vec2 cur, Vec2 target, float max_step) {
+    float dx = target.x - cur.x, dy = target.y - cur.y;
+    float dist = sqrtf(dx * dx + dy * dy);
+    if (dist <= max_step || dist < 1e-6f) return target;
+    float k = max_step / dist;
+    return (Vec2){ cur.x + dx * k, cur.y + dy * k };
+}
+
 /* Compute thinking striker baseline coordinate for a given seat and time.
  * Returns the oscillating baseline coordinate (x for N/S, y for E/W).
  * Mirrors the logic in effects.c:draw_thinking_striker()
@@ -201,6 +232,16 @@ static float compute_thinking_striker_baseline_coord(Seat seat, double wall_time
     return slide_offset;
 }
 
+static Vec2 thinking_striker_world(Seat seat, double wall_time) {
+    float c = compute_thinking_striker_baseline_coord(seat, wall_time);
+    switch (seat) {
+        case SEAT_NORTH: return (Vec2){ c, BASELINE_Y_NORTH };
+        case SEAT_SOUTH: return (Vec2){ c, BASELINE_Y_SOUTH };
+        case SEAT_EAST:  return (Vec2){ BASELINE_X_EAST, c };
+        default:         return (Vec2){ BASELINE_X_WEST, c };
+    }
+}
+
 /* Draw aim preview line from striker position in aim direction.
  * Called INSIDE BeginMode2D() camera, AFTER striker draw.
  * Origin = striker's current rendered position (interpolated physics position if use_physics, else game->board.striker.position).
@@ -210,31 +251,24 @@ static float compute_thinking_striker_baseline_coord(Seat seat, double wall_time
  * Draw solid line >=3px thick with visible arrowhead at far end.
  * Color: high contrast (YELLOW with dark outline).
  */
-static void draw_aim_preview_line(Viewport vp, const GameState* game, const Layout* L, float alpha, bool use_physics, Vec2 curr_striker_pos, Vec2 prev_striker_pos) {
+#define AIM_LINE_FULL_POWER_LEN 0.55f
+
+/* raylib culls clockwise triangles, so draw both windings to be sure the arrowhead is visible */
+static void draw_tri_any_winding(Vector2 a, Vector2 b, Vector2 c, Color col) {
+    DrawTriangle(a, b, c, col);
+    DrawTriangle(a, c, b, col);
+}
+
+static void draw_aim_preview_line(Viewport vp, const GameState* game, const Layout* L, Vec2 striker_pos) {
     if (!game || !game->computed_shot_valid) return;
-    
-    // Get striker's current rendered position
-    Vec2 striker_pos;
-    if (use_physics) {
-        striker_pos = vec2_lerp(prev_striker_pos, curr_striker_pos, alpha);
-    } else {
-        striker_pos = game->board.striker.position;
-    }
-    
+
     float aim_angle = game->computed_shot_plan.aim_angle;
     float power = game->computed_shot_plan.power;
-    
-    // Natural length = power * half-diagonal (board diagonal = sqrt(2), half = sqrt(2)/2 = 0.5*sqrt(2))
-    float natural_len = power * 0.5f * sqrtf(2.0f);
-    
-    // Distance to board boundary (cushion inner edge)
-    float boundary_dist = distance_to_board_boundary(striker_pos, aim_angle);
-    if (boundary_dist < 0.0f) boundary_dist = natural_len;  // fallback
-    
-    // Clamped length: stop just before cushion (0.01f margin)
-    float clamped_len = my_fminf(natural_len, boundary_dist - 0.01f);
-    if (clamped_len < 0.0f) clamped_len = 0.0f;
-    
+
+    /* Length is strictly proportional to the strike force: full power = AIM_LINE_FULL_POWER_LEN board widths */
+    float clamped_len = power * AIM_LINE_FULL_POWER_LEN;
+    (void)L;
+
     // Convert to screen coordinates
     Vec2 start_screen = math_world_to_screen(vp, striker_pos);
     Vec2 end_world = { striker_pos.x + cosf(aim_angle) * clamped_len, striker_pos.y + sinf(aim_angle) * clamped_len };
@@ -251,7 +285,7 @@ static void draw_aim_preview_line(Viewport vp, const GameState* game, const Layo
     
     // Draw arrowhead at far end
     // Arrowhead: triangle pointing along line direction
-    float arrow_size = my_fmaxf(8.0f, thickness * 3.0f);
+    float arrow_size = my_fmaxf(14.0f, thickness * 4.5f);
     Vec2 dir = { cosf(aim_angle), sinf(aim_angle) };
     Vec2 perp = { -dir.y, dir.x };
     
@@ -260,7 +294,7 @@ static void draw_aim_preview_line(Viewport vp, const GameState* game, const Layo
     Vec2 arrow_base_right = { end_screen.x - dir.x * arrow_size - perp.x * (arrow_size * 0.5f), end_screen.y - dir.y * arrow_size - perp.y * (arrow_size * 0.5f) };
     
     // Arrowhead outline
-    DrawTriangle(
+    draw_tri_any_winding(
         (Vector2){ arrow_tip.x, arrow_tip.y },
         (Vector2){ arrow_base_left.x, arrow_base_left.y },
         (Vector2){ arrow_base_right.x, arrow_base_right.y },
@@ -271,7 +305,7 @@ static void draw_aim_preview_line(Viewport vp, const GameState* game, const Layo
     Vec2 arrow_tip_inset = { end_screen.x - dir.x * inset, end_screen.y - dir.y * inset };
     Vec2 arrow_base_left_inset = { arrow_tip_inset.x - dir.x * (arrow_size - inset) + perp.x * ((arrow_size - inset) * 0.5f), arrow_tip_inset.y - dir.y * (arrow_size - inset) + perp.y * ((arrow_size - inset) * 0.5f) };
     Vec2 arrow_base_right_inset = { arrow_tip_inset.x - dir.x * (arrow_size - inset) - perp.x * ((arrow_size - inset) * 0.5f), arrow_tip_inset.y - dir.y * (arrow_size - inset) - perp.y * ((arrow_size - inset) * 0.5f) };
-    DrawTriangle(
+    draw_tri_any_winding(
         (Vector2){ arrow_tip_inset.x, arrow_tip_inset.y },
         (Vector2){ arrow_base_left_inset.x, arrow_base_left_inset.y },
         (Vector2){ arrow_base_right_inset.x, arrow_base_right_inset.y },
@@ -531,6 +565,44 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     }
     west_world = (Vec2){ west_fixed_x, west_baseline_y };
     
+    // ---- Smooth visual state update (striker + figures)
+    {
+        static double last_wall = -1.0;
+        float frame_dt = (last_wall < 0.0) ? 0.0f : (float)(wall_time - last_wall);
+        last_wall = wall_time;
+        if (frame_dt < 0.0f) frame_dt = 0.0f;
+        if (frame_dt > 0.1f) frame_dt = 0.1f;
+        float step = VISUAL_SLIDE_SPEED * frame_dt;
+        bool planning = is_thinking || is_placement || is_aim_preview;
+        bool striker_gone = physics && physics_is_striker_pocketed(physics);
+
+        if (game && is_thinking) {
+            Vec2 target = thinking_striker_world(game->turn_seat, wall_time);
+            g_vis.striker = g_vis.striker_valid ? approach_v(g_vis.striker, target, step) : target;
+            g_vis.striker_valid = true;
+        } else if (game && (is_placement || is_aim_preview)) {
+            Vec2 target = board->striker.position;
+            g_vis.striker = g_vis.striker_valid ? approach_v(g_vis.striker, target, step) : target;
+            g_vis.striker_valid = true;
+        } else if (use_physics && !striker_gone && !board->striker.pocketed) {
+            g_vis.striker = vec2_lerp(prev_striker_pos, curr_striker_pos, alpha);
+            g_vis.striker_valid = true;
+        }
+
+        for (int s = 0; s < 4; s++) {
+            float target = 0.0f;
+            if (game && planning && game->turn_seat == (Seat)s) {
+                target = (s == SEAT_NORTH || s == SEAT_SOUTH) ? g_vis.striker.x : g_vis.striker.y;
+            }
+            g_vis.fig[s] = g_vis.fig_valid ? approach_f(g_vis.fig[s], target, step) : target;
+        }
+        g_vis.fig_valid = true;
+        north_world.x = g_vis.fig[SEAT_NORTH];
+        south_world.x = g_vis.fig[SEAT_SOUTH];
+        east_world.y  = g_vis.fig[SEAT_EAST];
+        west_world.y  = g_vis.fig[SEAT_WEST];
+    }
+
     // Draw human figures for all four seats
     draw_human_figure(vp, L, north_world, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH, halo_pulse_n, figure_alpha);
     draw_human_figure(vp, L, south_world, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, halo_pulse_s, figure_alpha);
@@ -583,22 +655,21 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         DrawCircleLines((int)screen.x, (int)screen.y, piece_r, COLOR_LINE);
     }
     
-    // Striker (interpolated) - only draw if not in thinking phase (thinking draws its own in effects)
-    if (board->striker.on_baseline && !board->striker.pocketed && game_phase != PHASE_THINKING) {
-        Vec2 pos;
-        if (use_physics) {
-            Vec2 interp = vec2_lerp(prev_striker_pos, curr_striker_pos, alpha);
-            pos = interp;
-        } else {
-            pos = board->striker.position;
-        }
-        
-        Vec2 screen = math_world_to_screen(vp, pos);
+    // Striker: drawn at its tracked visual position (glides between turns, follows physics during a shot)
+    if (board->striker.on_baseline && !board->striker.pocketed && g_vis.striker_valid &&
+        !(physics && physics_is_striker_pocketed(physics))) {
+        Vec2 screen = math_world_to_screen(vp, g_vis.striker);
         float striker_r = math_world_to_screen_dist(vp, STRIKER_RADIUS_NORM);
-        DrawCircle((int)screen.x, (int)screen.y, striker_r, COLOR_STRIKER);
-        DrawCircleLines((int)screen.x, (int)screen.y, striker_r, COLOR_LINE);
+        if (is_thinking) {
+            float fa = compute_flash_alpha(wall_time);
+            DrawCircle((int)screen.x, (int)screen.y, striker_r, (Color){ 255, 215, 0, (unsigned char)(fa * 255) });
+            DrawCircleLines((int)screen.x, (int)screen.y, striker_r, (Color){ 255, 255, 255, (unsigned char)(fa * 100) });
+        } else {
+            DrawCircle((int)screen.x, (int)screen.y, striker_r, COLOR_STRIKER);
+            DrawCircleLines((int)screen.x, (int)screen.y, striker_r, COLOR_LINE);
+        }
     }
-    
+
     // AIM_PREVIEW phase: draw aim preview line (INSIDE camera, AFTER striker draw)
     // Only draw when in AIM_PREVIEW phase AND computed shot is valid (phase gate)
     // Also ensure striker is stationary (velocity near zero) to prevent aim line during movement
@@ -607,7 +678,7 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         float striker_speed = math_sqrtf(game->board.striker.velocity.x * game->board.striker.velocity.x + 
                                          game->board.striker.velocity.y * game->board.striker.velocity.y);
         if (striker_speed <= SETTLE_SPEED_EPS) {
-            draw_aim_preview_line(vp, game, L, alpha, use_physics, curr_striker_pos, prev_striker_pos);
+            draw_aim_preview_line(vp, game, L, g_vis.striker);
         }
     }
 }

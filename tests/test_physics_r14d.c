@@ -122,7 +122,8 @@ void test_cushion_bounce(void) {
     physics_apply_shot(pw, 0.0f, 1.0f); // East (Max speed 5.0)
     
     // Step until it hits the cushion (at x=0.5). Dist = 0.5, speed = 5.0 -> time = 0.1s (12 steps)
-    for (int i = 0; i < 200; i++) physics_step(pw, PHYSICS_DT);
+    /* Sample shortly after the hit (0.17 s): with realistic friction the striker would later rebound off the far cushion again */
+    for (int i = 0; i < 20; i++) physics_step(pw, PHYSICS_DT);
     
     Vec2 vel;
     physics_get_striker_velocity(pw, &vel);

@@ -692,9 +692,9 @@ int app_run_simulation(AppContext* ctx) {
         }
         
         // Frame limiting with WaitTime to cap CPU (R5)
-        // Target 15 FPS = 66.67ms per frame
+        // Target 60 FPS
         double frame_time = platform_time_now() - now;
-        double target_frame_time = 1.0 / 15.0;
+        double target_frame_time = 1.0 / 60.0;
         if (frame_time < target_frame_time) {
             platform_sleep_ms((uint32_t)((target_frame_time - frame_time) * 1000));
         }

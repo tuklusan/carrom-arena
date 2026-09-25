@@ -257,7 +257,7 @@ Renderer* renderer_create(int width, int height, const char* title, bool capture
     }
     SetConfigFlags(flags);
     InitWindow(width, height, "SANYALnet Labs Carrom Arena");
-    SetTargetFPS(15);  // R4: 15 FPS
+    SetTargetFPS(60);
     
     if (capture_mode) {
         r->capture_texture = LoadRenderTexture(GetScreenWidth(), GetScreenHeight());

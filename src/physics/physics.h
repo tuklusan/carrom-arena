@@ -20,7 +20,7 @@ extern "C" {
 #define MAX_SUBSTEPS 40
 
 // Physics constants
-#define BOARD_COULOMB     2.5f     // Constant board deceleration, units/s^2 (Carrom RL env BOARD_DECEL; full-force 5.0 u/s shot stops in ~2 s)
+#define BOARD_COULOMB     1.3f     // Constant board deceleration, units/s^2 = mu*g/0.74 m with mu ~ 0.10 (passes the ICF 3.5-run smoothness test)
 #define BOARD_VISCOUS     0.0f     // No speed-dependent drag: dry Coulomb sliding on a powdered board
 #define SETTLE_SPEED_EPS  1e-3f    // Speed threshold for settling (practical visible stop)
 #define SETTLE_ACCEL_EPS  0.60f    // Acceleration threshold for settling (must exceed COULOMB)
@@ -57,6 +57,7 @@ void physics_apply_shot(PhysicsWorld* pw, float aim_angle, float power);
 // Pocket capture queries
 void physics_collect_pocketed(PhysicsWorld* pw, ShotResult* result);
 bool physics_is_piece_pocketed(const PhysicsWorld* pw, int id);
+bool physics_is_striker_pocketed(const PhysicsWorld* pw);
 /* Live linear velocity of a piece; returns false (vel zeroed) if it is pocketed or absent */
 bool physics_get_piece_velocity(const PhysicsWorld* pw, int id, Vec2* vel);
 void physics_consume_pocketed(PhysicsWorld* pw);

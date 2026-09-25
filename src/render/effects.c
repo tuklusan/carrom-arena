@@ -27,57 +27,9 @@ static inline float compute_flash_alpha(double wall_time) {
 void effects_draw(Viewport vp, const GameState* game, double placement_timer, const Layout* L) {
     double wall_time = GetTime();  // Wall time for animations
     
-    // Thinking phase animation: striker sliding + pulse (synced with figure flash)
-    if (game->phase == PHASE_THINKING) {
-        // Draw thinking striker animation for current turn seat
-        Seat seat = game->turn_seat;
-        
-        // Striker baseline position
-        if (game->board.striker.on_baseline && !game->board.striker.pocketed && game->board.striker.owner_seat == seat) {
-            
-            // Slide back and forth along baseline: one full pass every 1.5s
-            float slide_period = 1.5f;
-            float slide_phase = fmodf((float)wall_time, slide_period) / slide_period;
-            float slide_t = slide_phase <= 0.5f ? slide_phase * 2.0f : (1.0f - slide_phase) * 2.0f;
-            
-            float min_offset = BASELINE_MIN_OFFSET;
-            float max_offset = BASELINE_MAX_OFFSET;
-            float slide_offset = min_offset + slide_t * (max_offset - min_offset);
-            if (slide_phase > 0.5f) slide_offset = max_offset - slide_t * (max_offset - min_offset);
-            
-            Vec2 striker_world = {0, 0};
-            switch (seat) {
-                case SEAT_NORTH:
-                    striker_world.x = slide_offset;
-                    striker_world.y = BASELINE_Y_NORTH;
-                    break;
-                case SEAT_SOUTH:
-                    striker_world.x = slide_offset;
-                    striker_world.y = BASELINE_Y_SOUTH;
-                    break;
-                case SEAT_EAST:
-                    striker_world.x = BASELINE_X_EAST;
-                    striker_world.y = slide_offset;
-                    break;
-                case SEAT_WEST:
-                    striker_world.x = BASELINE_X_WEST;
-                    striker_world.y = slide_offset;
-                    break;
-            }
-            
-            Vec2 screen = math_world_to_screen(vp, striker_world);
-            
-            // Synced flash pulse: alpha = 0.4 + 0.6 * (0.5 + 0.5 * sin(2π * t))
-            float alpha = compute_flash_alpha(wall_time);
-            
-            Color striker_color = (Color){ 255, 215, 0, (unsigned char)(alpha * 255) };
-            Color line_color = (Color){ 255, 255, 255, (unsigned char)(alpha * 100) };
-            
-            DrawCircle((int)screen.x, (int)screen.y, L->striker_r_px, striker_color);
-            DrawCircleLines((int)screen.x, (int)screen.y, L->striker_r_px, line_color);
-        }
-    }
-    
+    (void)L;
+    (void)wall_time;
+
     // Aim line and power bar during aiming/placement phase (when not in placement hold)
     if (game->phase == PHASE_AIMING) {
         Vec2 striker_pos = game->board.striker.position;
