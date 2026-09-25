@@ -198,6 +198,17 @@ endif()
 add_executable(flight_dump tools/flight_dump.c)
 target_link_libraries(flight_dump carrom_core)
 
+# Headless AI-vs-AI self-play (stall detector)
+add_executable(selfplay tools/selfplay.c)
+target_link_libraries(selfplay carrom_core)
+set_target_properties(selfplay PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(selfplay PRIVATE -Wno-error=implicit-function-declaration)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        target_link_options(selfplay PRIVATE -fsanitize=address,undefined)
+    endif()
+endif()
+
 # Main executable
 add_executable(carrom_arena
     app/main.c

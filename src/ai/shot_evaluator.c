@@ -213,6 +213,35 @@ void shot_evaluator_score_candidates(ShotCandidate* candidates, int count, const
         score += score_striker_risk(&candidates[i].sim_result, profile);
         score += score_opponent_leave(&candidates[i].sim_result, snap->board, active_team, profile);
         score += score_positional(&candidates[i].sim_result, snap->board, active_team, profile);
+
+        /* Progress: a shot that touches nothing achieves nothing (and, being deterministic, would be repeated by every
+         * player forever), so it is penalised; moving own coins closer to a pocket is a small plus. */
+        {
+            PieceColor own = (active_team == TEAM_WHITE) ? PIECE_WHITE : PIECE_BLACK;
+            const ShotResult* sr = &candidates[i].sim_result;
+            float moved = 0.0f, progress = 0.0f;
+            for (int p = 0; p < MAX_PIECES; p++) {
+                const PieceState* pc = &snap->board->pieces[p];
+                if (!pc->on_board || pc->pocketed) continue;
+                bool pocketed_in_sim = false;
+                for (int k = 0; k < sr->pocketed_count; k++) if (sr->pocketed_ids[k] == p) pocketed_in_sim = true;
+                if (pocketed_in_sim) { moved += 1.0f; continue; }
+                Vec2 a = sr->final_positions[p];
+                moved += fabsf(a.x - pc->position.x) + fabsf(a.y - pc->position.y);
+                if (pc->color == own) {
+                    float before = 9.0f, after = 9.0f;
+                    for (int q = 0; q < 4; q++) {
+                        float db = hypotf(pc->position.x - POCKET_CENTERS[q].x, pc->position.y - POCKET_CENTERS[q].y);
+                        float da = hypotf(a.x - POCKET_CENTERS[q].x, a.y - POCKET_CENTERS[q].y);
+                        if (db < before) before = db;
+                        if (da < after) after = da;
+                    }
+                    progress += before - after;
+                }
+            }
+            if (moved < 0.002f) score -= 1.5f;
+            else score += (progress > 0.4f ? 0.4f : (progress < -0.4f ? -0.4f : progress)) * 0.8f;
+        }
         
         candidates[i].score = score;
     }

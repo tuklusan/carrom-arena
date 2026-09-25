@@ -134,6 +134,32 @@ void test_legal_placements_are_never_captured_by_a_pocket(void) {
     TEST_ASSERT_TRUE(illegal > 0);      /* the pocket ends are excluded */
 }
 
+/* Regression for the endgame loop: after a shot settles the game state must show where the coins really are, otherwise the
+ * AI keeps planning against the initial rack and every player repeats the same shot. */
+void test_board_positions_follow_the_settled_coins(void) {
+    BoardState b;
+    empty_board_with_white(&b, (Vec2){0.0f, 0.0f});
+    PhysicsWorld* pw = physics_create();
+    physics_sync_from_board(pw, &b, SEAT_SOUTH);
+    physics_place_striker(pw, SEAT_SOUTH, (Vec2){-0.2f, 0.0f});
+    physics_apply_shot(pw, 0.0f, 0.3f);
+    for (int i = 0; i < 120 * 6; i++) {
+        physics_step(pw, PHYSICS_DT);
+        if (physics_is_settled(pw)) break;
+    }
+    Vec2 fin[MAX_PIECES];
+    physics_get_final_positions(pw, fin);
+    physics_destroy(pw);
+    TEST_ASSERT_TRUE(fabsf(fin[0].x) > 0.02f);            /* the coin was really moved by the striker */
+    board_apply_final_positions(&b, fin);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, fin[0].x, b.pieces[0].position.x);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, fin[0].y, b.pieces[0].position.y);
+    /* and the planner now aims at the coin where it is */
+    GeomShot shots[512];
+    int n = geometry_plan_shots(&b, SEAT_SOUTH, shots, 512);
+    TEST_ASSERT_TRUE(n > 0);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_ghost_ball_is_behind_target_on_pocket_line);
@@ -142,5 +168,6 @@ int main(void) {
     RUN_TEST(test_blocked_pocket_line_is_not_planned);
     RUN_TEST(test_planned_shots_pocket_in_simulation);
     RUN_TEST(test_legal_placements_are_never_captured_by_a_pocket);
+    RUN_TEST(test_board_positions_follow_the_settled_coins);
     return UNITY_END();
 }

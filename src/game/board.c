@@ -257,3 +257,31 @@ bool board_is_legal_placement(Seat seat, Vec2 pos) {
     
     return true;
 }
+
+void board_apply_final_positions(BoardState* board, const Vec2* positions) {
+    for (int i = 0; i < MAX_PIECES; i++) {
+        if (!board->pieces[i].on_board || board->pieces[i].pocketed) continue;
+        board->pieces[i].position = positions[i];
+        board->pieces[i].velocity = (Vec2){ 0.0f, 0.0f };
+    }
+}
+
+void board_remove_from_stash(BoardState* board, int piece_id) {
+    int at = -1;
+    for (int q = 0; q < board->pocketed_count; q++) {
+        if (board->pocketed_pieces[q].id == piece_id) { at = q; break; }
+    }
+    if (at < 0) return;
+    for (int q = at; q + 1 < board->pocketed_count; q++) board->pocketed_pieces[q] = board->pocketed_pieces[q + 1];
+    board->pocketed_count--;
+    /* re-line every coin up in its pocket's corner, in the order it fell in */
+    int nth[4] = {0, 0, 0, 0};
+    for (int q = 0; q < board->pocketed_count; q++) {
+        int pk = board->pocketed_pieces[q].pocket_index;
+        if (pk < 0 || pk > 3) continue;
+        Vec2 pos = board_stash_position(pk, nth[pk]++);
+        board->pocketed_pieces[q].pocketed_position = pos;
+        int id = board->pocketed_pieces[q].id;
+        if (id < MAX_PIECES) board->pieces[id].pocketed_position = pos;
+    }
+}

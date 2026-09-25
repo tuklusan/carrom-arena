@@ -232,15 +232,20 @@ static ShotPlan arena_decide(Controller* self, const DecisionSnapshot* snap, PCG
     
     ShotPlan best_plan = impl->candidates[best_idx].plan;
     
-    // Apply imperfection
-    float aim_noise = self->profile.aim_noise_std * (pcg32_random_float(rng) * 2.0f - 1.0f);
-    float power_noise = self->profile.power_noise_std * (pcg32_random_float(rng) * 2.0f - 1.0f);
+    // Planning must not consume the seat's random stream (that isolation is a tested contract), so restore it.
+    rng_restore(rng, rng_snap);
+
+    // The imperfection must still differ from shot to shot: drawn from a COPY of the stream mixed with the number of
+    // strokes played so far. (It used to be drawn from the state that was restored every time, so a seat got exactly the
+    // same "random" error on every turn; with an unchanged board that meant the same missed shot forever.)
+    PCG32 noise_rng = *rng;
+    noise_rng.state ^= ((uint64_t)snap->game->shots_played + 1u) * 0x9E3779B97F4A7C15ULL;
+    (void)pcg32_random(&noise_rng);
+    float aim_noise = self->profile.aim_noise_std * (pcg32_random_float(&noise_rng) * 2.0f - 1.0f);
+    float power_noise = self->profile.power_noise_std * (pcg32_random_float(&noise_rng) * 2.0f - 1.0f);
     best_plan.aim_angle = math_wrap_angle(best_plan.aim_angle + aim_noise);
     best_plan.power = math_clamp(best_plan.power + power_noise, 0.0f, 1.0f);
-    best_plan.rng_draw = pcg32_random(rng);
-    
-    // Step 9: Restore RNG state
-    rng_restore(rng, rng_snap);
+    best_plan.rng_draw = pcg32_random(&noise_rng);
     
     // Step 10: Validate and return
     if (!match_validate_shot(snap->game, &best_plan)) {

@@ -344,6 +344,19 @@ target_include_directories(test_audio_policy PRIVATE
 )
 add_test(NAME audio_policy_test COMMAND test_audio_policy)
 
+# Queen cover and board end rules
+add_executable(test_queen_rules
+    test_queen_rules.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_queen_rules)
+target_link_libraries(test_queen_rules carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_queen_rules PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME queen_rules_test COMMAND test_queen_rules)
+
 # Capture regression test (spawns carrom_arena binary in capture mode)
 
 # Catches: capture-mode hang (Gap-2 renderer rewrite regression)
@@ -372,3 +385,7 @@ target_include_directories(test_capture PRIVATE
 add_test(NAME capture_test COMMAND test_capture)
 set_tests_properties(capture_test PROPERTIES LABELS "regression" TIMEOUT 120)
 set_tests_properties(capture_test PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# Full AI-vs-AI boards must finish (guards against the endgame loop: stale positions, queen never returned, repeated misses)
+add_test(NAME selfplay_boards_finish COMMAND selfplay --seed 1 --seeds 2 --max-turns 120 --expect-finish)
+set_tests_properties(selfplay_boards_finish PROPERTIES TIMEOUT 600)

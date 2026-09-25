@@ -65,6 +65,8 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
     GameState* game = &outcome.next_game_state;
     MatchState* match = &outcome.next_match_state;
     
+    game->shots_played++;
+
     // Default turn decision
     outcome.turn_decision = TURN_ADVANCE;
     
@@ -176,70 +178,55 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
     // Opponent's pieces pocketed don't score for active player
     // (they're just removed from board)
     
-    // Queen handling (Article 16.1)
+    // Queen handling (ICF 92-101, simplified). The queen must be covered by pocketing one of the player's own coins in
+    // the same stroke or in the immediately following one. Otherwise the queen goes back to the centre circle: she is
+    // never left off the board for good (that used to make a board impossible to finish).
+    bool own_pocketed_now = (active_team == TEAM_WHITE && white_pocketed > 0) || (active_team == TEAM_BLACK && black_pocketed > 0);
+    bool foul_now = (facts->fouls != FOUL_NONE);
+    bool queen_was_pending = (facts->queen_state == QUEEN_STATE_POCKETED_NO_COVER);
+    int queen_action = 0;   /* 1 covered, 2 pocketed and waiting for the cover stroke, 3 returned to the centre */
     if (queen_pocketed) {
-        // Check if queen was covered (queen was previously pocketed without cover, 
-        // and now active player pockets own piece)
-        // OR queen pocketed this shot AND own piece pocketed same shot (cover)
-        bool queen_covered = false;
-        
-        // Case 1: Queen was in POCKETED_NO_COVER state and this shot covers it
-        if (facts->queen_state == QUEEN_STATE_POCKETED_NO_COVER) {
-            // Active player must pocket their own piece to cover
-            if ((active_team == TEAM_WHITE && white_pocketed > 0) ||
-                (active_team == TEAM_BLACK && black_pocketed > 0)) {
-                queen_covered = true;
-            }
-        }
-        // Case 2: Queen pocketed this shot AND own piece pocketed same shot (instant cover)
-        else {
-            if ((active_team == TEAM_WHITE && white_pocketed > 0) ||
-                (active_team == TEAM_BLACK && black_pocketed > 0)) {
-                queen_covered = true;
-            }
-        }
-        
-        if (queen_covered) {
-            // Queen covered - 3 points to active team
-            if (active_team == TEAM_WHITE) {
-                white_score_delta += 3;
-            } else {
-                black_score_delta += 3;
-            }
-            
-            game->board.queen_state = QUEEN_STATE_COVERED;
-            game->board.queen_on_board = false;
-            game->board.queen_dues = 0;
-            
-            if (outcome.event_count < 16) {
-                outcome.events[outcome.event_count++] = (GameEvent){
-                    .type = EVENT_QUEEN_COVERED,
-                    .tick = game->consecutive_turns,
-                    .seat = facts->active_seat,
-                    .team = active_team,
-                    .score_delta_white = (active_team == TEAM_WHITE) ? 3 : 0,
-                    .score_delta_black = (active_team == TEAM_BLACK) ? 3 : 0,
-                    .turn_decision = outcome.turn_decision
-                };
-            }
-        } else {
-            // Queen pocketed but not covered - goes to due, returns to center
-            game->board.queen_state = QUEEN_STATE_POCKETED_NO_COVER;
-            game->board.queen_on_board = false;
-            game->board.queen_dues = 1;
-            
-            if (outcome.event_count < 16) {
-                outcome.events[outcome.event_count++] = (GameEvent){
-                    .type = EVENT_QUEEN_POCKETED,
-                    .tick = game->consecutive_turns,
-                    .seat = facts->active_seat,
-                    .team = active_team,
-                    .turn_decision = outcome.turn_decision
-                };
-            }
-        }
+        if (own_pocketed_now && !foul_now) queen_action = 1;
+        else if (!foul_now) queen_action = 2;
+        else queen_action = 3;
+    } else if (queen_was_pending) {
+        queen_action = (own_pocketed_now && !foul_now) ? 1 : 3;
     }
-    
+
+    if (queen_action == 1) {
+        if (active_team == TEAM_WHITE) white_score_delta += 3; else black_score_delta += 3;
+        game->board.queen_state = QUEEN_STATE_COVERED;
+        game->board.queen_on_board = false;
+        game->board.queen_dues = 0;
+        if (outcome.event_count < 16) {
+            outcome.events[outcome.event_count++] = (GameEvent){
+                .type = EVENT_QUEEN_COVERED, .tick = game->consecutive_turns, .seat = facts->active_seat, .team = active_team,
+                .score_delta_white = (active_team == TEAM_WHITE) ? 3 : 0, .score_delta_black = (active_team == TEAM_BLACK) ? 3 : 0,
+                .turn_decision = outcome.turn_decision
+            };
+        }
+    } else if (queen_action == 2) {
+        game->board.queen_state = QUEEN_STATE_POCKETED_NO_COVER;
+        game->board.queen_on_board = false;
+        game->board.queen_dues = 1;
+        if (outcome.event_count < 16) {
+            outcome.events[outcome.event_count++] = (GameEvent){
+                .type = EVENT_QUEEN_POCKETED, .tick = game->consecutive_turns, .seat = facts->active_seat, .team = active_team,
+                .turn_decision = outcome.turn_decision
+            };
+        }
+    } else if (queen_action == 3) {
+        game->board.queen_state = QUEEN_STATE_ON_BOARD;
+        game->board.queen_on_board = true;
+        game->board.queen_dues = 0;
+        PieceState* q = &game->board.pieces[QUEEN_ID];
+        q->pocketed = false;
+        q->on_board = true;
+        q->position = (Vec2){ 0.0f, 0.0f };
+        q->velocity = (Vec2){ 0.0f, 0.0f };
+        board_remove_from_stash(&game->board, QUEEN_ID);
+    }
+
     // Apply score deltas
     outcome.score_delta.white = white_score_delta;
     outcome.score_delta.black = black_score_delta;
@@ -299,7 +286,8 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
     
     bool has_foul = (facts->fouls != FOUL_NONE);
     
-    if ((pocketed_own || queen_covered_this_turn) && !has_foul) {
+    bool queen_cover_attempt = (game->board.queen_state == QUEEN_STATE_POCKETED_NO_COVER);   /* queen just pocketed: one more stroke to cover her */
+    if ((pocketed_own || queen_covered_this_turn || queen_cover_attempt) && !has_foul) {
         outcome.turn_decision = TURN_CONTINUE;
         game->consecutive_turns++;
     } else {
@@ -327,13 +315,20 @@ RulesOutcome rules_resolve(const MatchState* prior_match, const GameState* prior
     // Only trigger if exactly one color is cleared (XOR) and queen is resolved
     bool white_cleared_now = (game->board.white_on_board == 0);
     bool black_cleared_now = (game->board.black_on_board == 0);
+
     bool exactly_one_cleared = (white_cleared_now != black_cleared_now);  // XOR
-    bool queen_resolved = (game->board.queen_state == QUEEN_STATE_COVERED || game->board.queen_state == QUEEN_STATE_ON_BOARD);
+    bool queen_resolved = true;   /* ICF 52a: whoever pockets all his coins first wins the board; only the queen bonus depends on the cover */
     // Queen must be covered if it was pocketed, or still on board
     
     bool white_cleared_this_shot = (game->board.white_on_board == 0 && prior_white_on_board > 0);
     bool black_cleared_this_shot = (game->board.black_on_board == 0 && prior_black_on_board > 0);
     bool cleared_this_shot = (white_cleared_this_shot || black_cleared_this_shot);
+    if (white_cleared_this_shot && black_cleared_this_shot) {
+        /* both colours gone in one stroke: the player who made the stroke gets the board */
+        white_cleared_now = (active_team == TEAM_WHITE);
+        black_cleared_now = !white_cleared_now;
+        exactly_one_cleared = true;
+    }
     bool valid_over_state = (exactly_one_cleared && queen_resolved);
     
     if ((cleared_this_shot || valid_over_state) && queen_resolved) {

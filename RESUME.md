@@ -24,6 +24,19 @@
 - Motion: players and the striker never teleport; they glide (2.0 board widths/s) between turns; the thinking slide is a continuous triangle wave; the striker is placed at the planned spot when thinking ends so the drawn striker, the aim line and the launch agree.
 - Aim line: length proportional to power (full power = 0.55 board width) with a visible arrowhead (drawn in screen space; raylib culls one triangle winding so both are drawn).
 
+## Endgame loop (fixed 2026-09-25)
+Symptom: late in a board every player repeated the same shot and nothing moved. Three root causes, all fixed:
+1. `game.board.pieces[i].position` was never updated after a shot, so the AI and the shot planner kept aiming at the INITIAL
+   rack layout (now `board_apply_final_positions` after every resolve).
+2. A queen pocketed without cover stayed off the board forever (`QUEEN_STATE_POCKETED_NO_COVER` never resolved) and the board
+   could not end. Now (ICF 92-101, simplified): the player gets the next stroke to cover her, otherwise she returns to the
+   centre; a player who clears his coins wins the board whatever the queen did (ICF 52a).
+3. The AI imperfection was drawn from an RNG state that was restored every turn, so a seat repeated exactly the same error;
+   now it is mixed with `game.shots_played`. Also: shots that touch nothing are penalised in `shot_evaluator.c`.
+Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps the AI's view at a stall; ctest
+`selfplay_boards_finish` guards it. Not implemented yet: due coins are counted but never physically returned after a striker
+pocket (a striker pocket is also not yet flagged as a foul: `FOUL_STRIKER_POCKETED` is never set).
+
 ## Open items
 - Blank frames in `--mode=capture` (see above).
 - Aim preview holds 5 s per turn; the operator may want it shorter.

@@ -445,6 +445,8 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Apply outcome to match and game states
     ctx->game = outcome.next_game_state;
     ctx->match = outcome.next_match_state;
+    // The coins have moved: the game state (what the AI plans from) must show where they really are now
+    board_apply_final_positions(&ctx->game.board, result->final_positions);
 
     FLIGHT_EVENT(ctx, FLIGHT_EV_SHOT_END, (int)outcome.turn_decision, result->pocketed_count, result->striker_pocketed ? 1 : 0, result->sim_time);
 
@@ -462,6 +464,10 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Fresh striker for the next turn (a pocketed striker is a foul, but the next player still gets one)
     striker_state_init(&ctx->game.board.striker, ctx->game.turn_seat);
     board_place_striker_on_baseline(&ctx->game.board.striker, ctx->game.turn_seat);
+    // The rules may have put the queen back on the board (she was not covered): put her back in the physics world too
+    if (ctx->game.board.pieces[QUEEN_ID].on_board && physics_is_piece_pocketed(ctx->physics, QUEEN_ID)) {
+        physics_sync_from_board(ctx->physics, &ctx->game.board, ctx->game.turn_seat);
+    }
 
     // Set phase for next turn based on turn decision
     switch (outcome.turn_decision) {

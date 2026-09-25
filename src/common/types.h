@@ -175,6 +175,7 @@ typedef struct {
     Seat turn_seat;
     uint8_t consecutive_turns;
     BoardState board;
+    uint32_t shots_played;        // strokes played so far this match (varies the AI imperfection from shot to shot)
     ShotPlan computed_shot_plan;  // Shot plan computed during THINKING, used in AIM_PREVIEW
     bool computed_shot_valid;     // Whether computed_shot_plan is valid
     float aim_preview_progress;   // 0.0 to 1.0 progress of figure slide animation during AIM_PREVIEW
