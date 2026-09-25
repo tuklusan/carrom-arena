@@ -1,5 +1,7 @@
 # Carrom Arena
 
+*Based on original work by Supratim Sanyal of SANYALnet Labs.*
+
 > **⚠️ UNDER DEVELOPMENT** — This project is in active development. APIs, behaviors, and interfaces may change without notice.
 
 **A graphical, cross-platform, four-player autonomous Carrom simulation**  
@@ -270,14 +272,17 @@ Based on **International Carrom Federation Laws of Carrom** (https://www.carrom.
 
 ## License
 
-Carrom Arena is released under the **MIT License**.  
-Third-party dependencies:
-- raylib 5.5 – zlib/libpng
-- Box2D v3.1.0 – MIT
-- Unity Test Framework v2.6.0 – MIT
-- PCG32 – Public Domain / MIT
+Carrom Arena is released under the **SANYALnet Labs Non-Commercial License** (see `LICENSE`): free use, modification and distribution for non-commercial purposes only, with attribution: *Based on original work by Supratim Sanyal of SANYALnet Labs.*
 
-See `LICENSES/` for full texts.
+Versions released up to and including tag `beta-0.0.6` were published under the MIT License and remain available under those terms (Section 9 of the new license: each version is governed by the license it shipped with).
+
+Third-party material is not relicensed by `LICENSE` and keeps its own license:
+- raylib 5.5 - zlib/libpng
+- Box2D v3.1.0 - MIT
+- Unity Test Framework v2.6.0 - MIT
+- PCG32 - Public Domain / MIT
+
+**Decision-engine acknowledgement.** The shot-planning strategy (direct shots, cut shots, rebound shots and double shots, tried in that order) follows the public description of [mehtanihar/carrom-agent](https://github.com/mehtanihar/carrom-agent), which is licensed under GPL-3.0. Carrom Arena's planner (`src/ai/geometry_planner.c`) is an independent implementation in C written from that description and from plane geometry (ghost-ball aiming, wall mirror images); no source code, constants or data from carrom-agent are included, so that project's GPL-3.0 terms do not apply to this code. Please see carrom-agent for the original work.
 
 ---
 

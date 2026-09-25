@@ -278,6 +278,20 @@ target_include_directories(test_striker_realism PRIVATE
 )
 add_test(NAME striker_realism_test COMMAND test_striker_realism)
 
+# Geometric shot planner
+add_executable(test_geometry_planner
+    test_geometry_planner.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_geometry_planner)
+target_link_libraries(test_geometry_planner carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_geometry_planner PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/ai
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME geometry_planner_test COMMAND test_geometry_planner)
+
 # Capture regression test (spawns carrom_arena binary in capture mode)
 
 # Catches: capture-mode hang (Gap-2 renderer rewrite regression)

@@ -454,7 +454,7 @@ void physics_place_striker(PhysicsWorld* pw, Seat seat, Vec2 placement) {
 }
 
 void physics_apply_shot(PhysicsWorld* pw, float aim_angle, float power) {
-    const float MAX_SPEED = 5.0f;
+    const float MAX_SPEED = STRIKER_MAX_SPEED;
     float speed = power * MAX_SPEED;
     
     Vec2 dir = math_vec2_from_angle(aim_angle);

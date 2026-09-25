@@ -1,3 +1,4 @@
+#include <math.h>
 #include "controller.h"
 #include "common/types.h"
 #include "common/vecmath.h"
@@ -86,9 +87,20 @@ ShotPlan controller_fallback_shot(Controller* self, const DecisionSnapshot* snap
         }
     }
     
-    // Aim toward center of board
-    plan.aim_angle = 0.0f;
-    plan.power = 0.3f;
+    // Aim at the nearest own piece (or the centre) so the fallback still plays a sensible advance shot
+    Team team = (snap->active_seat == SEAT_NORTH || snap->active_seat == SEAT_SOUTH) ? TEAM_WHITE : TEAM_BLACK;
+    PieceColor own = (team == TEAM_WHITE) ? PIECE_WHITE : PIECE_BLACK;
+    Vec2 aim_at = {0.0f, 0.0f};
+    float best_d = 1e9f;
+    for (int i = 0; i < MAX_PIECES && snap->board; i++) {
+        const PieceState* pc = &snap->board->pieces[i];
+        if (!pc->on_board || pc->pocketed || pc->color != own) continue;
+        float dx = pc->position.x - plan.placement.x, dy = pc->position.y - plan.placement.y;
+        float d = sqrtf(dx * dx + dy * dy);
+        if (d < best_d) { best_d = d; aim_at = pc->position; }
+    }
+    plan.aim_angle = atan2f(aim_at.y - plan.placement.y, aim_at.x - plan.placement.x);
+    plan.power = 0.5f;
     
     return plan;
 }
@@ -170,7 +182,8 @@ static ShotPlan arena_decide(Controller* self, const DecisionSnapshot* snap, PCG
     RNGSnapshot rng_snap = rng_snapshot(rng);
     
     // Get AI budget and max candidates from snapshot (with defaults)
-    double ai_budget_seconds = (snap->ai_budget_ms > 0) ? (snap->ai_budget_ms / 1000.0) : 0.15;  // 150ms default (R5)
+    double ai_budget_seconds = (snap->ai_budget_ms > 0) ? (snap->ai_budget_ms / 1000.0) : 0.15;
+    if (ai_budget_seconds < 0.35) ai_budget_seconds = 0.35;  // the geometric engine needs room to verify its best shots by simulation
     int max_candidates = (snap->max_candidates > 0) ? snap->max_candidates : MAX_CANDIDATES;
     
     // Step 1-2: Generate candidates (placements + tactical candidates)
@@ -202,6 +215,10 @@ static ShotPlan arena_decide(Controller* self, const DecisionSnapshot* snap, PCG
     
     // Step 6: Score candidates
     shot_evaluator_score_candidates(impl->candidates, impl->candidate_count, snap, &self->profile);
+    // Geometric priority as a tie-break (direct > cut > bank > advance), well below the value of one pocketed piece
+    for (int i = 0; i < impl->candidate_count; i++) {
+        if (impl->candidates[i].sim_valid) impl->candidates[i].score += 0.004f * impl->candidates[i].geom_score;
+    }
     
     // Step 7: Apply seeded imperfection to best candidate
     int best_idx = 0;

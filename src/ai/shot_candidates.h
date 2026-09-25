@@ -16,6 +16,7 @@ typedef struct {
     ShotPlan plan;
     float score;
     TacticType tactic;
+    float geom_score;   // geometric priority from the planner (DIRECT > CUT > BANK > BREAK)
     // Scratch simulation result
     ShotResult sim_result;
     bool sim_valid;
@@ -26,9 +27,6 @@ int shot_candidates_generate(const DecisionSnapshot* snap, ShotCandidate* out_ca
 
 /* Generate legal striker placements for a seat */
 int shot_candidates_placements(Seat seat, Vec2* out_placements, int max_placements);
-
-/* Generate tactical candidates for a placement */
-int shot_candidates_tactical(const DecisionSnapshot* snap, Vec2 placement, ShotCandidate* out_candidates, int max_candidates, PCG32* rng);
 
 /* Generate aim/power variants for a tactical candidate */
 int shot_candidates_variants(const DecisionSnapshot* snap, ShotCandidate* base, ShotCandidate* out_variants, int max_variants, PCG32* rng);

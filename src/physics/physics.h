@@ -15,6 +15,7 @@ extern "C" {
  * Fixed timestep 1/120s, accumulator with max 4 substeps
  * --------------------------------------------------------------------------- */
 
+#define STRIKER_MAX_SPEED 5.0f   // launch speed at power 1.0, board units/s (1 u = 74 cm, so 3.7 m/s)
 #define PHYSICS_HZ 120
 #define PHYSICS_DT (1.0f / PHYSICS_HZ)
 #define MAX_SUBSTEPS 40

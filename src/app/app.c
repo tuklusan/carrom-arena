@@ -269,6 +269,10 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     ctx->pockets_registered = 0;
     ctx->next_progress_time = 0.0f;
 
+    // Fresh striker for the next turn (a pocketed striker is a foul, but the next player still gets one)
+    striker_state_init(&ctx->game.board.striker, ctx->game.turn_seat);
+    board_place_striker_on_baseline(&ctx->game.board.striker, ctx->game.turn_seat);
+
     // Set phase for next turn based on turn decision
     switch (outcome.turn_decision) {
         case TURN_CONTINUE:
@@ -956,4 +960,6 @@ void app_print_usage(const char* prog_name) {
 
 void app_print_version(void) {
     printf("Carrom Arena v1.0.0 (Build: %s)\n", BUILD_ID);
+    printf("Based on original work by Supratim Sanyal of SANYALnet Labs.\n");
+    printf("SANYALnet Labs Non-Commercial License; see the LICENSE file.\n");
 }

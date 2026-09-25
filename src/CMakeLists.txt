@@ -13,6 +13,7 @@ add_library(carrom_core
     ai/baseline_controller.c
     ai/arena_controller.c
     ai/shot_candidates.c
+    ai/geometry_planner.c
     ai/shot_evaluator.c
     telemetry/trace.c
     platform/platform.c
