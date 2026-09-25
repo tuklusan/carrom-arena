@@ -6,6 +6,7 @@
 #include "common/vecmath.h"
 #include "common/types.h"
 #include <raylib.h>
+#include <rlgl.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -141,24 +142,47 @@ static void draw_background(int sw, int sh, Team turn_team, double t) {
 /* -----------------------------------------------------------------------------
  * Scoreboard (top left) and radio button (bottom right)
  * --------------------------------------------------------------------------- */
-static Rectangle radio_rect(int sw, int sh) {
-    /* just above the horizontal rule of the footer (title band + body + 5 px, rounded up to even, see draw_footer_band) */
-    int rule_y = (sh - (int)((float)sh * 0.055f)) + 5;
-    if (rule_y % 2 != 0) rule_y++;
-    return (Rectangle){ (float)(sw - 58), (float)(rule_y - 32), 50.0f, 28.0f };
+/* The scoreboard and the radio button scale with the board, so a resized window keeps them in proportion */
+static float ui_scale(int sw, int sh) {
+    Layout L;
+    layout_compute(sw, sh, &L);
+    float s = (float)L.board_size / 372.0f;
+    return (s < 0.9f) ? 0.9f : (s > 2.4f ? 2.4f : s);
 }
 
-static void draw_scoreboard(const Renderer* r) {
-    const int fs = 11;
-    int x = 8, y = 13;
-    DrawRectangle(x, y + 1, 8, 8, THEME_RED);
-    DrawText(TextFormat("RED  %d pts  %dG", r->score_pts[0], r->score_games[0]), x + 12, y, fs, WHITE);
-    DrawRectangle(x, y + 14, 8, 8, THEME_BLUE);
-    DrawText(TextFormat("BLUE %d pts  %dG", r->score_pts[1], r->score_games[1]), x + 12, y + 13, fs, WHITE);
+static Rectangle radio_rect(int sw, int sh) {
+    /* just above the horizontal rule of the footer (title band + body + 5 px, rounded up to even, see draw_footer_band) */
+    float s = ui_scale(sw, sh);
+    int rule_y = (sh - (int)((float)sh * 0.055f)) + 5;
+    if (rule_y % 2 != 0) rule_y++;
+    return (Rectangle){ (float)sw - 8.0f * s - 50.0f * s, (float)rule_y - 4.0f * s - 28.0f * s, 50.0f * s, 28.0f * s };
+}
+
+#define SCOREBOARD_FONT 11
+static int scoreboard_width(const Renderer* r, int sw, int sh) {
+    (void)r;
+    return (int)((float)(12 + MeasureText("BLUE 9999 pts  99G", SCOREBOARD_FONT)) * ui_scale(sw, sh)) + 8;
+}
+
+static void draw_scoreboard(const Renderer* r, int sw, int sh) {
+    float s = ui_scale(sw, sh);
+    rlPushMatrix();
+    rlTranslatef(8.0f * s, 13.0f * s, 0.0f);
+    rlScalef(s, s, 1.0f);
+    DrawRectangle(0, 1, 8, 8, THEME_RED);
+    DrawText(TextFormat("RED  %d pts  %dG", r->score_pts[0], r->score_games[0]), 12, 0, SCOREBOARD_FONT, WHITE);
+    DrawRectangle(0, 15, 8, 8, THEME_BLUE);
+    DrawText(TextFormat("BLUE %d pts  %dG", r->score_pts[1], r->score_games[1]), 12, 13, SCOREBOARD_FONT, WHITE);
+    rlPopMatrix();
 }
 
 static void draw_radio_button(const Renderer* r, int sw, int sh) {
-    Rectangle R = radio_rect(sw, sh);
+    Rectangle placed = radio_rect(sw, sh);
+    float s = ui_scale(sw, sh);
+    rlPushMatrix();
+    rlTranslatef(placed.x, placed.y, 0.0f);
+    rlScalef(s, s, 1.0f);
+    Rectangle R = { 0.0f, 0.0f, 50.0f, 28.0f };
     Color panel = { 24, 26, 36, 235 }, edge = { 170, 176, 190, 255 }, dim = { 90, 96, 110, 255 };
     DrawRectangleRounded(R, 0.3f, 6, panel);
     DrawRectangleRoundedLinesEx(R, 0.3f, 6, 1.0f, edge);
@@ -185,6 +209,7 @@ static void draw_radio_button(const Renderer* r, int sw, int sh) {
         DrawTriangle(p1, p2, p3, (Color){ 20, 20, 28, 255 });
         DrawTriangle(p1, p3, p2, (Color){ 20, 20, 28, 255 });
     }
+    rlPopMatrix();
 }
 
 void renderer_set_scoreboard(Renderer* r, int red_points, int blue_points, int red_games, int blue_games) {
@@ -210,9 +235,11 @@ static void draw_title_bar(Renderer* r, const Layout* L) {
     DrawLineEx((Vector2){ 10, (float)title_bar_y }, (Vector2){ (float)(L->sw - 10), (float)title_bar_y }, 2, (Color){ 100, 100, 120, 255 });
     DrawLineEx((Vector2){ 10, (float)(title_bar_y + 1) }, (Vector2){ (float)(L->sw - 10), (float)(title_bar_y + 1) }, 1, (Color){ 100, 100, 120, 255 });
     
-    int title_width = MeasureText(TITLE_TEXT, L->font_size_title);
-    int title_x = (L->sw - title_width) / 2;
-    DrawText(TITLE_TEXT, title_x, title_bar_y + 4, L->font_size_title, WHITE);
+    int fs = L->font_size_title;
+    int room = L->sw - 2 * scoreboard_width(r, L->sw, L->sh);   /* the title is centred: the scoreboard's width is lost on both sides */
+    while (fs > 10 && MeasureText(TITLE_TEXT, fs) > room) fs--;
+    int title_width = MeasureText(TITLE_TEXT, fs);
+    if (title_width <= room) DrawText(TITLE_TEXT, (L->sw - title_width) / 2, title_bar_y + 4, fs, WHITE);
 }
 
 static void draw_footer_band(Renderer* r, const Layout* L) {
@@ -369,7 +396,7 @@ void renderer_begin(Renderer* r) {
     
     draw_title_bar(r, L);
     draw_footer_band(r, L);
-    draw_scoreboard(r);
+    draw_scoreboard(r, sw, sh);
     if (r->radio_available) draw_radio_button(r, sw, sh);
 }
 
