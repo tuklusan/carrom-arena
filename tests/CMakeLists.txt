@@ -265,6 +265,19 @@ target_include_directories(test_pocket_visibility PRIVATE
 )
 add_test(NAME pocket_visibility_test COMMAND test_pocket_visibility)
 
+# Striker realism (real-time speed, ICF 3.5-run smoothness)
+add_executable(test_striker_realism
+    test_striker_realism.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_striker_realism)
+target_link_libraries(test_striker_realism carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_striker_realism PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME striker_realism_test COMMAND test_striker_realism)
+
 # Capture regression test (spawns carrom_arena binary in capture mode)
 
 # Catches: capture-mode hang (Gap-2 renderer rewrite regression)

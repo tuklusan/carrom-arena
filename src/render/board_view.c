@@ -184,7 +184,7 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
  * tracked position and glide toward wherever they should be at VISUAL_SLIDE_SPEED (board units
  * per wall-clock second); during a shot the striker simply follows the physics body.
  * --------------------------------------------------------------------------- */
-#define VISUAL_SLIDE_SPEED 1.2f
+#define VISUAL_SLIDE_SPEED 2.0f
 
 typedef struct {
     bool striker_valid;
@@ -215,20 +215,11 @@ static Vec2 approach_v(Vec2 cur, Vec2 target, float max_step) {
  * Mirrors the logic in effects.c:draw_thinking_striker()
  */
 static float compute_thinking_striker_baseline_coord(Seat seat, double wall_time) {
-    // Slide back and forth along baseline: one full pass every 1.5s
-    float slide_period = 1.5f;
+    // Triangle wave along the baseline (continuous, no jump): one full there-and-back every 2.4 s
+    float slide_period = 2.4f;
     float slide_phase = my_fmodf((float)wall_time, slide_period) / slide_period;  // 0 to 1
-    // Map to ping-pong: 0->1->0
-    float slide_t = slide_phase <= 0.5f ? slide_phase * 2.0f : (1.0f - slide_phase) * 2.0f;
-    
-    // Baseline limits in normalized coords
-    float min_offset = BASELINE_MIN_OFFSET;
-    float max_offset = BASELINE_MAX_OFFSET;
-    float slide_offset = min_offset + slide_t * (max_offset - min_offset);
-    
-    // Alternate direction each half-period for visual variety
-    if (slide_phase > 0.5f) slide_offset = max_offset - slide_t * (max_offset - min_offset);
-    
+    float slide_t = slide_phase <= 0.5f ? slide_phase * 2.0f : (1.0f - slide_phase) * 2.0f;  // 0->1->0
+    float slide_offset = BASELINE_MIN_OFFSET + slide_t * (BASELINE_MAX_OFFSET - BASELINE_MIN_OFFSET);
     return slide_offset;
 }
 
@@ -286,7 +277,10 @@ static void draw_aim_preview_line(Viewport vp, const GameState* game, const Layo
     // Draw arrowhead at far end
     // Arrowhead: triangle pointing along line direction
     float arrow_size = my_fmaxf(14.0f, thickness * 4.5f);
-    Vec2 dir = { cosf(aim_angle), sinf(aim_angle) };
+    /* Direction in SCREEN space (world y is flipped on screen), so the head points along the drawn line */
+    float sdx = end_screen.x - start_screen.x, sdy = end_screen.y - start_screen.y;
+    float slen = sqrtf(sdx * sdx + sdy * sdy);
+    Vec2 dir = (slen > 1e-3f) ? (Vec2){ sdx / slen, sdy / slen } : (Vec2){ 1.0f, 0.0f };
     Vec2 perp = { -dir.y, dir.x };
     
     Vec2 arrow_tip = end_screen;
