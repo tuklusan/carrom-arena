@@ -2,6 +2,7 @@
 #include "platform/platform.h"
 #include "board_view.h"
 #include "effects.h"
+#include "theme.h"
 #include "common/vecmath.h"
 #include "common/types.h"
 #include <raylib.h>
@@ -30,6 +31,9 @@ struct Renderer {
     char capture_dir[256];
     Layout current_layout;
     Team turn_team;
+    int score_pts[2], score_games[2];   /* red, blue: points and games won, kept across games */
+    bool radio_available, radio_playing;
+    bool radio_clicked;
 };
 
 #define GAME_BACKGROUND (Color){ 84, 112, 140, 255 }   /* steel blue: dark pieces and figures stand out */
@@ -99,8 +103,8 @@ void layout_compute(int sw, int sh, Layout* out) {
  * of the team whose turn it is; the subdued lines use the other team's colour. Slowly scrolling. */
 static void draw_background(int sw, int sh, Team turn_team, double t) {
     DrawRectangleGradientV(0, 0, sw, sh, (Color){ 36, 52, 84, 255 }, (Color){ 66, 92, 128, 255 });
-    Color bright = (turn_team == TEAM_WHITE) ? (Color){ 110, 225, 255, 255 } : (Color){ 255, 160, 70, 255 };
-    Color subdued = (turn_team == TEAM_WHITE) ? (Color){ 255, 160, 70, 255 } : (Color){ 110, 225, 255, 255 };
+    Color bright = (turn_team == TEAM_WHITE) ? (Color){ 255, 110, 104, 255 } : (Color){ 110, 160, 255, 255 };
+    Color subdued = (turn_team == TEAM_WHITE) ? (Color){ 110, 160, 255, 255 } : (Color){ 255, 110, 104, 255 };
     float horizon = (float)sh * 0.5f;
     float vx = (float)sw * 0.5f;
 
@@ -132,6 +136,68 @@ static void draw_background(int sw, int sh, Team turn_team, double t) {
     Color glow = bright;
     glow.a = 90;
     DrawLineEx((Vector2){ 0.0f, horizon }, (Vector2){ (float)sw, horizon }, 2.0f, glow);
+}
+
+/* -----------------------------------------------------------------------------
+ * Scoreboard (top left) and radio button (bottom right)
+ * --------------------------------------------------------------------------- */
+static Rectangle radio_rect(int sw, int sh) {
+    return (Rectangle){ (float)(sw - 58), (float)(sh - 34), 50.0f, 28.0f };
+}
+
+static void draw_scoreboard(const Renderer* r) {
+    const int fs = 11;
+    int x = 8, y = 13;
+    DrawRectangle(x, y + 1, 8, 8, THEME_RED);
+    DrawText(TextFormat("RED  %d pts  %dG", r->score_pts[0], r->score_games[0]), x + 12, y, fs, WHITE);
+    DrawRectangle(x, y + 14, 8, 8, THEME_BLUE);
+    DrawText(TextFormat("BLUE %d pts  %dG", r->score_pts[1], r->score_games[1]), x + 12, y + 13, fs, WHITE);
+}
+
+static void draw_radio_button(const Renderer* r, int sw, int sh) {
+    Rectangle R = radio_rect(sw, sh);
+    Color panel = { 24, 26, 36, 235 }, edge = { 170, 176, 190, 255 }, dim = { 90, 96, 110, 255 };
+    DrawRectangleRounded(R, 0.3f, 6, panel);
+    DrawRectangleRoundedLinesEx(R, 0.3f, 6, 1.0f, edge);
+    /* the radio: body, speaker grille, dial, antenna */
+    Rectangle body = { R.x + 5, R.y + 9, 25, 15 };
+    DrawRectangleRounded(body, 0.25f, 4, (Color){ 74, 80, 96, 255 });
+    DrawRectangleRoundedLinesEx(body, 0.25f, 4, 1.0f, edge);
+    DrawCircle((int)(body.x + 8), (int)(body.y + 8), 5.0f, (Color){ 20, 22, 30, 255 });
+    DrawCircleLines((int)(body.x + 8), (int)(body.y + 8), 5.0f, dim);
+    DrawCircle((int)(body.x + 8), (int)(body.y + 8), 1.5f, dim);
+    DrawCircle((int)(body.x + 19), (int)(body.y + 5), 2.0f, r->radio_playing ? (Color){ 255, 210, 60, 255 } : dim);
+    DrawLine((int)(body.x + 19), (int)(body.y + 10), (int)(body.x + 22), (int)(body.y + 10), dim);
+    DrawLine((int)(body.x + 19), (int)(body.y + 12), (int)(body.x + 22), (int)(body.y + 12), dim);
+    DrawLineEx((Vector2){ body.x + 18, body.y }, (Vector2){ body.x + 27, body.y - 7 }, 1.5f, edge);
+    /* the button: pause bars while playing, a play triangle when paused (or when the stream is down) */
+    Vector2 c = { R.x + R.width - 13, R.y + R.height * 0.5f };
+    DrawCircleV(c, 10.0f, r->radio_playing ? (Color){ 255, 210, 60, 255 } : (Color){ 60, 200, 110, 255 });
+    DrawCircleLines((int)c.x, (int)c.y, 10.0f, (Color){ 20, 20, 28, 255 });
+    if (r->radio_playing) {
+        DrawRectangle((int)c.x - 4, (int)c.y - 4, 3, 8, (Color){ 20, 20, 28, 255 });
+        DrawRectangle((int)c.x + 1, (int)c.y - 4, 3, 8, (Color){ 20, 20, 28, 255 });
+    } else {
+        Vector2 p1 = { c.x - 3, c.y - 5 }, p2 = { c.x - 3, c.y + 5 }, p3 = { c.x + 5, c.y };
+        DrawTriangle(p1, p2, p3, (Color){ 20, 20, 28, 255 });
+        DrawTriangle(p1, p3, p2, (Color){ 20, 20, 28, 255 });
+    }
+}
+
+void renderer_set_scoreboard(Renderer* r, int red_points, int blue_points, int red_games, int blue_games) {
+    r->score_pts[0] = red_points;  r->score_pts[1] = blue_points;
+    r->score_games[0] = red_games; r->score_games[1] = blue_games;
+}
+
+void renderer_set_radio(Renderer* r, bool available, bool playing) {
+    r->radio_available = available;
+    r->radio_playing = playing;
+}
+
+bool renderer_radio_clicked(Renderer* r) {
+    bool c = r->radio_clicked;
+    r->radio_clicked = false;
+    return c;
 }
 
 static void draw_title_bar(Renderer* r, const Layout* L) {
@@ -225,6 +291,10 @@ void renderer_poll_events(Renderer* r) {
     if (IsKeyPressed(KEY_M)) {
         audio_toggle_mute();
     }
+    if (r->radio_available && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        Rectangle R = radio_rect(GetScreenWidth(), GetScreenHeight());
+        if (CheckCollisionPointRec(GetMousePosition(), R)) r->radio_clicked = true;
+    }
     if (IsKeyPressed(KEY_SPACE)) {
         r->paused = !r->paused;
     }
@@ -296,6 +366,8 @@ void renderer_begin(Renderer* r) {
     
     draw_title_bar(r, L);
     draw_footer_band(r, L);
+    draw_scoreboard(r);
+    if (r->radio_available) draw_radio_button(r, sw, sh);
 }
 
 

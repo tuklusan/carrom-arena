@@ -55,6 +55,16 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
   All debug output goes to `traces/debug_<seed>.log` (`platform_diag_logf`; raylib's log is routed there too). Old trace/flight/log files
   are pruned to the newest 20 per kind at start-up.
 
+## Robots, teams, scoreboard, radio (2026-09-25 evening)
+- Players are robots (`draw_human_figure` in `board_view.c`, drawn from rotated boxes; antenna, eyes, arms, chest panel). The white team is RED and
+  the black team BLUE everywhere on screen (`render/theme.h`; the rules code keeps the names white/black). The queen is GREEN.
+- Scoreboard top left: red/blue points and games won, a running tally across boards AND games; in rendered mode a finished game or match now starts
+  the next one instead of quitting (other modes still stop).
+- Radio, bottom right: `audio/radio_stream.c` (worker thread: HTTPS via WinHTTP on Windows, `curl` on Linux/macOS dev hosts; minimp3 in
+  `third_party/minimp3`, CC0; mirrors eu/us/fr/fr2 .ah.fm/live tried in turn) + `audio/radio.c` (raylib AudioStream glue, prebuffer, underrun = silence).
+  Plays by default. The button pauses; a manual pause stays paused; a stream failure only silences it (button shows play) while it keeps reconnecting and
+  resumes by itself. `--no-radio` disables it; `radio_probe` tool checks network + decode; test `radio_stream_test` covers the reconnect logic with a fake source.
+
 ## Open items
 - Blank frames in `--mode=capture` (see above).
 - Aim preview holds 2 s per turn.

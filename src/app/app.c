@@ -4,6 +4,7 @@
 #include "common/rng.h"
 #include "common/strategy_profiles.h"
 #include "platform/platform.h"
+#include "audio/radio.h"
 #include "game/match.h"
 #include "game/board.h"
 #include "game/rules.h"
@@ -31,6 +32,8 @@
     GameState game;
     PhysicsWorld* physics;
     TraceWriter* trace;
+    int total_points[2];   // red (white team) and blue (black team) points, kept across boards and games
+    int total_games[2];    // games won
     struct { double at; float speed; } bounce[4];   // striker floor bounces still to be heard
     int bounce_count;
     AudioPolicy audio_policy;      // which sound / how loud / rate limiting
@@ -160,6 +163,7 @@ static void app_setup_renderer(AppContext* ctx) {
             ctx->renderer = renderer_create(ctx->config.window_width, ctx->config.window_height, 
                                              "Carrom Arena", false, false, ctx->config.debug_phase, ctx->playback_speed);
             audio_init();   /* silent no-op when there is no audio device */
+            if (!ctx->config.no_radio) radio_init();   /* AH.FM, playing by default */
         }
     } else if (ctx->config.mode == APP_MODE_CAPTURE) {
         // Capture mode always needs a renderer (windowed or hidden)
@@ -454,9 +458,29 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Resolve through rules engine
     RulesOutcome outcome = rules_resolve(&ctx->match, &ctx->game, &facts);
     
+    // The scoreboard keeps a running tally across boards and games
+    ctx->total_points[0] += outcome.score_delta.white;
+    ctx->total_points[1] += outcome.score_delta.black;
+    ctx->total_games[0] += (int)outcome.next_match_state.games_won_white - (int)ctx->match.games_won_white;
+    ctx->total_games[1] += (int)outcome.next_match_state.games_won_black - (int)ctx->match.games_won_black;
+
     // Apply outcome to match and game states
     ctx->game = outcome.next_game_state;
     ctx->match = outcome.next_match_state;
+
+    // The rendered arena never stops: after a game (or a whole match) the next one begins, and the scoreboard carries on
+    TurnDecision decision = outcome.turn_decision;
+    if (ctx->config.mode == APP_MODE_RENDERED && (decision == TURN_GAME_OVER || decision == TURN_MATCH_OVER)) {
+        ctx->match.boards_won_white = 0;
+        ctx->match.boards_won_black = 0;
+        if (decision == TURN_MATCH_OVER) {
+            ctx->match.games_won_white = 0;
+            ctx->match.games_won_black = 0;
+        }
+        ctx->game.scores.white = 0;
+        ctx->game.scores.black = 0;
+        decision = TURN_BOARD_OVER;
+    }
 
     FLIGHT_EVENT(ctx, FLIGHT_EV_SHOT_END, (int)outcome.turn_decision, result->pocketed_count, result->striker_pocketed ? 1 : 0, result->sim_time);
 
@@ -485,7 +509,7 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     }
 
     // Set phase for next turn based on turn decision
-    switch (outcome.turn_decision) {
+    switch (decision) {
         case TURN_CONTINUE:
         case TURN_ADVANCE:
             // Reset physics turn timer so settle detection starts fresh for next turn
@@ -536,7 +560,7 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     }
     
     // Start next board if needed
-    if (outcome.turn_decision == TURN_BOARD_OVER) {
+    if (decision == TURN_BOARD_OVER) {
         if (!match_is_over(&ctx->match)) {
             match_start_board(&ctx->match, &ctx->game, &ctx->rng);
             physics_sync_from_board(ctx->physics, &ctx->game.board, ctx->game.turn_seat);
@@ -622,6 +646,7 @@ int app_run_simulation(AppContext* ctx) {
             }
         }
         ctx->speed_paused = ctx->paused;
+        radio_update();   /* keeps the radio fed whatever the game is doing (also while paused) */
         
         if (!ctx->paused) {
             // Periodic debug output
@@ -856,6 +881,9 @@ int app_run_simulation(AppContext* ctx) {
         
         // Render (mode-specific)
         if (ctx->renderer) {
+            if (renderer_radio_clicked(ctx->renderer)) radio_toggle();
+            renderer_set_radio(ctx->renderer, !ctx->config.no_radio, radio_is_playing());   /* the button is shown even without an audio device (then it does nothing) */
+            renderer_set_scoreboard(ctx->renderer, ctx->total_points[0], ctx->total_points[1], ctx->total_games[0], ctx->total_games[1]);
             renderer_set_turn_team(ctx->renderer, ctx->game.active_player.team);
             renderer_begin(ctx->renderer);
             renderer_begin_board(ctx->renderer);
@@ -989,6 +1017,7 @@ void app_destroy(AppContext* ctx) {
         trace_close(ctx->trace);
     }
     
+    radio_shutdown();
     audio_shutdown();
     if (ctx->renderer) {
         renderer_destroy(ctx->renderer);
@@ -1149,6 +1178,8 @@ AppConfig app_parse_args(int argc, char* argv[]) {
             config.headless = true;
         } else if (strcmp(argv[i], "--debug-phase") == 0) {
             config.debug_phase = true;
+        } else if (strcmp(argv[i], "--no-radio") == 0) {
+            config.no_radio = true;
         }
     }
     
@@ -1174,6 +1205,7 @@ void app_print_usage(const char* prog_name) {
     printf("  --playback-speed <x>  Sim speed multiplier 0.05-4.0 (default: 1.0)\n");
     printf("  --ai-budget-ms <n>    AI decision time budget in ms (default: 150, range: 10-10000)\n");
     printf("  --verbose             Verbose logging\n");
+    printf("  --no-radio            Do not start the AH.FM internet radio\n");
     printf("  --headless            Force headless mode\n");
     printf("  --debug-phase         Enable per-frame phase debug logging in capture mode\n");
     printf("  --width <n>           Window width (default: 560)\n");

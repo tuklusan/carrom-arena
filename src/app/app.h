@@ -36,6 +36,7 @@ typedef struct {
     float playback_speed;       // Simulation speed multiplier (0.05-4.0)
     uint32_t ai_budget_ms;      // AI decision time budget in milliseconds (default 250)
     bool debug_phase;           // Enable per-frame phase debug logging in capture mode
+    bool no_radio;              // Do not start the internet radio
 } AppConfig;
 
 /* Default configuration */
@@ -55,7 +56,8 @@ static inline AppConfig app_config_default(void) {
         .window_height = 560,
         .playback_speed = 1.0f,   // real-time (1x) default; keys change it, 0.05x-4x
         .ai_budget_ms = 150,      // R5: Default AI budget: 150ms (lowered from 250)
-        .debug_phase = false      // Per-frame phase debug logging in capture mode
+        .debug_phase = false,     // Per-frame phase debug logging in capture mode
+        .no_radio = false
     };
 }
 

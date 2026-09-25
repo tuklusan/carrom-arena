@@ -114,7 +114,7 @@ add_compile_definitions(BUILD_ID="${BUILD_ID}")
 # Platform-specific libraries
 # =============================================================================
 if(WIN32)
-    set(PLATFORM_LIBS ${PLATFORM_LIBS} gdi32 winmm)
+    set(PLATFORM_LIBS ${PLATFORM_LIBS} gdi32 winmm winhttp)
 elseif(APPLE)
     find_library(COCOA Cocoa)
     find_library(IOKIT IOKit)

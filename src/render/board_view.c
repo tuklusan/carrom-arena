@@ -2,6 +2,7 @@
 #include "board_view.h"
 #include "piece_draw.h"
 #include "effects.h"
+#include "theme.h"
 #include "renderer.h"
 #include "common/types.h"
 #include "common/vecmath.h"
@@ -28,13 +29,13 @@ static inline float compute_flash_alpha(double wall_time) {
 #define COLOR_BOARD (Color){ 139, 105, 70, 255 }      // Wood brown
 #define COLOR_CUSHION (Color){ 100, 70, 40, 255 }     // Darker brown
 #define COLOR_POCKET (Color){ 0, 0, 0, 255 }          // Black
-#define COLOR_WHITE_PIECE (Color){ 240, 240, 240, 255 }
-#define COLOR_BLACK_PIECE (Color){ 30, 30, 30, 255 }
-#define COLOR_QUEEN (Color){ 220, 30, 30, 255 }       // Red
+#define COLOR_WHITE_PIECE THEME_RED       /* the white team is red on screen */
+#define COLOR_BLACK_PIECE THEME_BLUE      /* the black team is blue */
+#define COLOR_QUEEN THEME_QUEEN            // green: red is a team colour now
 #define COLOR_STRIKER (Color){ 255, 215, 0, 255 }     // Gold
 #define COLOR_LINE (Color){ 255, 255, 255, 100 }      // White translucent
-#define COLOR_WHITE_COIN_OUTLINE (Color){ 50, 50, 50, 230 }   // thin dark rim: light coins look bigger than dark ones otherwise
-static Color coin_outline_color(PieceColor c) { return c == PIECE_WHITE ? COLOR_WHITE_COIN_OUTLINE : COLOR_LINE; }
+#define COLOR_COIN_RIM THEME_COIN_RIM
+static Color coin_outline_color(PieceColor c) { (void)c; return COLOR_COIN_RIM; }
 #define COLOR_BASELINE (Color){ 100, 255, 100, 150 }  // Green translucent (muted for baseline)
 #define COLOR_BASELINE_MUTED (Color){ 100, 255, 100, 76 }  // 30% alpha of team color
 
@@ -50,132 +51,82 @@ static Color coin_outline_color(PieceColor c) { return c == PIECE_WHITE ? COLOR_
 #define COLOR_AIM_PREVIEW_OUTLINE (Color){ 0, 0, 0, 255 }     // Black outline
 #define COLOR_AIM_PREVIEW_ARROW (Color){ 255, 255, 0, 255 }   // Yellow arrowhead
 
-/* Draw a stylised head-and-shoulders silhouette per spec:
- *    ○         (head: DrawCircle radius = L->board_size / 25)
- *   ┃┃         (shoulders: DrawEllipse half-width = L->board_size / 18, height = L->board_size / 45)
- *  ▄▄▄▄        (torso: filled trapezoid height = L->board_size / 12, bottom half-width = L->board_size / 22.5)
- * All shapes FILLED with team color, 2px outline accent
- */
+static void draw_tri_any_winding(Vector2 a, Vector2 b, Vector2 c, Color col);
+
+/* A rectangle in the robot's own frame: u runs from the head toward the board, v to the robot's right. */
+typedef struct { Vec2 o, back, right; } RobotFrame;
+
+static Vector2 robot_pt(const RobotFrame* f, float u, float v) {
+    return (Vector2){ f->o.x + f->back.x * u + f->right.x * v, f->o.y + f->back.y * u + f->right.y * v };
+}
+
+static void robot_box(const RobotFrame* f, float u0, float u1, float v0, float v1, Color fill, Color line) {
+    Vector2 a = robot_pt(f, u0, v0), b = robot_pt(f, u0, v1), c = robot_pt(f, u1, v1), d = robot_pt(f, u1, v0);
+    draw_tri_any_winding(a, b, c, fill);
+    draw_tri_any_winding(a, c, d, fill);
+    DrawLineEx(a, b, 1.5f, line);
+    DrawLineEx(b, c, 1.5f, line);
+    DrawLineEx(c, d, 1.5f, line);
+    DrawLineEx(d, a, 1.5f, line);
+}
+
+/* A robot player, seen from above: antenna and head at the seat, arms, shoulders and a chest panel reaching toward the board.
+ * `angle` is the direction pointing away from the board (as the old figures used it), so the body extends the other way. */
 static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float halo_pulse, float alpha) {
-    // Convert world position to screen
     Vec2 screen = math_world_to_screen(vp, world_pos);
-    
-    // Figure dimensions in screen pixels (based on L->board_size per spec)
     float fref = (float)L->board_size * FIG_SCALE;
-    float head_radius = fref / 25.0f;
-    float shoulder_half_width = fref / 18.0f;
-    float shoulder_height = fref / 45.0f;
-    float torso_height = fref / 12.0f;
-    float torso_bottom_half_width = fref / 22.5f;
-    
-    // Colors based on team
-    Color fill_color = (team == TEAM_WHITE) ? COLOR_TEAM_WHITE_FILL : COLOR_TEAM_BLACK_FILL;
-    Color outline_color = (team == TEAM_WHITE) ? COLOR_TEAM_WHITE_OUTLINE : COLOR_TEAM_BLACK_OUTLINE;
-    Color highlight_color = is_current_turn ? COLOR_TURN_HIGHLIGHT : outline_color;
-    
-    // Apply alpha to colors
-    fill_color.a = (unsigned char)(fill_color.a * alpha);
-    outline_color.a = (unsigned char)(outline_color.a * alpha);
-    highlight_color.a = (unsigned char)(highlight_color.a * alpha);
-    
-    // Calculate figure orientation (facing board center)
-    Vec2 forward = { cosf(angle), sinf(angle) };
-    Vec2 right = { -sinf(angle), cosf(angle) };
-    
-    // Head center
-    Vec2 head_center = screen;
-    
-    // Shoulders (ellipse centered below head)
-    Vec2 shoulders_center = {
-        head_center.x - forward.x * (head_radius + 2.0f),
-        head_center.y - forward.y * (head_radius + 2.0f)
-    };
-    
-    // Torso bottom (trapezoid base)
-    Vec2 torso_bottom_center = {
-        shoulders_center.x - forward.x * torso_height,
-        shoulders_center.y - forward.y * torso_height
-    };
-    
-    // Torso corners (trapezoid)
-    Vec2 torso_top_left = {
-        shoulders_center.x + right.x * shoulder_half_width,
-        shoulders_center.y + right.y * shoulder_half_width
-    };
-    Vec2 torso_top_right = {
-        shoulders_center.x - right.x * shoulder_half_width,
-        shoulders_center.y - right.y * shoulder_half_width
-    };
-    Vec2 torso_bottom_left = {
-        torso_bottom_center.x + right.x * torso_bottom_half_width,
-        torso_bottom_center.y + right.y * torso_bottom_half_width
-    };
-    Vec2 torso_bottom_right = {
-        torso_bottom_center.x - right.x * torso_bottom_half_width,
-        torso_bottom_center.y - right.y * torso_bottom_half_width
-    };
-    
-    // Draw torso as two triangles (filled trapezoid)
-    DrawTriangle(
-        (Vector2){ torso_top_left.x, torso_top_left.y },
-        (Vector2){ torso_top_right.x, torso_top_right.y },
-        (Vector2){ torso_bottom_left.x, torso_bottom_left.y },
-        fill_color
-    );
-    DrawTriangle(
-        (Vector2){ torso_top_right.x, torso_top_right.y },
-        (Vector2){ torso_bottom_right.x, torso_bottom_right.y },
-        (Vector2){ torso_bottom_left.x, torso_bottom_left.y },
-        fill_color
-    );
-    
-    // Torso outline (2px thick - draw 2 passes)
-    DrawTriangleLines(
-        (Vector2){ torso_top_left.x, torso_top_left.y },
-        (Vector2){ torso_top_right.x, torso_top_right.y },
-        (Vector2){ torso_bottom_left.x, torso_bottom_left.y },
-        highlight_color
-    );
-    DrawTriangleLines(
-        (Vector2){ torso_top_right.x, torso_top_right.y },
-        (Vector2){ torso_bottom_right.x, torso_bottom_right.y },
-        (Vector2){ torso_bottom_left.x, torso_bottom_left.y },
-        highlight_color
-    );
-    // Second pass for 2px thickness - slightly offset
-    DrawTriangleLines(
-        (Vector2){ torso_top_left.x + 1.0f, torso_top_left.y },
-        (Vector2){ torso_top_right.x + 1.0f, torso_top_right.y },
-        (Vector2){ torso_bottom_left.x + 1.0f, torso_bottom_left.y },
-        highlight_color
-    );
-    DrawTriangleLines(
-        (Vector2){ torso_top_right.x + 1.0f, torso_top_right.y },
-        (Vector2){ torso_bottom_right.x + 1.0f, torso_bottom_right.y },
-        (Vector2){ torso_bottom_left.x + 1.0f, torso_bottom_left.y },
-        highlight_color
-    );
-    
-    // Draw shoulders ellipse (filled)
-    DrawEllipse((int)shoulders_center.x, (int)shoulders_center.y, shoulder_half_width, shoulder_height, fill_color);
-    // Shoulders outline (2px thick - draw 2 passes)
-    DrawEllipseLines((int)shoulders_center.x, (int)shoulders_center.y, shoulder_half_width, shoulder_height, highlight_color);
-    DrawEllipseLines((int)shoulders_center.x + 1, (int)shoulders_center.y, shoulder_half_width, shoulder_height, highlight_color);
-    
-    // Draw head circle (filled)
-    DrawCircle((int)head_center.x, (int)head_center.y, head_radius, fill_color);
-    // Head outline (2px thick - draw 2 passes)
-    DrawCircleLines((int)head_center.x, (int)head_center.y, head_radius, highlight_color);
-    DrawCircleLines((int)head_center.x, (int)head_center.y, head_radius + 1.0f, highlight_color);
-    
-    // If current turn, draw a pulsing gold halo ring around the head
+    float hr = fref / 25.0f;                       /* head half-size */
+
+    Color base  = (team == TEAM_WHITE) ? THEME_RED : THEME_BLUE;
+    Color light = (team == TEAM_WHITE) ? THEME_RED_LIGHT : THEME_BLUE_LIGHT;
+    Color dark  = (team == TEAM_WHITE) ? THEME_RED_DARK : THEME_BLUE_DARK;
+    Color line  = is_current_turn ? COLOR_TURN_HIGHLIGHT : (Color){ 20, 20, 28, 255 };
+    Color steel = (Color){ 150, 156, 168, 255 };
+    Color eye   = (Color){ 255, 236, 110, 255 };
+    Color* all[] = { &base, &light, &dark, &line, &steel, &eye };
+    for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); i++) all[i]->a = (unsigned char)(all[i]->a * alpha);
+
+    Vec2 away = { cosf(angle), sinf(angle) };      /* pointing away from the board */
+    RobotFrame f = { screen, { -away.x, -away.y }, { away.y, -away.x } };
+
+    float gap = 2.0f;
+    float sh0 = hr + gap;                          /* shoulders start */
+    float sh1 = sh0 + 0.75f * hr;
+    float torso_end = sh0 + fref / 12.0f;          /* same reach as the old figure */
+
+    /* arms hang from the shoulders, with square hands */
+    float arm_v = 1.3f * hr;
+    robot_box(&f, sh0 + 0.1f * hr, torso_end - 0.2f * hr, arm_v, arm_v + 0.4f * hr, steel, line);
+    robot_box(&f, sh0 + 0.1f * hr, torso_end - 0.2f * hr, -arm_v - 0.4f * hr, -arm_v, steel, line);
+    robot_box(&f, torso_end - 0.55f * hr, torso_end + 0.15f * hr, arm_v - 0.05f * hr, arm_v + 0.45f * hr, dark, line);
+    robot_box(&f, torso_end - 0.55f * hr, torso_end + 0.15f * hr, -arm_v - 0.45f * hr, -arm_v + 0.05f * hr, dark, line);
+    /* torso with a chest panel and three lights */
+    robot_box(&f, sh0, torso_end, -1.1f * hr, 1.1f * hr, base, line);
+    robot_box(&f, sh0 + 0.9f * hr, torso_end - 0.25f * hr, -0.8f * hr, 0.8f * hr, dark, line);
+    for (int k = -1; k <= 1; k++) {
+        Vector2 p = robot_pt(&f, sh0 + 1.35f * hr, (float)k * 0.42f * hr);
+        DrawCircleV(p, hr * 0.15f, eye);
+    }
+    /* shoulders */
+    robot_box(&f, sh0, sh1, -1.45f * hr, 1.45f * hr, light, line);
+    /* neck */
+    robot_box(&f, hr - 1.0f, sh0 + 1.0f, -0.32f * hr, 0.32f * hr, steel, line);
+    /* head, with two eyes toward the board and a mouth grille */
+    robot_box(&f, -hr, hr, -1.05f * hr, 1.05f * hr, light, line);
+    robot_box(&f, 0.05f * hr, 0.55f * hr, -0.7f * hr, -0.2f * hr, eye, line);
+    robot_box(&f, 0.05f * hr, 0.55f * hr, 0.2f * hr, 0.7f * hr, eye, line);
+    robot_box(&f, 0.72f * hr, 0.9f * hr, -0.5f * hr, 0.5f * hr, dark, line);
+    /* antenna with a ball */
+    Vector2 a0 = robot_pt(&f, -hr, 0.0f), a1 = robot_pt(&f, -1.75f * hr, 0.0f);
+    DrawLineEx(a0, a1, 2.0f, line);
+    DrawCircleV(a1, hr * 0.3f, is_current_turn ? COLOR_TURN_HIGHLIGHT : base);
+    DrawCircleLines((int)a1.x, (int)a1.y, hr * 0.3f, line);
+
+    /* if it is this robot's turn, a pulsing gold halo ring around the head */
     if (is_current_turn) {
         float halo_r_inner = L->figure_halo_base_r + halo_pulse * 5.0f * L->figure_scale;
         float halo_r_outer = halo_r_inner + 2.0f * L->figure_scale;
-        DrawRing(
-            (Vector2){ head_center.x, head_center.y },
-            halo_r_inner, halo_r_outer, 0, 360, 32, COLOR_TURN_HIGHLIGHT
-        );
+        DrawRing((Vector2){ screen.x, screen.y }, halo_r_inner, halo_r_outer, 0, 360, 32, COLOR_TURN_HIGHLIGHT);
     }
 }
 

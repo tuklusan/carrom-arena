@@ -402,3 +402,16 @@ target_include_directories(test_review_fixes PRIVATE
     ${unity_SOURCE_DIR}/src
 )
 add_test(NAME review_fixes_test COMMAND test_review_fixes)
+
+# Radio reconnect behaviour (fake network source)
+add_executable(test_radio_stream
+    test_radio_stream.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_radio_stream)
+target_link_libraries(test_radio_stream carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_radio_stream PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME radio_stream_test COMMAND test_radio_stream)

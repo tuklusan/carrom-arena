@@ -16,6 +16,8 @@ add_library(carrom_core
     ai/geometry_planner.c
     telemetry/flight.c
     audio/audio_policy.c
+    audio/radio_stream.c
+    audio/radio_mp3.c
     ai/shot_evaluator.c
     telemetry/trace.c
     platform/platform.c
@@ -35,7 +37,11 @@ target_include_directories(carrom_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/platform
     ${CMAKE_CURRENT_SOURCE_DIR}/app
     ${box2d_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/third_party/minimp3
 )
+
+# minimp3 is third-party code: compiled without our warning flags
+set_source_files_properties(audio/radio_mp3.c PROPERTIES COMPILE_OPTIONS "-w")
 
 # Link libraries for core library
 target_link_libraries(carrom_core
@@ -74,6 +80,7 @@ add_library(carrom_render
     render/board_view.c
     render/effects.c
     audio/audio.c
+    audio/radio.c
     ${CARROM_AUDIO_C}
 )
 
@@ -191,6 +198,13 @@ endif()
 if(WIN32)
     target_compile_definitions(carrom_core PRIVATE _CRT_SECURE_NO_WARNINGS)
     target_compile_definitions(carrom_render PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
+# Radio stream check (network + MP3 decode, no audio device)
+add_executable(radio_probe tools/radio_probe.c)
+target_link_libraries(radio_probe carrom_core)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    target_link_options(radio_probe PRIVATE -fsanitize=address,undefined)
 endif()
 
 # Flight-recorder decoder
