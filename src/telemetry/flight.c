@@ -215,6 +215,8 @@ const char* flight_event_name(uint16_t kind) {
         case FLIGHT_EV_TURN: return "TURN";
         case FLIGHT_EV_CLOSE: return "CLOSE";
         case FLIGHT_EV_LAYOUT: return "LAYOUT";
+        case FLIGHT_EV_SOUND: return "SOUND";
+        case FLIGHT_EV_MUTE: return "MUTE";
         default: return "?";
     }
 }

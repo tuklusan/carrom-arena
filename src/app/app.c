@@ -15,6 +15,7 @@
 #include "piece_draw.h"
 #include "render/renderer.h"
 #include "render/effects.h"
+#include "audio/audio.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,8 @@
     GameState game;
     PhysicsWorld* physics;
     TraceWriter* trace;
+    AudioPolicy audio_policy;      // which sound / how loud / rate limiting
+    bool prev_muted;
     FlightRecorder* flight;        // binary flight recorder (per-frame state + events)
     double flight_t0;
     int flight_prev_phase;
@@ -146,6 +149,7 @@ static void app_setup_renderer(AppContext* ctx) {
         if (!ctx->config.headless) {
             ctx->renderer = renderer_create(ctx->config.window_width, ctx->config.window_height, 
                                              "Carrom Arena", false, false, ctx->config.debug_phase, ctx->playback_speed);
+            audio_init();   /* silent no-op when there is no audio device */
         }
     } else if (ctx->config.mode == APP_MODE_CAPTURE) {
         // Capture mode always needs a renderer (windowed or hidden)
@@ -302,6 +306,32 @@ static void app_flight_frame(AppContext* ctx, float alpha, double frame_dt) {
     flight_write_frame(ctx->flight, &f);
 }
 
+/* Play a cue through the audio policy (loudness, variant rotation, rate limit) and log it in the flight recorder. */
+static void app_cue(AppContext* ctx, AudioCue cue, float speed) {
+    float volume;
+    int variant;
+    double now = platform_time_now();
+    if (!audio_policy_admit(&ctx->audio_policy, cue, speed, now, audio_variant_count(cue), &volume, &variant)) return;
+    audio_play(cue, volume, variant);
+    FLIGHT_EVENT(ctx, FLIGHT_EV_SOUND, cue, speed, volume, variant);
+}
+
+/* Drain the sounds physics recorded since the last frame and play them. */
+static void app_play_sounds(AppContext* ctx) {
+    SoundEvent ev[64];
+    int n;
+    while ((n = physics_drain_sound_events(ctx->physics, ev, 64)) > 0) {
+        for (int i = 0; i < n; i++) {
+            app_cue(ctx, audio_cue_for_sound_kind(ev[i].kind), ev[i].speed);
+            if (ev[i].kind == SOUND_COIN_POCKET && ev[i].piece_id == QUEEN_ID) app_cue(ctx, CUE_QUEEN, 1.0f);
+        }
+    }
+    if (audio_is_muted() != ctx->prev_muted) {
+        ctx->prev_muted = audio_is_muted();
+        FLIGHT_EVENT(ctx, FLIGHT_EV_MUTE, ctx->prev_muted ? 1 : 0, 0, 0, 0);
+    }
+}
+
 /* Place a freshly pocketed piece in its 3x3 corner slot outside the board (game state only). */
 static void app_register_pocket(AppContext* ctx, uint8_t piece_id, uint8_t pocket_idx) {
     if (piece_id >= MAX_PIECES || pocket_idx > 3) return;
@@ -401,6 +431,9 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     ctx->match = outcome.next_match_state;
 
     FLIGHT_EVENT(ctx, FLIGHT_EV_SHOT_END, (int)outcome.turn_decision, result->pocketed_count, result->striker_pocketed ? 1 : 0, result->sim_time);
+
+    if (facts.fouls != FOUL_NONE) app_cue(ctx, CUE_FOUL, 1.0f);
+    if (outcome.turn_decision == TURN_BOARD_OVER) app_cue(ctx, CUE_BOARD_WON, 1.0f);
 
     // Register any pockets not already registered mid-shot (idempotent)
     for (int i = ctx->pockets_registered; i < result->pocketed_count; i++) {
@@ -554,6 +587,7 @@ int app_run_simulation(AppContext* ctx) {
             // Fixed timestep physics
             app_simulation_step(ctx, dt);
             if (ctx->renderer) effects_update((float)(dt * app_phase_speed(ctx)));
+            app_play_sounds(ctx);
             if (ctx->game.phase == PHASE_SHOT_EXECUTION || ctx->game.phase == PHASE_SETTLING) {
                 app_shot_progress(ctx);
             }
@@ -857,6 +891,7 @@ AppContext* app_create(const AppConfig* config) {
     printf("[DEBUG] App created with playback_speed=%.2fx\n", ctx->playback_speed);
     fflush(stdout);
     ctx->speed_paused = false;
+    audio_policy_init(&ctx->audio_policy);
     ctx->placement_timer = 0.0;
     ctx->placement_phase_active = false;
     ctx->aim_preview_timer = 0.0;
@@ -900,6 +935,7 @@ void app_destroy(AppContext* ctx) {
         trace_close(ctx->trace);
     }
     
+    audio_shutdown();
     if (ctx->renderer) {
         renderer_destroy(ctx->renderer);
     }

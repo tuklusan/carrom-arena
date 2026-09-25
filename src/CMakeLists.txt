@@ -15,6 +15,7 @@ add_library(carrom_core
     ai/shot_candidates.c
     ai/geometry_planner.c
     telemetry/flight.c
+    audio/audio_policy.c
     ai/shot_evaluator.c
     telemetry/trace.c
     platform/platform.c
@@ -47,10 +48,34 @@ if(UNIX)
 endif()
 
 # Render library (depends on raylib)
+
+# Embed the sound effects (assets/audio/*.ogg) into the executable as C arrays
+file(GLOB CARROM_AUDIO_FILES ${CMAKE_SOURCE_DIR}/assets/audio/*.ogg)
+list(SORT CARROM_AUDIO_FILES)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CARROM_AUDIO_FILES})
+set(CARROM_AUDIO_C "${CMAKE_CURRENT_BINARY_DIR}/audio_assets.c")
+set(_audio_body "#include \"audio/audio_assets.h\"\n")
+set(_audio_table "")
+set(_audio_count 0)
+foreach(_f ${CARROM_AUDIO_FILES})
+    get_filename_component(_n ${_f} NAME_WE)
+    file(READ ${_f} _hex HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _bytes "${_hex}")
+    string(LENGTH "${_hex}" _hl)
+    math(EXPR _len "${_hl} / 2")
+    string(APPEND _audio_body "static const unsigned char snd_${_n}[] = {${_bytes}};\n")
+    string(APPEND _audio_table "    { \"${_n}\", snd_${_n}, ${_len} },\n")
+    math(EXPR _audio_count "${_audio_count} + 1")
+endforeach()
+string(APPEND _audio_body "const AudioAsset audio_assets[] = {\n${_audio_table}    { 0, 0, 0 }\n};\nconst int audio_asset_count = ${_audio_count};\n")
+file(WRITE ${CARROM_AUDIO_C} "${_audio_body}")
+
 add_library(carrom_render
     render/renderer.c
     render/board_view.c
     render/effects.c
+    audio/audio.c
+    ${CARROM_AUDIO_C}
 )
 
 target_include_directories(carrom_render PUBLIC

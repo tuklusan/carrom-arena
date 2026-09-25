@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include "audio/audio.h"
 
 /* Inline math functions to avoid implicit declaration issues */
 static inline float my_fminf(float a, float b) {
@@ -210,6 +211,9 @@ void renderer_destroy(Renderer* r) {
 void renderer_poll_events(Renderer* r) {
     if (WindowShouldClose()) return;
     
+    if (IsKeyPressed(KEY_M)) {
+        audio_toggle_mute();
+    }
     if (IsKeyPressed(KEY_SPACE)) {
         r->paused = !r->paused;
     }

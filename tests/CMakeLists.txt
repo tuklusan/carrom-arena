@@ -318,6 +318,32 @@ target_include_directories(test_colour_rotation PRIVATE
 )
 add_test(NAME colour_rotation_test COMMAND test_colour_rotation)
 
+# Physics sound events
+add_executable(test_sound_events
+    test_sound_events.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_sound_events)
+target_link_libraries(test_sound_events carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_sound_events PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME sound_events_test COMMAND test_sound_events)
+
+# Audio policy
+add_executable(test_audio_policy
+    test_audio_policy.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_audio_policy)
+target_link_libraries(test_audio_policy carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_audio_policy PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME audio_policy_test COMMAND test_audio_policy)
+
 # Capture regression test (spawns carrom_arena binary in capture mode)
 
 # Catches: capture-mode hang (Gap-2 renderer rewrite regression)

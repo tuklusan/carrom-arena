@@ -10,6 +10,8 @@
 /* -----------------------------------------------------------------------------
  * PhysicsWorld Structure
  * --------------------------------------------------------------------------- */
+#define SOUND_QUEUE_MAX 128
+
 struct PhysicsWorld {
     b2WorldId world_id;
     float accumulator;
@@ -41,6 +43,10 @@ struct PhysicsWorld {
     Vec2 prev_piece_positions[MAX_PIECES];
     Vec2 prev_striker_position;
     
+    // Sound events recorded while stepping (drained by the app once per frame)
+    SoundEvent sound_queue[SOUND_QUEUE_MAX];
+    int sound_count;
+
     // Simulation time
     float sim_time;
     
@@ -49,6 +55,8 @@ struct PhysicsWorld {
 };
 
 /* Forward declarations */
+#define SHAPE_TAG_STRIKER 100
+#define SHAPE_TAG_CUSHION 200
 static void physics_create_board_geometry(PhysicsWorld* pw);
 static void physics_create_pieces(PhysicsWorld* pw);
 static void physics_create_striker(PhysicsWorld* pw);
@@ -68,6 +76,7 @@ PhysicsWorld* physics_create(void) {
     world_def.gravity = (b2Vec2){0.0f, 0.0f};  // Top-down, no gravity
     world_def.restitutionThreshold = 0.0f;
     world_def.maxContactPushSpeed = 0.3f;
+    world_def.hitEventThreshold = 0.05f;   /* board units/s: even soft touches tick */
     
     pw->world_id = b2CreateWorld(&world_def);
     if (b2World_IsValid(pw->world_id) == false) {
@@ -110,6 +119,7 @@ static b2ShapeDef physics_make_shape_def(float restitution, float friction, bool
     shape_def.material.restitution = restitution;
     shape_def.material.friction = friction;
     shape_def.enableSensorEvents = enable_sensors;
+    shape_def.enableHitEvents = true;   /* impacts drive the collision sounds */
     return shape_def;
 }
 
@@ -129,6 +139,7 @@ static void physics_create_board_geometry(PhysicsWorld* pw) {
     
     // Cushion shape definition - Box2D v3 uses material for restitution/friction
     b2ShapeDef cushion_shape = physics_make_shape_def(0.9f, 0.1f, false);
+    cushion_shape.userData = (void*)(intptr_t)SHAPE_TAG_CUSHION;
     
     // Top cushion
     b2BodyDef top_def = b2DefaultBodyDef();
@@ -193,6 +204,7 @@ static void physics_create_pieces(PhysicsWorld* pw) {
     for (int i = 0; i < MAX_PIECES; i++) {
         body_def.position = (b2Vec2){0, 0};
         pw->piece_bodies[i] = b2CreateBody(pw->world_id, &body_def);
+        shape_def.userData = (void*)(intptr_t)(i + 1);
         b2CreateCircleShape(pw->piece_bodies[i], &shape_def, &circle);
         pw->piece_pocketed[i] = false;
         pw->piece_colors[i] = PIECE_WHITE; // Default, will be overwritten by sync_from_board
@@ -214,6 +226,7 @@ static void physics_create_striker(PhysicsWorld* pw) {
     
     b2Circle circle = { .radius = STRIKER_RADIUS_NORM };
     
+    shape_def.userData = (void*)(intptr_t)SHAPE_TAG_STRIKER;
     pw->striker_body = b2CreateBody(pw->world_id, &body_def);
     b2CreateCircleShape(pw->striker_body, &shape_def, &circle);
     pw->striker_pocketed = false;
@@ -222,6 +235,42 @@ static void physics_create_striker(PhysicsWorld* pw) {
 /* -----------------------------------------------------------------------------
  * Fixed Timestep Step
  * --------------------------------------------------------------------------- */
+static void physics_push_sound(PhysicsWorld* pw, uint8_t kind, uint8_t piece_id, float speed, Vec2 at) {
+    if (pw->sound_count >= SOUND_QUEUE_MAX) return;
+    pw->sound_queue[pw->sound_count++] = (SoundEvent){ kind, piece_id, speed, at.x, at.y, pw->sim_time };
+}
+
+static int shape_tag(b2ShapeId shape) {
+    return (int)(intptr_t)b2Shape_GetUserData(shape);
+}
+
+/* Turn Box2D hit events (impacts above the threshold) into classified sound events */
+static void physics_collect_hit_sounds(PhysicsWorld* pw) {
+    b2ContactEvents ev = b2World_GetContactEvents(pw->world_id);
+    for (int i = 0; i < ev.hitCount; i++) {
+        const b2ContactHitEvent* hit = &ev.hitEvents[i];
+        int ta = shape_tag(hit->shapeIdA), tb = shape_tag(hit->shapeIdB);
+        int striker = (ta == SHAPE_TAG_STRIKER) + (tb == SHAPE_TAG_STRIKER);
+        int wall = (ta == SHAPE_TAG_CUSHION) + (tb == SHAPE_TAG_CUSHION);
+        int other = (ta == SHAPE_TAG_STRIKER || ta == SHAPE_TAG_CUSHION) ? tb : ta;   /* the non-striker, non-wall shape */
+        uint8_t piece = (other >= 1 && other <= MAX_PIECES) ? (uint8_t)(other - 1) : 255;
+        uint8_t kind;
+        if (wall) kind = striker ? SOUND_STRIKER_WALL : SOUND_COIN_WALL;
+        else kind = striker ? SOUND_STRIKER_COIN : SOUND_COIN_COIN;
+        physics_push_sound(pw, kind, piece, hit->approachSpeed, (Vec2){ hit->point.x, hit->point.y });
+    }
+}
+
+int physics_drain_sound_events(PhysicsWorld* pw, SoundEvent* out, int max) {
+    if (!pw) return 0;
+    int n = (pw->sound_count < max) ? pw->sound_count : max;
+    for (int i = 0; i < n; i++) out[i] = pw->sound_queue[i];
+    /* anything that did not fit stays queued */
+    for (int i = n; i < pw->sound_count; i++) pw->sound_queue[i - n] = pw->sound_queue[i];
+    pw->sound_count -= n;
+    return n;
+}
+
 void physics_step(PhysicsWorld* pw, float dt) {
     pw->accumulator += dt;
     pw->substeps = 0;
@@ -240,6 +289,7 @@ void physics_step(PhysicsWorld* pw, float dt) {
         }
         
         b2World_Step(pw->world_id, PHYSICS_DT, 4);
+        physics_collect_hit_sounds(pw);
         pw->accumulator -= PHYSICS_DT;
         pw->step_count++;
         pw->substeps++;
@@ -353,6 +403,7 @@ static void physics_check_pocket_events(PhysicsWorld* pw) {
                     b2Vec2 bv = b2Body_GetLinearVelocity(pw->piece_bodies[p]);
                     pw->pocketed_last_pos[pw->pocketed_count] = (Vec2){ bp.x, bp.y };
                     pw->pocketed_last_vel[pw->pocketed_count] = (Vec2){ bv.x, bv.y };
+                    physics_push_sound(pw, SOUND_COIN_POCKET, (uint8_t)p, math_sqrtf(bv.x * bv.x + bv.y * bv.y), (Vec2){ bp.x, bp.y });
                 }
                 
                 if (p == QUEEN_ID) {
@@ -380,6 +431,7 @@ static void physics_check_pocket_events(PhysicsWorld* pw) {
                 b2Vec2 bv = b2Body_GetLinearVelocity(pw->striker_body);
                 pw->striker_last_pos = (Vec2){ bp.x, bp.y };
                 pw->striker_last_vel = (Vec2){ bv.x, bv.y };
+                physics_push_sound(pw, SOUND_STRIKER_POCKET, 255, math_sqrtf(bv.x * bv.x + bv.y * bv.y), (Vec2){ bp.x, bp.y });
             }
             b2DestroyBody(pw->striker_body);
             pw->striker_body = (b2BodyId){0};
@@ -478,6 +530,7 @@ void physics_place_striker(PhysicsWorld* pw, Seat seat, Vec2 placement) {
         
         b2Circle circle = { .radius = STRIKER_RADIUS_NORM };
         
+        shape_def.userData = (void*)(intptr_t)SHAPE_TAG_STRIKER;
         pw->striker_body = b2CreateBody(pw->world_id, &body_def);
         b2CreateCircleShape(pw->striker_body, &shape_def, &circle);
         pw->striker_pocketed = false;
@@ -495,6 +548,8 @@ void physics_apply_shot(PhysicsWorld* pw, float aim_angle, float power) {
     
     Vec2 dir = math_vec2_from_angle(aim_angle);
     b2Body_SetLinearVelocity(pw->striker_body, (b2Vec2){dir.x * speed, dir.y * speed});
+    b2Vec2 sp = b2Body_GetPosition(pw->striker_body);
+    physics_push_sound(pw, SOUND_FLICK, 255, speed, (Vec2){ sp.x, sp.y });
 }
 
 /* -----------------------------------------------------------------------------

@@ -244,6 +244,15 @@ Based on **International Carrom Federation Laws of Carrom** (https://www.carrom.
 
 ---
 
+## Sound
+
+Recorded sound effects (Kenney, CC0; see `assets/audio/CREDITS.md`) are embedded in the executable: striker flick, striker hits
+coin, coin hits coin, striker hits side, coin hits side, striker into pocket, coin into pocket, plus queen pocketed, foul and
+board won. Loudness follows the impact speed; pitch is always natural. Press **M** to mute. No audio device (CI, headless) means
+silence, not an error. Design and events: `docs/SOUND_PLAN.md`.
+
+---
+
 ## Flight Recorder (binary, for debugging what happened and what was drawn)
 
 Next to the JSONL trace, every run with a trace directory also writes `flight_<seed>.bin`: an 8 MiB circular binary log.
@@ -296,6 +305,7 @@ Carrom Arena is released under the **SANYALnet Labs Non-Commercial License** (se
 Versions released up to and including tag `beta-0.0.6` were published under the MIT License and remain available under those terms (Section 9 of the new license: each version is governed by the license it shipped with).
 
 Third-party material is not relicensed by `LICENSE` and keeps its own license:
+- Sound effects: Kenney packs, CC0 1.0 (`assets/audio/CREDITS.md`)
 - raylib 5.5 - zlib/libpng
 - Box2D v3.1.0 - MIT
 - Unity Test Framework v2.6.0 - MIT

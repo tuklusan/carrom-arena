@@ -1,6 +1,15 @@
-# Sound plan (draft for operator review)
+# Sound (plan and as-built)
 
-Status: PLAN ONLY. Nothing is implemented yet. The game canvas is locked (no layout changes).
+**Status: IMPLEMENTED (2026-09-25).** Operator decisions: recorded samples (Kenney CC0 packs, as used in snakes-and-ladders-arena),
+master volume 100% with the **M** key to mute, sounds always at natural pitch (whatever the game speed), extras at my discretion
+(queen pocketed, foul, board won). The canvas is locked; sound changes nothing on screen.
+
+As built: physics records `SoundEvent`s (Box2D hit events for impacts, pocket captures, the flick) into a queue;
+`src/audio/audio_policy.c` (pure, unit-tested) picks cue, loudness, variant and rate-limits; `src/audio/audio.c` plays through
+raylib/miniaudio (silent no-op without a device); samples are embedded in the exe from `assets/audio/*.ogg` (credits and the
+file-to-sound mapping in `assets/audio/CREDITS.md`); every played sound is logged to the flight recorder as a SOUND event.
+The sections below are the original plan.
+
 
 ## The seven sounds
 

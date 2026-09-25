@@ -44,7 +44,9 @@ enum {
     FLIGHT_EV_STASH = 10,       /* a=piece id, b=pocket index, c=stash x, d=stash y */
     FLIGHT_EV_TURN = 11,        /* a=new seat, b=team */
     FLIGHT_EV_CLOSE = 12,       /* window closed / shutdown; a=phase */
-    FLIGHT_EV_LAYOUT = 13       /* a=board x, b=board y, c=board size, d=window w */
+    FLIGHT_EV_LAYOUT = 13,      /* a=board x, b=board y, c=board size, d=window w */
+    FLIGHT_EV_SOUND = 14,       /* a=cue, b=speed, c=volume, d=variant (a sound that was actually played) */
+    FLIGHT_EV_MUTE = 15         /* a=muted (0/1) */
 };
 
 #pragma pack(push, 1)

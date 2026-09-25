@@ -74,6 +74,29 @@ void physics_snapshot_destroy(PhysicsSnapshot* snap);
 void physics_restore_snapshot(PhysicsWorld* pw, const PhysicsSnapshot* snap);
 
 
+/* Sound events: what physics saw that makes a noise. Physics only records them; the app plays them. */
+typedef enum {
+    SOUND_FLICK = 0,          /* striker launched; speed = launch speed */
+    SOUND_STRIKER_COIN,       /* striker hit a coin; speed = approach speed */
+    SOUND_COIN_COIN,
+    SOUND_STRIKER_WALL,
+    SOUND_COIN_WALL,
+    SOUND_STRIKER_POCKET,     /* striker fell in; speed = speed at capture */
+    SOUND_COIN_POCKET,
+    SOUND_KIND_COUNT
+} SoundKind;
+
+typedef struct {
+    uint8_t kind;             /* SoundKind */
+    uint8_t piece_id;         /* coin involved (pockets and coin hits), 255 when none */
+    float speed;              /* board units per second */
+    float x, y;               /* where it happened */
+    float sim_time;
+} SoundEvent;
+
+/* Copy out (and clear) the sound events recorded since the last call. Returns how many were copied. */
+int physics_drain_sound_events(PhysicsWorld* pw, SoundEvent* out, int max);
+
 // Get current positions for rendering (read-only)
 void physics_get_positions(const PhysicsWorld* pw, Vec2* positions);
 void physics_get_striker_position(const PhysicsWorld* pw, Vec2* pos);
