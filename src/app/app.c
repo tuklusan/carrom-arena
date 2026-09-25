@@ -525,6 +525,19 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
         if (!match_is_over(&ctx->match)) {
             match_start_board(&ctx->match, &ctx->game, &ctx->rng);
             physics_sync_from_board(ctx->physics, &ctx->game.board, ctx->game.turn_seat);
+            // match_start_board leaves the phase at PLACEMENT and the old plan in place: without this the new board skipped
+            // THINKING and its first player aimed with the previous board's last plan (a line pointing off the board).
+            physics_reset_turn_timer(ctx->physics);
+            ctx->game.phase = PHASE_THINKING;
+            ctx->game.computed_shot_valid = false;
+            ctx->game.aim_preview_progress = 0.0f;
+            ctx->thinking_phase_active = true;
+            ctx->thinking_timer = 0.0;
+            ctx->pending_shot_valid = false;
+            ctx->aim_preview_active = false;
+            ctx->placement_phase_active = false;
+            ctx->pockets_registered = 0;
+            ctx->striker_fall_registered = false;
         }
     }
 }
