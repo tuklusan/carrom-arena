@@ -105,8 +105,7 @@ void test_capture_completes_bounded(void) {
     if (!(rc == 0 || rc == 256)) {   /* show why the game failed */
         char show[300];
         snprintf(show, sizeof(show), "tail -n 25 %s", logpath);
-        fprintf(stderr, "capture exit status %d; last lines of %s:
-", rc, logpath);
+        fprintf(stderr, "capture exit status %d; last lines of %s:\n", rc, logpath);
         (void)system(show);
     }
     // Accept exit 0 (success) or 256 (ASAN leak exit 1). Reject 124 (timeout) or other errors.
