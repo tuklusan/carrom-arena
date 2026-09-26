@@ -3,7 +3,7 @@
 **Updated:** 2026-09-24 (UTC). Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
 
 ## Repo state
-- `main` head: see `git log` (last code change 9b28c8e, "waiting robots no longer fade..."), on top of tag `beta-0.0.11`; identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. The next tag is `beta-0.0.12` (only when the operator asks; never move existing tags).
+- `main` head: see `git log`; tag `beta-0.0.12` = the spinning-arms release; identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. The next tag is `beta-0.0.13` (only when the operator asks; never move existing tags).
 - CANONICAL RULE (operator): all build and edit activities happen on the Linux clone, which is the canonical local repo. Changes go from it to GitHub, and then the H: clone is updated to match GitHub and Linux. Never edit or build source in the H: clone.
 - Standing operator rule: after ANY change, commit on Linux, run `bash ~/clean_verify.sh`, `bash ~/bin/push_all.sh`, then `git pull --ff-only --tags` in the H: clone, without being asked. `HANDOFF.md` (next to the blog on H:) has the full procedure and the Windows exe build. Edits made on Windows must keep LF endings: the H: clone checks files out as CRLF, so never scp a Windows-side file over a Linux one without converting it.
 - The Linux box is ephemeral. "Push" means `bash ~/bin/push_all.sh` (GitHub + the guard against secrets) and then fast-forwarding the H: clone. The blog lives at `H:\My Documents\SOFTWARE-DEVELOPMENT\Carrom\SANYALnet-Labs-Dev-Blog.md` and is kept up to date as a story for a future blog post (no secrets).
@@ -67,10 +67,10 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
   Plays by default. The button pauses; a manual pause stays paused; a stream failure only silences it (button shows play) while it keeps reconnecting and
   resumes by itself. `--no-radio` disables it; `radio_probe` tool checks network + decode; test `radio_stream_test` covers the reconnect logic with a fake source.
 
-## Waiting robots (2026-09-25 night)
+## Waiting robots and the active robot (2026-09-25 night, 2026-09-26)
 - The robots no longer fade (the flash alpha on the figures during thinking/aim preview is removed; the striker still flashes). A robot that is
   NOT on turn animates in `draw_human_figure` (`board_view.c`): pupils circle inside the eyes and each arm flaps about the shoulder
-  (`robot_rbox` draws a box rotated about a pivot). `idle_wave(seat, k, t)` gives each seat its own irregular rhythm. The on-turn robot stays still with its halo.
+  (`robot_rbox` draws a box rotated about a pivot). `idle_wave(seat, k, t)` gives each seat its own irregular rhythm. The robot ON turn has no gold outline (dark outlines like everyone else; its pulsing halo marks the turn) and spins BOTH arms fast, at different speeds and phases so they are out of step (`flap_r = 14 t`, `flap_l = 10.5 t + 2`); its eyes are not animated.
 
 ## Build system (2026-09-26)
 - `build/` is tracked: `build.py`, `pins.txt` (raylib/Box2D/Unity commit shas), `tools.txt` (pip-installed cmake 3.31.6, ninja 1.13.0). Output goes to `out/` (ignored).

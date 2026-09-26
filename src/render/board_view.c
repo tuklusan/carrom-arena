@@ -129,7 +129,7 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     float arm_v = 1.3f * hr;
     float flap_r = 0.0f, flap_l = 0.0f;
     if (!is_current_turn) { flap_r = 0.9f * idle_wave(seat, 0, t * 1.8f); flap_l = 0.9f * idle_wave(seat, 1, t * 1.8f); }
-    else flap_r = 14.0f * t;                      /* the robot whose turn it is spins its right arm fast (about 2 turns a second) */
+    else { flap_r = 14.0f * t; flap_l = 10.5f * t + 2.0f; }   /* the robot whose turn it is spins BOTH arms fast (about 2 and 1.7 turns a second), out of step with each other */
     float pu = sh0 + 0.1f * hr;
     robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, sh0 + 0.1f * hr, torso_end - 0.2f * hr, arm_v, arm_v + 0.4f * hr, steel, line);
     robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, torso_end - 0.55f * hr, torso_end + 0.15f * hr, arm_v - 0.05f * hr, arm_v + 0.45f * hr, dark, line);
