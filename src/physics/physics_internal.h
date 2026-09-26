@@ -28,6 +28,7 @@ struct PhysicsWorld {
     // Pocketed tracking
     bool piece_pocketed[MAX_PIECES];
     bool striker_pocketed;
+    bool striker_touched;     // the striker has touched a coin or the queen since the shot began (ICF 44)
     int pocketed_count;
     uint8_t pocketed_ids[MAX_PIECES];
     PieceColor pocketed_colors[MAX_PIECES];

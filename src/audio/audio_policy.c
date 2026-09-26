@@ -21,6 +21,7 @@ static const CueSpec SPEC[CUE_COUNT] = {
     [CUE_QUEEN]          = { 1.0f, 0.90f, 0.00f, 0.300 },
     [CUE_FOUL]           = { 1.0f, 0.85f, 0.00f, 0.300 },
     [CUE_BOARD_WON]      = { 1.0f, 0.90f, 0.00f, 0.300 },
+    [CUE_QUEEN_BACK]     = { 1.0f, 0.90f, 0.00f, 0.300 },
     [CUE_STRIKER_BOUNCE] = { 2.0f, 0.30f, 0.00f, 0.100 },
 };
 

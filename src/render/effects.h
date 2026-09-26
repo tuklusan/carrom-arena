@@ -18,6 +18,10 @@ void effects_trigger_pocket_fade_long(int pocket_index, float seconds);
 void effects_trigger_pocket_fall(int id, PieceColor color, Vec2 from, Vec2 vel, int pocket_index);
 void effects_update(float sim_dt);
 bool effects_piece_falling(int id);
+/* A coin (or the queen) the rules put back on the board: it slides from the pocket it fell into to its place (no teleporting).
+ * Timed in wall seconds; the coin is not drawn on the board by board_view while it slides. */
+void effects_trigger_return(int id, PieceColor color, int from_pocket, Vec2 to);
+bool effects_piece_returning(int id);
 void effects_reset(void);
 unsigned int effects_falling_mask(void);   /* bit i set while piece i (bit MAX_PIECES = striker) is falling in */
 

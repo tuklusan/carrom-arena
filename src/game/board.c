@@ -326,3 +326,32 @@ void board_apply_shot_positions(BoardState* board, const ShotResult* result) {
         board->pieces[i].velocity = (Vec2){ 0.0f, 0.0f };
     }
 }
+
+bool board_find_due_spot(const BoardState* board, Vec2* out) {
+    const float gap = 2.0f * PIECE_RADIUS_NORM + 0.002f;
+    const float r_min = CENTRE_CIRCLE_RADIUS + PIECE_RADIUS_NORM + 0.002f;
+    const float r_max = OUTER_CIRCLE_RADIUS - PIECE_RADIUS_NORM;
+    bool found = false;
+    float best = -1.0f;
+    for (float r = r_min; r <= r_max; r += 0.008f) {
+        for (int k = 0; k < 36; k++) {
+            float ang = 2.0f * (float)M_PI * (float)k / 36.0f;
+            Vec2 c = { r * cosf(ang), r * sinf(ang) };
+            bool free_spot = true;
+            for (int i = 0; i < MAX_PIECES && free_spot; i++) {
+                if (!board->pieces[i].on_board || board->pieces[i].pocketed) continue;
+                float dx = board->pieces[i].position.x - c.x, dy = board->pieces[i].position.y - c.y;
+                if (dx * dx + dy * dy < gap * gap) free_spot = false;
+            }
+            if (!free_spot) continue;
+            float near_pocket = 1e9f;
+            for (int p = 0; p < 4; p++) {
+                float dx = POCKET_CENTERS[p].x - c.x, dy = POCKET_CENTERS[p].y - c.y;
+                float d = dx * dx + dy * dy;
+                if (d < near_pocket) near_pocket = d;
+            }
+            if (near_pocket > best) { best = near_pocket; *out = c; found = true; }
+        }
+    }
+    return found;
+}

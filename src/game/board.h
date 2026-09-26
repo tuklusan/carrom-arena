@@ -39,6 +39,13 @@ static inline Vec2 board_stash_position(int pocket_index, int nth) {
  * coin on the board: the target itself when it is free, otherwise the nearest of a widening ring search. */
 Vec2 board_find_free_spot(const BoardState* board, Vec2 target);
 
+/* ICF 84-89: where the opponent places a due / penalty coin: inside the outer circle, clear of the centre circle (even
+ * partly), touching no other coin. He picks the spot that is hardest for the offender to pocket (farthest from every pocket).
+ * Returns false when there is no room: the due stays outstanding until there is (ICF 79). */
+#define CENTRE_CIRCLE_RADIUS 0.08f
+#define OUTER_CIRCLE_RADIUS  0.19f
+bool board_find_due_spot(const BoardState* board, Vec2* out);
+
 /* Take a coin out of the stash (it goes back on the board) and close the gap in its lineup */
 void board_remove_from_stash(BoardState* board, int piece_id);
 

@@ -32,6 +32,17 @@ typedef struct {
 
 static FallEffect falls[MAX_PIECES + 1];
 
+#define RETURN_SLIDE_TIME 0.9f   /* seconds a returned coin takes to slide from the pocket to its place */
+typedef struct { bool active; PieceColor color; Vec2 from, to; float t; } ReturnEffect;
+static ReturnEffect returns[MAX_PIECES];
+
+void effects_trigger_return(int id, PieceColor color, int from_pocket, Vec2 to) {
+    if (id < 0 || id >= MAX_PIECES || from_pocket < 0 || from_pocket > 3) return;
+    returns[id] = (ReturnEffect){ true, color, POCKET_CENTERS[from_pocket], to, 0.0f };
+}
+
+bool effects_piece_returning(int id) { return id >= 0 && id < MAX_PIECES && returns[id].active; }
+
 void effects_trigger_pocket_fall(int id, PieceColor color, Vec2 from, Vec2 vel, int pocket_index) {
     if (id < 0 || id > MAX_PIECES || pocket_index < 0 || pocket_index > 3) return;
     Vec2 pc = POCKET_CENTERS[pocket_index];
@@ -46,6 +57,11 @@ void effects_trigger_pocket_fall(int id, PieceColor color, Vec2 from, Vec2 vel, 
 }
 
 void effects_update(float sim_dt) {
+    for (int i = 0; i < MAX_PIECES; i++) {
+        if (!returns[i].active) continue;
+        returns[i].t += sim_dt;
+        if (returns[i].t >= RETURN_SLIDE_TIME) returns[i].active = false;
+    }
     for (int i = 0; i <= MAX_PIECES; i++) {
         if (!falls[i].active) continue;
         falls[i].t += sim_dt;
@@ -64,6 +80,7 @@ unsigned int effects_falling_mask(void) {
 }
 
 void effects_reset(void) {
+    for (int i = 0; i < MAX_PIECES; i++) returns[i].active = false;
     for (int i = 0; i <= MAX_PIECES; i++) falls[i].active = false;
 }
 
@@ -130,6 +147,23 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
         col.a = (unsigned char)(255.0f * alpha);
         DrawCircle((int)sp.x, (int)sp.y, r, col);
         DrawCircleLines((int)sp.x, (int)sp.y, r, (f->color == PIECE_BLACK) ? (Color){ 200, 205, 215, col.a } : (Color){ 20, 20, 20, col.a });
+    }
+
+    // Coins sliding back onto the board
+    for (int i = 0; i < MAX_PIECES; i++) {
+        const ReturnEffect* re = &returns[i];
+        if (!re->active) continue;
+        float u = re->t / RETURN_SLIDE_TIME;
+        if (u > 1.0f) u = 1.0f;
+        float s = u * u * (3.0f - 2.0f * u);                     /* ease in and out */
+        Vec2 pos = { re->from.x + (re->to.x - re->from.x) * s, re->from.y + (re->to.y - re->from.y) * s };
+        Vec2 sp = math_world_to_screen(vp, pos);
+        float r = L->piece_r_px * (0.7f + 0.3f * s);
+        Color col = (re->color == PIECE_WHITE) ? (Color){ 240, 240, 240, 255 }
+                  : (re->color == PIECE_BLACK) ? (Color){ 62, 64, 74, 255 }
+                  : (Color){ 220, 30, 30, 255 };
+        DrawCircle((int)sp.x, (int)sp.y, r, col);
+        DrawCircleLines((int)sp.x, (int)sp.y, r, (re->color == PIECE_BLACK) ? (Color){ 200, 205, 215, 255 } : (Color){ 50, 50, 50, 230 });
     }
 
     // Pocket fade effects for recently pocketed pieces

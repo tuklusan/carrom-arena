@@ -77,6 +77,8 @@ static void robot_box(const RobotFrame* f, float u0, float u1, float v0, float v
     DrawLineEx(d, a, 1.5f, line);
 }
 
+/* The robots belong to the PAIRS, not to a coin colour: north/south are always red, east/west always blue. (The `team`
+ * argument keeps the old name: TEAM_WHITE draws red, TEAM_BLACK blue.) */
 /* A robot player, seen from above: antenna and head at the seat, arms, shoulders and a chest panel reaching toward the board.
  * `angle` is the direction pointing away from the board (as the old figures used it), so the body extends the other way. */
 static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float halo_pulse, float alpha) {
@@ -573,10 +575,10 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     }
 
     // Draw human figures for all four seats
-    draw_human_figure(vp, L, north_world, -M_PI / 2.0f, board_team_of_seat(board, SEAT_NORTH), current_turn_seat == SEAT_NORTH, halo_pulse_n, figure_alpha);
-    draw_human_figure(vp, L, south_world, M_PI / 2.0f, board_team_of_seat(board, SEAT_SOUTH), current_turn_seat == SEAT_SOUTH, halo_pulse_s, figure_alpha);
-    draw_human_figure(vp, L, east_world, 0.0f, board_team_of_seat(board, SEAT_EAST), current_turn_seat == SEAT_EAST, halo_pulse_e, figure_alpha);
-    draw_human_figure(vp, L, west_world, M_PI, board_team_of_seat(board, SEAT_WEST), current_turn_seat == SEAT_WEST, halo_pulse_w, figure_alpha);
+    draw_human_figure(vp, L, north_world, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH, halo_pulse_n, figure_alpha);
+    draw_human_figure(vp, L, south_world, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, halo_pulse_s, figure_alpha);
+    draw_human_figure(vp, L, east_world, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_EAST, halo_pulse_e, figure_alpha);
+    draw_human_figure(vp, L, west_world, M_PI, TEAM_BLACK, current_turn_seat == SEAT_WEST, halo_pulse_w, figure_alpha);
     
     // Pockets
     float pocket_r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM);
@@ -588,6 +590,7 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     // Pieces (interpolated from physics for smooth animation, fall back to board state)
     for (int i = 0; i < MAX_PIECES; i++) {
         Vec2 pos;
+        if (effects_piece_returning(i)) continue;   /* it is sliding back from its pocket: effects.c draws it */
         bool phys_pocketed = use_physics && physics_is_piece_pocketed(physics, i);
         if (!board_view_piece_draw_pos(board->pieces[i].on_board, phys_pocketed, use_physics,
                                        board->pieces[i].position,

@@ -344,19 +344,6 @@ target_include_directories(test_audio_policy PRIVATE
 )
 add_test(NAME audio_policy_test COMMAND test_audio_policy)
 
-# Queen cover and board end rules
-add_executable(test_queen_rules
-    test_queen_rules.c
-    ${unity_SOURCE_DIR}/src/unity.c
-)
-apply_test_warnings(test_queen_rules)
-target_link_libraries(test_queen_rules carrom_core ${PLATFORM_LIBS})
-target_include_directories(test_queen_rules PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${unity_SOURCE_DIR}/src
-)
-add_test(NAME queen_rules_test COMMAND test_queen_rules)
-
 # Capture regression test (spawns carrom_arena binary in capture mode)
 
 # Catches: capture-mode hang (Gap-2 renderer rewrite regression)

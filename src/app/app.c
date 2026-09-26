@@ -484,7 +484,18 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
 
     FLIGHT_EVENT(ctx, FLIGHT_EV_SHOT_END, (int)outcome.turn_decision, result->pocketed_count, result->striker_pocketed ? 1 : 0, result->sim_time);
 
-    if (facts.fouls != FOUL_NONE) app_cue(ctx, CUE_FOUL, 1.0f);
+    if (outcome.foul) app_cue(ctx, CUE_FOUL, 1.0f);
+    if (outcome.returned_count > 0) {
+        /* ICF 65-66, 72-75, 93: the queen and the coins paid back return to the board: each slides in from the pocket it fell into */
+        bool queen_back = false;
+        for (int i = 0; i < outcome.returned_count; i++) {
+            const ReturnedCoin* rc = &outcome.returned[i];
+            if (rc->id == QUEEN_ID) queen_back = true;
+            if (ctx->renderer) effects_trigger_return(rc->id, ctx->game.board.pieces[rc->id].color, rc->from_pocket, rc->pos);
+            FLIGHT_EVENT(ctx, FLIGHT_EV_STASH, rc->id, rc->from_pocket, rc->pos.x, rc->pos.y);
+        }
+        if (queen_back) app_cue(ctx, CUE_QUEEN_BACK, 1.0f);
+    }
     if (outcome.turn_decision == TURN_BOARD_OVER) app_cue(ctx, CUE_BOARD_WON, 1.0f);
 
     // Register any pockets not already registered mid-shot (idempotent)

@@ -111,6 +111,14 @@ float score_pocket_value(const ShotResult* result, Team team, const StrategyProf
 
 float score_queen_value(const ShotResult* result, const BoardState* board, Team team, const StrategyProfile* profile) {
     if (!result->queen_pocketed) return 0.0f;
+
+    /* ICF 92, 95a/b: with no coin of his own pocketed yet, or a due outstanding, the queen goes straight back and the turn is lost */
+    bool own_now = false;
+    for (int i = 0; i < result->pocketed_count; i++)
+        if (result->pocketed_colors[i] == (team == TEAM_WHITE ? PIECE_WHITE : PIECE_BLACK)) own_now = true;
+    bool right = (team == TEAM_WHITE) ? board->white_had_pocketed : board->black_had_pocketed;
+    bool due = ((team == TEAM_WHITE) ? board->white_dues : board->black_dues) > 0;
+    if (due || (!right && !own_now)) return -1.0f;
     
     // Check if queen covered in this shot
     bool covered = false;

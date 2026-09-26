@@ -9,7 +9,7 @@ void match_state_init(MatchState* match) {
     match->games_won_white = 0;
     match->games_won_black = 0;
     match->target_boards_per_game = 8;
-    match->target_games_per_match = 3;
+    match->target_games_per_match = 2;   /* ICF 57: the best of three games, i.e. the first to win two */
 }
 
 bool match_is_over(const MatchState* match) {
@@ -23,7 +23,9 @@ void match_start_board(MatchState* match, GameState* game, RNGContext* rng) {
     game->phase = PHASE_PLACEMENT;
     
     // Determine who breaks (alternate or based on previous board winner)
-    int total_boards = match->boards_won_white + match->boards_won_black;
+    /* ICF 49: the break passes alternately between the pairs, and the second game starts with the pair that did not break first
+     * in the first (games already played shift the rotation by one seat each) */
+    int total_boards = match->boards_won_white + match->boards_won_black + match->games_won_white + match->games_won_black;
     game->turn_seat = (Seat)(total_boards % 4);
     /* The breaker plays white: when E or W breaks, the pairs swap coin colours for this board */
     game->board.seats_swapped = (game->turn_seat == SEAT_EAST || game->turn_seat == SEAT_WEST);

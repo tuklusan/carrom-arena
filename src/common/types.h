@@ -137,6 +137,13 @@ typedef struct {
     bool queen_on_board;
     bool seats_swapped;   // E/W hold the white coins this board (the breaker always plays white, ICF 43 / 49)
     uint8_t white_dues, black_dues, queen_dues;
+    // ICF state of the board (reference/ICF-Carrom-Official-Rules.pdf)
+    bool break_made;             // ICF 44: the striker has touched a coin
+    uint8_t break_attempts;      // ICF 45: strokes of the current turn that touched nothing
+    uint8_t queen_pending;       // queen pocketed, awaiting her cover: 1 = this stroke, 2 = after ICF 101a
+    uint8_t queen_covered_team;  // who covered her: 0 nobody, 1 the white coins, 2 the black coins
+    bool white_had_pocketed;     // ICF 92, 95: a coin of his own has been pocketed (the right to the queen)
+    bool black_had_pocketed;
     // Pocketed pieces for rendering
     PieceState pocketed_pieces[MAX_PIECES];
     int pocketed_count;
@@ -171,7 +178,7 @@ typedef struct {
 typedef struct {
     GamePhase phase;
     PlayerState active_player;
-    TeamScores scores;
+    TeamScores scores;            // game points per PAIR: .white = north/south, .black = east/west
     Seat turn_seat;
     uint8_t consecutive_turns;
     BoardState board;
@@ -191,6 +198,7 @@ typedef struct {
     uint8_t pocketed_ids[19], pocketed_count, pocketed_colors[19];
     uint8_t pocketed_pocket_indices[19];  // Which pocket each piece went into (0-3)
     bool queen_pocketed, striker_pocketed; FoulFlags fouls;
+    bool striker_touched_coin;            // ICF 44: the striker touched a coin or the queen
     Vec2 final_positions[20]; float sim_time;
 } ShotResult;
 
@@ -250,16 +258,24 @@ typedef struct {
  * --------------------------------------------------------------------------- */
 typedef struct {
     uint8_t pocketed_ids[19], pocketed_count, pocketed_colors[19];
+    uint8_t pocketed_pocket_indices[19];
     bool queen_pocketed, striker_pocketed; FoulFlags fouls;
+    bool striker_touched_coin;
     Seat active_seat; QueenState queen_state;
     uint8_t white_dues, black_dues, queen_dues;
 } ShotFacts;
+
+/* A coin (or the queen) the rules put back on the board: the animation slides it from the pocket it fell into */
+typedef struct { uint8_t id; uint8_t from_pocket; Vec2 pos; } ReturnedCoin;
 
 typedef struct {
     GameState next_game_state; MatchState next_match_state;
     TeamScores score_delta;
     uint8_t due_actions_white, due_actions_black, due_actions_queen;
     TurnDecision turn_decision; GameEvent events[16]; int event_count;
+    ReturnedCoin returned[MAX_PIECES]; int returned_count;   // coins put back on the board by this stroke
+    bool foul;              // the stroke was a foul (a pocketed striker)
+    bool queen_returned;    // the queen went back to the board
 } RulesOutcome;
 
 #ifdef __cplusplus

@@ -75,6 +75,7 @@ static b2ShapeDef physics_make_shape_def(float restitution, float friction, bool
     shape_def.material.friction = friction;
     shape_def.enableSensorEvents = enable_sensors;
     shape_def.enableHitEvents = true;   /* impacts drive the collision sounds */
+    shape_def.enableContactEvents = true;   /* begin-touch events tell whether the striker touched a coin (ICF 44) */
     return shape_def;
 }
 
@@ -206,6 +207,11 @@ static int shape_tag(b2ShapeId shape) {
 /* Turn Box2D hit events (impacts above the threshold) into classified sound events */
 static void physics_collect_hit_sounds(PhysicsWorld* pw) {
     b2ContactEvents ev = b2World_GetContactEvents(pw->world_id);
+    for (int i = 0; i < ev.beginCount; i++) {
+        int ta = shape_tag(ev.beginEvents[i].shapeIdA), tb = shape_tag(ev.beginEvents[i].shapeIdB);
+        if ((ta == SHAPE_TAG_STRIKER && tb >= 1 && tb <= MAX_PIECES) || (tb == SHAPE_TAG_STRIKER && ta >= 1 && ta <= MAX_PIECES))
+            pw->striker_touched = true;
+    }
     for (int i = 0; i < ev.hitCount; i++) {
         const b2ContactHitEvent* hit = &ev.hitEvents[i];
         int ta = shape_tag(hit->shapeIdA), tb = shape_tag(hit->shapeIdB);
@@ -394,6 +400,7 @@ void physics_collect_pocketed(PhysicsWorld* pw, ShotResult* result) {
     }
     result->queen_pocketed = false;
     result->striker_pocketed = pw->striker_pocketed;
+    result->striker_touched_coin = pw->striker_touched;
     
     for (int i = 0; i < pw->pocketed_count; i++) {
         if (pw->pocketed_ids[i] == QUEEN_ID) {
@@ -476,6 +483,7 @@ void physics_apply_shot(PhysicsWorld* pw, float aim_angle, float power) {
     float speed = power * MAX_SPEED;
     
     Vec2 dir = math_vec2_from_angle(aim_angle);
+    pw->striker_touched = false;
     b2Body_SetLinearVelocity(pw->striker_body, (b2Vec2){dir.x * speed, dir.y * speed});
     b2Vec2 sp = b2Body_GetPosition(pw->striker_body);
     physics_push_sound(pw, SOUND_FLICK, 255, speed, (Vec2){ sp.x, sp.y });

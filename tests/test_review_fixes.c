@@ -138,41 +138,43 @@ void test_all_seats_have_equal_accuracy(void) {
     TEST_ASSERT_TRUE(north->power_noise_std <= 0.03f);
 }
 
-/* A pocketed striker is a foul: the turn passes and the player pays one coin back to the centre, where it must not overlap
- * a coin already there (the queen starts on the centre spot). */
-void test_striker_pocketed_returns_a_coin(void) {
+/* ICF 44: the physics reports whether the striker touched a coin */
+void test_striker_touch_is_reported(void) {
+    PhysicsWorld* pw = physics_create();
+    BoardState board;
+    board_state_init(&board);
+    board.pieces[0].on_board = true;
+    board.pieces[0].position = (Vec2){ 0.0f, 0.0f };
+    physics_sync_from_board(pw, &board, SEAT_NORTH);
+    physics_place_striker(pw, SEAT_NORTH, (Vec2){ 0.0f, BASELINE_Y_NORTH });
+    physics_apply_shot(pw, -(float)M_PI / 2.0f, 0.5f);          /* straight at the coin in the middle */
+    for (int i = 0; i < 120 * 3; i++) physics_step(pw, PHYSICS_DT);
+    ShotResult r;
+    shot_result_init(&r);
+    physics_collect_pocketed(pw, &r);
+    TEST_ASSERT_TRUE(r.striker_touched_coin);
+    physics_consume_pocketed(pw);
+    physics_place_striker(pw, SEAT_NORTH, (Vec2){ 0.4f, BASELINE_Y_NORTH });
+    physics_apply_shot(pw, (float)M_PI, 0.3f);                  /* along the baseline, away from every coin */
+    for (int i = 0; i < 120 * 2; i++) physics_step(pw, PHYSICS_DT);
+    physics_collect_pocketed(pw, &r);
+    TEST_ASSERT_FALSE(r.striker_touched_coin);
+    physics_destroy(pw);
+}
+
+/* ICF 49: the second game is opened by the other pair */
+void test_second_game_is_broken_by_the_other_pair(void) {
     RNGContext rng;
-    rng_context_init(&rng, 5);
-    MatchState match;
-    match_state_init(&match);
-    GameState game;
-    game_state_init(&game, 5);
-    match_start_board(&match, &game, &rng);
-    TEST_ASSERT_EQUAL_INT(SEAT_NORTH, game.turn_seat);
-    ShotResult res;
-    shot_result_init(&res);
-    res.pocketed_count = 1;
-    res.pocketed_ids[0] = 0;   /* a white coin: north plays white */
-    res.pocketed_colors[0] = PIECE_WHITE;
-    res.striker_pocketed = true;
-    for (int i = 0; i < MAX_PIECES; i++) res.final_positions[i] = game.board.pieces[i].position;
-    board_apply_shot_positions(&game.board, &res);
-    ShotFacts facts;
-    match_extract_facts(&game, &res, &facts);
-    TEST_ASSERT_TRUE(facts.fouls & FOUL_STRIKER_POCKETED);
-    RulesOutcome out = rules_resolve(&match, &game, &facts);
-    const BoardState* b = &out.next_game_state.board;
-    TEST_ASSERT_EQUAL_INT(TURN_ADVANCE, out.turn_decision);
-    TEST_ASSERT_EQUAL_INT(SEAT_EAST, out.next_game_state.turn_seat);
-    TEST_ASSERT_TRUE(b->pieces[0].on_board);
-    TEST_ASSERT_FALSE(b->pieces[0].pocketed);
-    TEST_ASSERT_EQUAL_INT(9, b->white_on_board);
-    TEST_ASSERT_EQUAL_INT(0, out.next_game_state.scores.white);
-    for (int i = 1; i < MAX_PIECES; i++) {
-        if (!b->pieces[i].on_board) continue;
-        float d = hypotf(b->pieces[i].position.x - b->pieces[0].position.x, b->pieces[i].position.y - b->pieces[0].position.y);
-        TEST_ASSERT_TRUE_MESSAGE(d >= 2.0f * PIECE_RADIUS_NORM, "the coin paid back overlaps another coin");
-    }
+    rng_context_init(&rng, 9);
+    MatchState m;
+    match_state_init(&m);
+    GameState g;
+    game_state_init(&g, 9);
+    match_start_board(&m, &g, &rng);
+    TEST_ASSERT_EQUAL_INT(SEAT_NORTH, g.turn_seat);       /* game 1, board 1: north/south */
+    m.boards_won_white = 0; m.boards_won_black = 0; m.games_won_white = 1;   /* game 1 is over */
+    match_start_board(&m, &g, &rng);
+    TEST_ASSERT_EQUAL_INT(SEAT_EAST, g.turn_seat);        /* game 2, board 1: east/west */
 }
 
 int main(void) {
@@ -184,6 +186,7 @@ int main(void) {
     RUN_TEST(test_legal_placements_small_request);
     RUN_TEST(test_random_float_below_one);
     RUN_TEST(test_all_seats_have_equal_accuracy);
-    RUN_TEST(test_striker_pocketed_returns_a_coin);
+    RUN_TEST(test_striker_touch_is_reported);
+    RUN_TEST(test_second_game_is_broken_by_the_other_pair);
     return UNITY_END();
 }

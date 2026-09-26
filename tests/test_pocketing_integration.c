@@ -46,6 +46,7 @@ void test_pocketing_integration_flow(void) {
     facts.striker_pocketed = result.striker_pocketed;
     facts.queen_pocketed = result.queen_pocketed;
     facts.fouls = FOUL_NONE;
+    facts.striker_touched_coin = true;
     
     RulesOutcome outcome = rules_resolve(&match, &game, &facts);
     
@@ -65,7 +66,7 @@ void test_pocketing_integration_flow(void) {
     TEST_ASSERT_EQUAL_INT(1, result_count);
     TEST_ASSERT_EQUAL_INT(0, first_piece_id);
     TEST_ASSERT_EQUAL_INT(PIECE_WHITE, first_piece_color);
-    TEST_ASSERT_EQUAL_INT(1, score_white);
+    TEST_ASSERT_EQUAL_INT(0, score_white);   /* points are counted when the board ends (ICF 53) */
     TEST_ASSERT_EQUAL_INT(TURN_CONTINUE, decision);
     TEST_ASSERT_TRUE(piece0_pocketed);
     TEST_ASSERT_FALSE(piece0_on_board);
@@ -99,6 +100,7 @@ void test_striker_pocket_integration(void) {
     ShotFacts facts = {0};
     facts.active_seat = game.turn_seat;
     facts.striker_pocketed = striker_pocketed;
+    facts.striker_touched_coin = true;
     
     RulesOutcome outcome_final = rules_resolve(&match, &game, &facts);
     int final_decision = (int)outcome_final.turn_decision;

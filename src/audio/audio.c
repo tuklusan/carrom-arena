@@ -26,6 +26,7 @@ static const struct { const char* prefix; int variants; } CUE_FILES[CUE_COUNT] =
     [CUE_QUEEN]          = { "queen_", 1 },
     [CUE_FOUL]           = { "foul_", 1 },
     [CUE_BOARD_WON]      = { "board_won_", 1 },
+    [CUE_QUEEN_BACK]     = { "queen_back_", 1 },
     [CUE_STRIKER_BOUNCE] = { "striker_bounce_", 2 },
 };
 

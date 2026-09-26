@@ -78,3 +78,18 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
 The window is locked at 560x560 and NOT resizable (operator, 2026-09-26; no FLAG_WINDOW_RESIZABLE, --width/--height ignored in rendered mode).
 Board, piece and striker dimensions are operator-locked (LOCKED_INVARIANTS.md, guard test `tests/test_locked_dimensions.c`): normalized radii piece 0.021, striker 0.028, pocket 0.030, cushion 0.025, board 1.0 = 74 cm.
 - Board surface is tinted glass (visual only; physics untouched): COLOR_BOARD in board_view.c is a translucent dark navy over the tron backdrop.
+
+## ICF Laws of Carrom (2026-09-26): `src/game/rules.c`, tests `tests/test_rules.c`, source in `reference/`
+The Laws (PDF in `reference/`) are implemented rule by rule; code comments and test names cite the rule numbers.
+- Mapping: four seats = doubles (N/S against E/W). The turn passes N, E, S, W; score, coins and the board result belong to the PAIR
+  (`GameState.scores.white` = N/S, `.black` = E/W; the robots are red for N/S and blue for E/W). The breaker's pair plays white (ICF 43).
+- Implemented: the break and its chances (44, 45; physics reports whether the striker touched a coin), the turn (48), the striker pocketed with or
+  without coins, dues and their outstanding state, coins put back by the opponent inside the outer circle clear of the centre circle
+  (72-75, 79, 84-89), the queen: right to her, cover, return (92-101), every end-of-board case (52-55, 102-112) with the 22-point and 12-point
+  rules, games (25 points or eight boards, an extra board on a tie, 56), best of three (57), the break order between games (49).
+- Not applicable to a simulation (never triggered): everything about hands, elbows, sitting, powder, umpires, time limits, technical fouls (63),
+  improper strokes (72b, 76, 77, 98b-101b: every stroke is proper), coins jumping the board (65, 66, 116), 51, 91 and the conduct rules 121-143.
+  Assumptions: a tie after eight boards plays an extra board with the normal rotation (no toss); the opponent places a due coin farthest from
+  the pockets; the striker's additional point (87b) is always demanded; a few both-last-coins cases the Laws leave open are marked in the code.
+- Returned coins (the queen, dues) slide from the pocket they fell into to their spot (`effects_trigger_return`); the queen back on the board has
+  her own sound (`queen_back_1.ogg`) and so has a foul (`foul_1.ogg`, Kenney interface error_006).

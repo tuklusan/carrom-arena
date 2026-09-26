@@ -40,7 +40,8 @@ Several numbered variants exist per sound and are rotated so repeated impacts do
 | `coin_pocket_3.ogg` | `casino pack: chips-stack-3.ogg` |
 | `coin_pocket_4.ogg` | `casino pack: chips-stack-4.ogg` |
 | `queen_1.ogg` | `impact pack: impactBell_heavy_000.ogg` |
-| `foul_1.ogg` | `interface pack: error_002.ogg` |
+| `foul_1.ogg` | `interface pack: error_006.ogg` |
+| `queen_back_1.ogg` | `interface pack: back_003.ogg` |
 | `board_won_1.ogg` | `interface pack: confirmation_002.ogg` |
 
 Mapping by game event: `flick_*` striker flick; `striker_coin_*` striker hits coin; `coin_coin_*` coin hits coin;
