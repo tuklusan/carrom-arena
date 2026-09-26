@@ -31,7 +31,7 @@ jobs:
           - { os: ubuntu-22.04, compiler: gcc,   build_type: Debug,   cmake_extra_args: "" }
           - { os: ubuntu-22.04, compiler: clang, build_type: Debug,   cmake_extra_args: "-DCMAKE_C_COMPILER=clang" }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./.github/actions/ci-cell
         with:
           compiler: ${{ matrix.compiler }}
@@ -51,7 +51,7 @@ jobs:
           - { os: windows-2022, compiler: mingw, build_type: Release, cmake_extra_args: "-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++" }
           - { os: windows-2022, compiler: mingw, build_type: Debug,   cmake_extra_args: "-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++" }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./.github/actions/ci-cell
         with:
           compiler: ${{ matrix.compiler }}

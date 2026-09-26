@@ -28,27 +28,22 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithD
 # =============================================================================
 include(FetchContent)
 
-# raylib 5.5
-FetchContent_Declare(
-    raylib
-    GIT_REPOSITORY https://github.com/raysan5/raylib
-    GIT_TAG        5.5
-    GIT_SHALLOW    TRUE
-)
-# Box2D v3.1.0
-FetchContent_Declare(
-    box2d
-    GIT_REPOSITORY https://github.com/erincatto/box2d
-    GIT_TAG        v3.1.0
-    GIT_SHALLOW    TRUE
-)
-# Unity test framework (for unit tests)
-FetchContent_Declare(
-    unity
-    GIT_REPOSITORY https://github.com/ThrowTheSwitch/Unity
-    GIT_TAG        v2.6.0
-    GIT_SHALLOW    TRUE
-)
+# Pinned dependencies (raylib 5.5, Box2D v3.1.0, Unity v2.6.0): name, url and exact commit sha live in build/pins.txt.
+# If build/fetch_deps.sh has put a checkout in deps/<name> (CI caches it), that is used and nothing is downloaded.
+set(CARROM_DEPS_DIR "${CMAKE_SOURCE_DIR}/deps" CACHE PATH "Pre-fetched dependency sources (see build/fetch_deps.sh)")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/build/pins.txt")
+file(STRINGS "${CMAKE_SOURCE_DIR}/build/pins.txt" CARROM_PINS REGEX "^[^#]")
+foreach(pin IN LISTS CARROM_PINS)
+    string(REGEX REPLACE "[ \t]+" ";" pin_fields "${pin}")
+    list(GET pin_fields 0 pin_name)
+    list(GET pin_fields 1 pin_url)
+    list(GET pin_fields 2 pin_sha)
+    FetchContent_Declare(${pin_name} GIT_REPOSITORY ${pin_url} GIT_TAG ${pin_sha})
+    string(TOUPPER "${pin_name}" pin_upper)
+    if(EXISTS "${CARROM_DEPS_DIR}/${pin_name}/.git")
+        set(FETCHCONTENT_SOURCE_DIR_${pin_upper} "${CARROM_DEPS_DIR}/${pin_name}")
+    endif()
+endforeach()
 
 # Disable raylib's -Werror flags by setting cache variables before MakeAvailable
 # raylib's CompilerFlags.cmake adds -Werror=pointer-arith and -Werror=implicit-function-declaration

@@ -47,7 +47,7 @@ cd carrom
 ./scripts/clean_build.sh
 
 # 3. Run rendered spectator mode
-./build/carrom_arena --mode=rendered
+./out/carrom_arena --mode=rendered
 ```
 
 **Windows (PowerShell, VS2022 Developer Command Prompt)**
@@ -55,7 +55,7 @@ cd carrom
 git clone <repository-url> carrom
 cd carrom
 .\scripts\clean_build.ps1   # (or run CMake manually)
-.\build\carrom_arena.exe --mode=rendered
+.\out\carrom_arena.exe --mode=rendered
 ```
 
 ---
@@ -77,12 +77,12 @@ Full certification: [`docs/archive/company/CROSS_PLATFORM_QA_CERTIFICATE.md`](do
 | Task | Command |
 |------|---------|
 | **Clean build (Debug)** | `./scripts/clean_build.sh` |
-| **Configure only** | `cmake -B build -DCMAKE_BUILD_TYPE=Debug` |
-| **Build (parallel)** | `cmake --build build --parallel` |
+| **Configure only** | `cmake -B out -DCMAKE_BUILD_TYPE=Debug` |
+| **Build (parallel)** | `cmake --build out --parallel` |
 | **Release build** | `cmake -B build_rel -DCMAKE_BUILD_TYPE=Release && cmake --build build_rel --parallel` |
-| **Run all tests** | `cd build && ctest --output-on-failure` |
-| **Unit tests only** | `cd build && ctest -L unit --output-on-failure` |
-| **Integration tests** | `cd build && ctest -L integration --output-on-failure` |
+| **Run all tests** | `cd out && ctest --output-on-failure` |
+| **Unit tests only** | `cd out && ctest -L unit --output-on-failure` |
+| **Integration tests** | `cd out && ctest -L integration --output-on-failure` |
 
 ---
 
@@ -113,16 +113,16 @@ Full certification: [`docs/archive/company/CROSS_PLATFORM_QA_CERTIFICATE.md`](do
 **Examples**
 ```bash
 # Deterministic replay of seed 12345
-./build/carrom_arena --mode=diagnostic --seed=12345 --trace-dir=traces --verbose
+./out/carrom_arena --mode=diagnostic --seed=12345 --trace-dir=traces --verbose
 
 # Light soak (CI-friendly)
-./build/carrom_arena --mode=soak --boards=10 --seeds=5 --matches=1
+./out/carrom_arena --mode=soak --boards=10 --seeds=5 --matches=1
 
 # Full certification soak (Article 16.5)
-./build/carrom_arena --mode=soak --boards=100 --seeds=100 --matches=10
+./out/carrom_arena --mode=soak --boards=100 --seeds=100 --matches=10
 
 # Frame capture for visual verification
-./build/carrom_arena --mode=capture --seed=999 --frames=300 --capture-dir=captures
+./out/carrom_arena --mode=capture --seed=999 --frames=300 --capture-dir=captures
 ```
 
 ---
@@ -236,10 +236,10 @@ Based on **International Carrom Federation Laws of Carrom** (https://www.carrom.
 **Diagnostic reading**
 ```bash
 # Pretty-print last 20 shots
-./build/carrom_arena --mode=diagnostic --seed=12345 --trace-dir=traces 2>&1 | head -40
+./out/carrom_arena --mode=diagnostic --seed=12345 --trace-dir=traces 2>&1 | head -40
 
 # Or use replay tool
-./build/carrom_replay traces/trace_12345.jsonl
+./out/carrom_replay traces/trace_12345.jsonl
 ```
 
 ---

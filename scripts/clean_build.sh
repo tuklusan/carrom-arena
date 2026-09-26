@@ -1,21 +1,21 @@
 #!/bin/bash
 # Clean Build Script - Carrom Arena
-# Removes build directory and rebuilds from scratch
+# Removes the out/ build directory and rebuilds from scratch
 
 set -e
 
 echo "=== Carrom Arena Clean Build ==="
-echo "Removing build directory..."
-rm -rf build
+echo "Removing out directory..."
+rm -rf out
 
-echo "Creating build directory..."
-mkdir -p build
+echo "Creating out directory..."
+mkdir -p out
 
 echo "Configuring CMake..."
-cmake -B build -DCMAKE_BUILD_TYPE=Debug -G Ninja
+cmake -B out -DCMAKE_BUILD_TYPE=Debug -G Ninja
 
 echo "Building..."
-cmake --build build --parallel $(nproc)
+cmake --build out --parallel $(nproc)
 
 echo "=== Clean Build Complete ==="
-echo "Binary: build/carrom_arena"
+echo "Binary: out/carrom_arena"

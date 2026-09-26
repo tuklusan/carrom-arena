@@ -1,5 +1,5 @@
 name: Build and test
-description: Configure, build and run the full ctest suite for one matrix cell
+description: Configure, build and run the full ctest suite for one matrix cell (pinned tools, cached dependencies and ccache)
 inputs:
   compiler:
     required: true
@@ -13,21 +13,45 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Read pinned tool versions (build/tools.txt)
+      id: tools
+      shell: bash
+      run: cat build/tools.txt >> "$GITHUB_OUTPUT"
+
+    - name: Install pinned CMake and Ninja
+      uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # v4.4.2
+      with:
+        cmakeVersion: ${{ steps.tools.outputs.cmake }}
+        ninjaVersion: ${{ steps.tools.outputs.ninja }}
+
     - name: Install dependencies (Linux)
       if: runner.os == 'Linux'
       shell: bash
-      run: |
-        sudo rm -f /etc/apt/sources.list.d/google-chrome.list
-        sudo apt-get update
-        sudo apt-get install -y ninja-build libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev xvfb
+      run: bash build/ci_linux_deps.sh
+
+    - name: Restore dependency sources (deps/)
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: deps
+        key: deps-${{ runner.os }}-${{ hashFiles('build/pins.txt') }}
+
+    - name: Fetch pinned dependencies
+      shell: bash
+      run: bash build/fetch_deps.sh
+
+    - name: Set up ccache
+      uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+      with:
+        key: ${{ runner.os }}-${{ inputs.compiler }}-${{ inputs.build_type }}
+        max-size: 300M
 
     - name: Configure CMake
       shell: bash
-      run: cmake -B build -G Ninja ${{ inputs.cmake_extra_args }} -DCMAKE_BUILD_TYPE=${{ inputs.build_type }}
+      run: cmake -B out -G Ninja ${{ inputs.cmake_extra_args }} -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} -DCMAKE_C_COMPILER_LAUNCHER=ccache
 
     - name: Build
       shell: bash
-      run: cmake --build build --config ${{ inputs.build_type }} -j
+      run: cmake --build out --config ${{ inputs.build_type }} -j
 
     - name: Start virtual display (Linux)
       if: runner.os == 'Linux'
@@ -39,12 +63,17 @@ runs:
 
     - name: Run ctest
       shell: bash
-      run: ctest --test-dir build --output-on-failure -j$(nproc)
+      run: ctest --test-dir out --output-on-failure -j$(nproc)
+
+    - name: ccache statistics
+      if: always()
+      shell: bash
+      run: ccache -s || true
 
     - name: Upload ctest log
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: ctest-log-${{ inputs.artifact_suffix }}
-        path: build/Testing/**/*.xml
+        path: out/Testing/**/*.xml
         retention-days: 7

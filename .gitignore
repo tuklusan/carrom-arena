@@ -6,7 +6,8 @@ vendor/
 
 # Build outputs
 dist/
-build/
+out/
+deps/
 *.pyc
 __pycache__/
 target/
@@ -32,7 +33,7 @@ yarn-debug.log*
 coverage/
 .nyc_output/
 # Operator-run artefacts (kimi + local build trees)
-build*/
+build_*/
 carrom_capture_test_*/
 Testing/
 wip_*.patch
