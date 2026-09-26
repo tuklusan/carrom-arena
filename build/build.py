@@ -3,6 +3,7 @@
 
     python build/build.py                     configure, build and test (Debug) into out/
     python build/build.py --build-type Release --no-test
+    python build/build.py --build-type Debug,Release      (both, into out/Debug and out/Release)
     python build/build.py --out /tmp/carrom-out --no-tools    (use the system cmake and ninja)
     python build/build.py fetch              only pre-fetch the pinned dependencies into deps/
     python build/build.py admit              CI only: the per-runner queue gate (see below)
@@ -14,7 +15,7 @@ What it does, in order:
   3. deps     : the exact commits in build/pins.txt, depth-1, into deps/ (CMake uses deps/<name> when present).
   4. build    : cmake configure + build (Ninja), the compiler found for this platform.
   5. test     : ctest (under xvfb-run on a Linux machine without a display).
-  6. dist     : the game executable copied to <out>/dist/ with the build id in its name.
+  6. dist     : the game executable copied to <out>/dist/ with the build id and build type in its name.
 
 Queue gate (`admit`, used by .github/workflows/ci.yml): at most one job per runner kind may run and at most one may wait;
 a request that would be the second waiting one is rejected, and the run fails. RUNNERS is the single list of runner kinds:
@@ -169,33 +170,36 @@ def build_id():
 
 
 def do_build(args):
-    out = Path(args.out).resolve()
-    out.mkdir(parents=True, exist_ok=True)
+    root_out = Path(args.out).resolve()
+    root_out.mkdir(parents=True, exist_ok=True)
     os.chdir(ROOT)
-    log(f"platform: {platform.system()} {platform.machine()}, python {platform.python_version()}, out={out}")
-    ensure_tools(out, not args.no_tools)
+    log(f"platform: {platform.system()} {platform.machine()}, python {platform.python_version()}, out={root_out}")
+    ensure_tools(root_out, not args.no_tools)
     ensure_linux_packages()
     fetch_deps(ROOT / "deps")
 
-    cfg = ["cmake", "-S", ROOT, "-B", out, "-G", "Ninja", f"-DCMAKE_BUILD_TYPE={args.build_type}",
-           *compiler_args(args.cc)]
-    run(cfg)
-    run(["cmake", "--build", out, "--parallel", str(os.cpu_count() or 2)])
-
-    if not args.no_test:
-        ctest = ["ctest", "--test-dir", out, "--output-on-failure", "-j", str(os.cpu_count() or 2)]
-        if sys.platform == "linux" and not os.environ.get("DISPLAY") and shutil.which("xvfb-run"):
-            ctest = ["xvfb-run", "-a", *ctest]
-        run(ctest)
-
-    dist = out / "dist"
+    configs = [c.strip() for c in args.build_type.split(",") if c.strip()]
+    for cfg in configs:
+        if cfg not in ("Debug", "Release", "RelWithDebInfo"):
+            sys.exit(f"unknown build type {cfg}")
+    dist = root_out / "dist"
     dist.mkdir(exist_ok=True)
-    src = out / exe("carrom_arena")
-    if src.exists():
-        arch = platform.machine().lower().replace("amd64", "x64").replace("x86_64", "x64").replace("aarch64", "arm64")
-        name = f"carrom_arena-{sys.platform.replace('win32', 'windows')}-{arch}-{build_id()}" + (".exe" if os.name == "nt" else "")
-        shutil.copy2(src, dist / name)
-        log(f"dist: {dist / name}")
+    for cfg in configs:
+        out = root_out if len(configs) == 1 else root_out / cfg
+        log(f"===== {cfg} -> {out}")
+        run(["cmake", "-S", ROOT, "-B", out, "-G", "Ninja", f"-DCMAKE_BUILD_TYPE={cfg}", *compiler_args(args.cc)])
+        run(["cmake", "--build", out, "--parallel", str(os.cpu_count() or 2)])
+        if not args.no_test:
+            ctest = ["ctest", "--test-dir", out, "--output-on-failure", "-j", str(os.cpu_count() or 2)]
+            if sys.platform == "linux" and not os.environ.get("DISPLAY") and shutil.which("xvfb-run"):
+                ctest = ["xvfb-run", "-a", *ctest]
+            run(ctest)
+        src = out / exe("carrom_arena")
+        if src.exists():
+            arch = platform.machine().lower().replace("amd64", "x64").replace("x86_64", "x64").replace("aarch64", "arm64")
+            name = f"carrom_arena-{sys.platform.replace('win32', 'windows')}-{arch}-{build_id()}-{cfg.lower()}" + (".exe" if os.name == "nt" else "")
+            shutil.copy2(src, dist / name)
+            log(f"dist: {dist / name}")
     log("OK")
 
 
@@ -236,7 +240,7 @@ def do_admit(_args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("command", nargs="?", default="all", choices=["all", "fetch", "admit"])
-    ap.add_argument("--build-type", default="Debug", choices=["Debug", "Release", "RelWithDebInfo"])
+    ap.add_argument("--build-type", default="Debug", help="Debug (default), Release, RelWithDebInfo, or a comma list such as Debug,Release (each goes to <out>/<type>)")
     ap.add_argument("--out", default=str(ROOT / "out"), help="build directory (default: out/)")
     ap.add_argument("--no-test", action="store_true", help="skip ctest")
     ap.add_argument("--no-tools", action="store_true", help="use the cmake and ninja already on PATH")

@@ -42,7 +42,7 @@ jobs:
         runner: ${{ fromJSON(needs.admit.outputs.runners) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - run: $(command -v python3 || command -v python) build/build.py
+      - run: $(command -v python3 || command -v python) build/build.py --build-type Debug,Release
         shell: bash
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

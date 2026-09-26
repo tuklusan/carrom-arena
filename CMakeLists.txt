@@ -20,7 +20,10 @@ set(CMAKE_C_EXTENSIONS OFF)
 # =============================================================================
 # Build Configurations
 # =============================================================================
-set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type: Debug, Release, RelWithDebInfo" FORCE)
+# Honour the requested build type (-DCMAKE_BUILD_TYPE=Release ...); Debug (sanitizers on Linux gcc, -Werror) only when none is given.
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type: Debug, Release, RelWithDebInfo" FORCE)
+endif()
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo")
 
 # =============================================================================
@@ -57,7 +60,7 @@ FetchContent_MakeAvailable(raylib box2d unity)
 # Box2D v3.1.0 headers don't include math.h, causing implicit declaration warnings/errors
 if(EXISTS "${box2d_SOURCE_DIR}/include/box2d/math_functions.h")
     file(READ "${box2d_SOURCE_DIR}/include/box2d/math_functions.h" BOX2D_MATH_H)
-    if(BOX2D_MATH_H AND NOT BOX2D_MATH_H MATCHES "Math function declarations added")
+    if(BOX2D_MATH_H AND NOT BOX2D_MATH_H MATCHES "Math function declarations for Box2D")
         # Add explicit math function declarations for all platforms
         string(REPLACE "#pragma once" 
             "#pragma once\n\n// Math function declarations for Box2D (all platforms)\n// Box2D headers use math functions without including math.h\nextern float sqrtf(float);\nextern float atan2f(float, float);\nextern float cosf(float);\nextern float sinf(float);\nextern float fabsf(float);\n" 
@@ -71,8 +74,10 @@ endif()
 if(TARGET box2d)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(box2d PRIVATE -Wno-error=implicit-function-declaration)
+        # Box2D hardcodes -Werror; newer compilers at -O3 warn inside its headers (maybe-uninitialized): not our code, do not fail the build
+        set_target_properties(box2d PROPERTIES COMPILE_WARNING_AS_ERROR OFF)
         if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
-            target_compile_options(box2d PRIVATE -Wno-error=builtin-declaration-mismatch)
+            target_compile_options(box2d PRIVATE -Wno-error=builtin-declaration-mismatch -Wno-error=maybe-uninitialized)
         endif()
     endif()
 endif()
