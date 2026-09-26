@@ -80,6 +80,9 @@ void test_capture_completes_bounded(void) {
     snprintf(logpath, sizeof(logpath), "%s/log.txt", dir);
     // If DISPLAY is already set (e.g. CI setup Xvfb externally), skip xvfb-run
     const char* display = getenv("DISPLAY");
+#ifdef __APPLE__
+    display = "native";   /* macOS has a native window system and no xvfb-run */
+#endif
     if (display && display[0]) {
         snprintf(cmd, sizeof(cmd),
             "rm -rf %s && mkdir -p %s && "
