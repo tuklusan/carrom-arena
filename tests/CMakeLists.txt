@@ -19,7 +19,7 @@ function(apply_test_warnings target)
             list(APPEND TEST_WARNINGS -Wduplicated-cond -Wlogical-op)
         else()
             # Clang-specific: disable warnings not applicable or too strict for our codebase
-            list(APPEND TEST_WARNINGS -Wno-newline-eof)
+            list(APPEND TEST_WARNINGS -Wno-newline-eof -Wno-implicit-float-conversion)
         endif()
         target_compile_options(${target} PRIVATE ${TEST_WARNINGS})
         # Force include system math.h before Box2D headers to fix missing sqrtf/atan2f declarations (Linux only)
