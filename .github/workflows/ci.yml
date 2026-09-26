@@ -1,60 +1,59 @@
 name: CI
 
+# All logic lives in build/build.py (run it by hand for a manual build). This file only picks runners and calls it.
+# admit: the queue gate. At most one job per runner kind runs (concurrency group below) and at most one waits; a run that
+# would be the second waiting job for a kind is rejected and this run fails.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
-# Only one CI run at a time, and inside a run only ONE job per runner
-# architecture at a time (max-parallel: 1 per architecture job below).
-concurrency:
-  group: carrom-ci
-  cancel-in-progress: false
+permissions:
+  contents: read
+  actions: read
 
 jobs:
-  linux:
-    name: ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.build_type }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        include:
-          - { os: ubuntu-24.04, compiler: gcc,   build_type: Release, cmake_extra_args: "" }
-          - { os: ubuntu-24.04, compiler: clang, build_type: Release, cmake_extra_args: "-DCMAKE_C_COMPILER=clang" }
-          - { os: ubuntu-24.04, compiler: gcc,   build_type: Debug,   cmake_extra_args: "" }
-          - { os: ubuntu-24.04, compiler: clang, build_type: Debug,   cmake_extra_args: "-DCMAKE_C_COMPILER=clang" }
-          - { os: ubuntu-22.04, compiler: gcc,   build_type: Release, cmake_extra_args: "" }
-          - { os: ubuntu-22.04, compiler: clang, build_type: Release, cmake_extra_args: "-DCMAKE_C_COMPILER=clang" }
-          - { os: ubuntu-22.04, compiler: gcc,   build_type: Debug,   cmake_extra_args: "" }
-          - { os: ubuntu-22.04, compiler: clang, build_type: Debug,   cmake_extra_args: "-DCMAKE_C_COMPILER=clang" }
+  admit:
+    runs-on: ubuntu-latest
+    outputs:
+      runners: ${{ steps.gate.outputs.runners }}
+      rejected: ${{ steps.gate.outputs.rejected }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: ./.github/actions/ci-cell
-        with:
-          compiler: ${{ matrix.compiler }}
-          build_type: ${{ matrix.build_type }}
-          cmake_extra_args: ${{ matrix.cmake_extra_args }}
-          artifact_suffix: ${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
+      - id: gate
+        run: python3 build/build.py admit
+        env:
+          GH_TOKEN: ${{ github.token }}
 
-  windows:
-    name: ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.build_type }}
-    runs-on: ${{ matrix.os }}
+  build:
+    name: build (${{ matrix.runner }})
+    needs: admit
+    if: ${{ always() && needs.admit.outputs.runners != '' && needs.admit.outputs.runners != '[]' }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
+    concurrency:
+      group: carrom-${{ matrix.runner }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
-        include:
-          - { os: windows-2022, compiler: mingw, build_type: Release, cmake_extra_args: "-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++" }
-          - { os: windows-2022, compiler: mingw, build_type: Debug,   cmake_extra_args: "-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++" }
+        runner: ${{ fromJSON(needs.admit.outputs.runners) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: ./.github/actions/ci-cell
+      - run: $(command -v python3 || command -v python) build/build.py
+        shell: bash
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          compiler: ${{ matrix.compiler }}
-          build_type: ${{ matrix.build_type }}
-          cmake_extra_args: ${{ matrix.cmake_extra_args }}
-          artifact_suffix: ${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
+          name: carrom-arena-${{ matrix.runner }}
+          path: out/dist/*
+          if-no-files-found: warn
+          retention-days: 30
+
+  verdict:
+    needs: [admit, build]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.admit.result }}" = success && test -z "${{ needs.admit.outputs.rejected }}" || { echo "queue full or gate error, rejected - ${{ needs.admit.outputs.rejected }}"; exit 1; }

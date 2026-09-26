@@ -29,8 +29,8 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithD
 include(FetchContent)
 
 # Pinned dependencies (raylib 5.5, Box2D v3.1.0, Unity v2.6.0): name, url and exact commit sha live in build/pins.txt.
-# If build/fetch_deps.sh has put a checkout in deps/<name> (CI caches it), that is used and nothing is downloaded.
-set(CARROM_DEPS_DIR "${CMAKE_SOURCE_DIR}/deps" CACHE PATH "Pre-fetched dependency sources (see build/fetch_deps.sh)")
+# If build/build.py fetch has put a checkout in deps/<name> (CI caches it), that is used and nothing is downloaded.
+set(CARROM_DEPS_DIR "${CMAKE_SOURCE_DIR}/deps" CACHE PATH "Pre-fetched dependency sources (see build/build.py fetch)")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/build/pins.txt")
 file(STRINGS "${CMAKE_SOURCE_DIR}/build/pins.txt" CARROM_PINS REGEX "^[^#]")
 foreach(pin IN LISTS CARROM_PINS)

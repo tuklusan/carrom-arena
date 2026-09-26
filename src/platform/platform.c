@@ -154,6 +154,10 @@ void platform_diag_close(void) {
     g_diag_file = NULL;
 }
 
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
+#endif
 void platform_diag_logf(const char* fmt, ...) {
     if (!g_diag_file) return;
     va_list args;
@@ -162,6 +166,9 @@ void platform_diag_logf(const char* fmt, ...) {
     va_end(args);
     fflush(g_diag_file);
 }
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 void platform_fatal(const char* message) {
     platform_diag_logf("[FATAL] %s\n", message);

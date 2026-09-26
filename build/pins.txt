@@ -1,6 +1,6 @@
 # Pinned dependencies: name  git-url  commit-sha  (release tag, informational)
-# Read by CMakeLists.txt (FetchContent) and by build/fetch_deps.sh (pre-fetch into deps/, which CI caches).
-# To upgrade: change the sha and tag together, then run build/fetch_deps.sh and the full test suite.
+# Read by CMakeLists.txt (FetchContent) and by build/build.py fetch (pre-fetch into deps/, which CI caches).
+# To upgrade: change the sha and tag together, then run build/build.py fetch and the full test suite.
 raylib https://github.com/raysan5/raylib c1ab645ca298a2801097931d1079b10ff7eb9df8 5.5
 box2d https://github.com/erincatto/box2d d5935a7a1853eb0f4aca92b369f37929d02c7e11 v3.1.0
 unity https://github.com/ThrowTheSwitch/Unity 860062d51b2e8a75d150337b63ca2a472840d13c v2.6.0
