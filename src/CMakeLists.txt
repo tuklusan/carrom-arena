@@ -48,7 +48,7 @@ target_link_libraries(carrom_core
     box2d
     ${PLATFORM_LIBS}
 )
-if(UNIX)
+if(UNIX AND NOT APPLE)   # librt is Linux-only
     target_link_libraries(carrom_core rt)
 endif()
 
