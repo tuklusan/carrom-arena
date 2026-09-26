@@ -85,7 +85,7 @@ void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
 
     // Inner ring: R = 2r, 6 pieces, 60deg increments
     for (int i = 0; i < 6; i++) {
-        float angle = (float)i * (M_PI / 3.0f);
+        float angle = (float)((float)i * (M_PI / 3.0f));
         positions[pos_idx++] = math_vec2_from_angle(angle);
         positions[pos_idx-1].x *= 2.0f * r;
         positions[pos_idx-1].y *= 2.0f * r;
@@ -93,7 +93,7 @@ void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
 
     // Outer ring Tips: R = 4r, 6 pieces, 60deg increments
     for (int i = 0; i < 6; i++) {
-        float angle = (float)i * (M_PI / 3.0f);
+        float angle = (float)((float)i * (M_PI / 3.0f));
         positions[pos_idx++] = math_vec2_from_angle(angle);
         positions[pos_idx-1].x *= 4.0f * r;
         positions[pos_idx-1].y *= 4.0f * r;
@@ -101,7 +101,7 @@ void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
 
     // Outer ring Notches: R = 2*sqrt(3)*r, 6 pieces, 30deg, 90deg...
     for (int i = 0; i < 6; i++) {
-        float angle = (float)i * (M_PI / 3.0f) + (M_PI / 6.0f);
+        float angle = (float)((float)i * (M_PI / 3.0f) + (M_PI / 6.0f));
         positions[pos_idx++] = math_vec2_from_angle(angle);
         float scale = 2.0f * math_sqrtf(3.0f) * r;
         positions[pos_idx-1].x *= scale;

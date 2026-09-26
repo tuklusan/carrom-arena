@@ -260,11 +260,18 @@ static void draw_footer_band(Renderer* r, const Layout* L) {
 
 
 /* raylib logs to stdout by default; the game must not write to a console, so its log goes to the debug file */
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
+#endif
 static void raylib_log_to_file(int level, const char* text, va_list args) {
     char line[512];
     vsnprintf(line, sizeof(line), text, args);
     platform_diag_logf("[raylib %d] %s\n", level, line);
 }
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window, bool debug_phase, float initial_speed) {
     (void)title;
