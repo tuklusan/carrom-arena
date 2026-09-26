@@ -3,9 +3,10 @@
 **Updated:** 2026-09-24 (UTC). Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
 
 ## Repo state
-- `main` head `0b3a50c` ("default game speed 1.0x (real time)"), identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. Latest tag `beta-0.0.6`; the next tag is `beta-0.0.7` (never move existing tags).
+- `main` head: see `git log` (last code change 9b28c8e, "waiting robots no longer fade..."), on top of tag `beta-0.0.11`; identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. The next tag is `beta-0.0.12` (only when the operator asks; never move existing tags).
+- Standing operator rule: after ANY change, commit on Linux, run `bash ~/clean_verify.sh`, `bash ~/bin/push_all.sh`, then `git pull --ff-only --tags` in the H: clone, without being asked. `HANDOFF.md` (next to the blog on H:) has the full procedure and the Windows exe build. Edits made on Windows must keep LF endings: the H: clone checks files out as CRLF, so never scp a Windows-side file over a Linux one without converting it.
 - The Linux box is ephemeral. "Push" means `bash ~/bin/push_all.sh` (GitHub + the guard against secrets) and then fast-forwarding the H: clone. The blog lives at `H:\My Documents\SOFTWARE-DEVELOPMENT\Carrom\SANYALnet-Labs-Dev-Blog.md` and is kept up to date as a story for a future blog post (no secrets).
-- Fresh Windows 11 build for the operator: `H:\My Documents\SOFTWARE-DEVELOPMENT\Carrom\build_fresh\carrom_arena.exe`.
+- Latest Windows 11 build for the operator: `build_fresh\carrom_arena_6f2acc2-anim.exe` on H: (always a new name per build).
 
 ## How to work (the evidence discipline)
 1. Edit on the Linux repo. Build with `cmake --build build_debug` (Debug + ASan/UBSan + -Werror), run `ctest` in `build_debug`.
@@ -64,6 +65,11 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
   `third_party/minimp3`, CC0; mirrors eu/us/fr/fr2 .ah.fm/live tried in turn) + `audio/radio.c` (raylib AudioStream glue, prebuffer, underrun = silence).
   Plays by default. The button pauses; a manual pause stays paused; a stream failure only silences it (button shows play) while it keeps reconnecting and
   resumes by itself. `--no-radio` disables it; `radio_probe` tool checks network + decode; test `radio_stream_test` covers the reconnect logic with a fake source.
+
+## Waiting robots (2026-09-25 night)
+- The robots no longer fade (the flash alpha on the figures during thinking/aim preview is removed; the striker still flashes). A robot that is
+  NOT on turn animates in `draw_human_figure` (`board_view.c`): pupils circle inside the eyes and each arm flaps about the shoulder
+  (`robot_rbox` draws a box rotated about a pivot). `idle_wave(seat, k, t)` gives each seat its own irregular rhythm. The on-turn robot stays still with its halo.
 
 ## Open items
 - Blank frames in `--mode=capture` (see above).
