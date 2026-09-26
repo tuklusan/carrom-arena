@@ -7,14 +7,14 @@
 - CANONICAL RULE (operator): all build and edit activities happen on the Linux clone, which is the canonical local repo. Changes go from it to GitHub, and then the H: clone is updated to match GitHub and Linux. Never edit or build source in the H: clone.
 - Standing operator rule: after ANY change, commit on Linux, run `bash ~/clean_verify.sh`, `bash ~/bin/push_all.sh`, then `git pull --ff-only --tags` in the H: clone, without being asked. `HANDOFF.md` (next to the blog on H:) has the full procedure and the Windows exe build. Edits made on Windows must keep LF endings: the H: clone checks files out as CRLF, so never scp a Windows-side file over a Linux one without converting it.
 - The Linux box is ephemeral. "Push" means `bash ~/bin/push_all.sh` (GitHub + the guard against secrets) and then fast-forwarding the H: clone. The blog lives at `H:\My Documents\SOFTWARE-DEVELOPMENT\Carrom\SANYALnet-Labs-Dev-Blog.md` and is kept up to date as a story for a future blog post (no secrets).
-- Latest Windows 11 build for the operator: `build_fresh\carrom_arena_6f2acc2-anim.exe` on H: (always a new name per build).
+- The Windows exe for the operator is built by CI (artifact `carrom-arena-windows-2022`), downloaded into `build_fresh\` on H: with `gh run download`. The Windows 11 build box is retired.
 
 ## How to work (the evidence discipline)
 1. Edit on the Linux repo. Build with `cmake --build build_debug` (Debug + ASan/UBSan + -Werror), run `ctest` in `build_debug`.
 2. Commit, then `bash ~/clean_verify.sh` (clones the committed HEAD, builds, runs all tests; needs `100% tests passed`, currently 16/16). Then `bash ~/bin/push_all.sh`, then fast-forward the H: clone, then check CI.
-3. CI is serialized ("one CI job per runner architecture at a time"): `.github/workflows/ci.yml` with the composite action `.github/actions/ci-cell`.
+3. CI: see step 5; the old composite action `ci-cell` is gone.
 4. Look at the real game: run `carrom_arena --mode=rendered` on Xvfb via a SCRIPT FILE (never inline in an ssh command: `scripts/kill-all-runs.sh` kills any process whose command line contains the binary name, including your own shell), screenshot with `import -window root`, and Read the PNGs. `--mode=capture` currently writes blank white frames (open bug: the capture texture is only drawn when the window is hidden).
-5. Windows build: tar `git ls-files` on Linux, scp to the W11 box (`vagab@192.168.4.103`), extract to `C:/Users/vagab/carrom_wip`, `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCARROM_BUILD_ID=<git describe>` (a tarball has no .git), build target `carrom_arena`, copy the exe to `build_fresh`, delete the scratch on both machines.
+5. Build and CI: `python build/build.py` (see `build/README.md`) is the ONLY build path, on the Linux clone and in GitHub Actions; `.github/workflows/ci.yml` just picks runners. Six runners cover all hosted architectures (ubuntu-24.04, ubuntu-24.04-arm, windows-2022, windows-11-arm, macos-15, macos-15-intel) and all pass. Queue rule: per runner kind one job runs and one may wait; `admit` rejects a third. Windows exe: `gh run download <run> -n carrom-arena-windows-2022`.
 6. Never write the shared machine password anywhere. Never push kimi config. No attribution lines in commits. Do not squash GitHub history (the operator said hold off).
 
 ## What is done (2026-09-22 to 2026-09-24)
@@ -71,6 +71,12 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
 - The robots no longer fade (the flash alpha on the figures during thinking/aim preview is removed; the striker still flashes). A robot that is
   NOT on turn animates in `draw_human_figure` (`board_view.c`): pupils circle inside the eyes and each arm flaps about the shoulder
   (`robot_rbox` draws a box rotated about a pivot). `idle_wave(seat, k, t)` gives each seat its own irregular rhythm. The on-turn robot stays still with its halo.
+
+## Build system (2026-09-26)
+- `build/` is tracked: `build.py`, `pins.txt` (raylib/Box2D/Unity commit shas), `tools.txt` (pip-installed cmake 3.31.6, ninja 1.13.0). Output goes to `out/` (ignored).
+- Portability fixes made for macOS/clang: explicit narrowing of M_PI angles in `board.c`, `-Wformat-nonliteral` pragmas on the two log forwarders, `-Wno-implicit-float-conversion` for clang, no `-lrt` on Apple, `capture_test` uses `timeout` only if present and is skipped on Windows and macOS CI (no window system on those runners).
+- CMakeLists forces CMAKE_BUILD_TYPE=Debug, so `--build-type Release` has no effect (every exe is a Debug build).
+- The dependency/ccache caching from the first attempt was dropped when the workflow became a call to `build.py` (actions/cache steps do not fit a one-line workflow); deps are fetched depth-1 each run (seconds).
 
 ## Open items
 - Blank frames in `--mode=capture` (see above).
