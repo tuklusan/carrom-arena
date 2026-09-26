@@ -30,12 +30,19 @@ static inline float compute_flash_alpha(double wall_time) {
 #define COLOR_CUSHION (Color){ 100, 70, 40, 255 }     // Darker brown
 #define COLOR_POCKET (Color){ 0, 0, 0, 255 }          // Black
 #define COLOR_WHITE_PIECE (Color){ 240, 240, 240, 255 }
-#define COLOR_BLACK_PIECE (Color){ 30, 30, 30, 255 }
+#define COLOR_BLACK_PIECE (Color){ 62, 64, 74, 255 }       /* charcoal, with a silver rim: readable on the dark glass */
 #define COLOR_QUEEN (Color){ 220, 30, 30, 255 }       // Red
 #define COLOR_STRIKER (Color){ 255, 215, 0, 255 }     // Gold
 #define COLOR_LINE (Color){ 255, 255, 255, 100 }      // White translucent
 #define COLOR_WHITE_COIN_OUTLINE (Color){ 50, 50, 50, 230 }   // thin dark rim: light coins look bigger than dark ones otherwise
-static Color coin_outline_color(PieceColor c) { return c == PIECE_WHITE ? COLOR_WHITE_COIN_OUTLINE : COLOR_LINE; }
+#define COLOR_BLACK_COIN_RIM (Color){ 200, 205, 215, 255 }
+static Color coin_outline_color(PieceColor c) { return c == PIECE_WHITE ? COLOR_WHITE_COIN_OUTLINE : (c == PIECE_BLACK ? COLOR_BLACK_COIN_RIM : COLOR_LINE); }
+/* the rim: 1 px for the light coins, 2 px for the dark ones */
+static void draw_coin_rim(Vec2 screen, float r, PieceColor c) {
+    Color k = coin_outline_color(c);
+    DrawCircleLines((int)screen.x, (int)screen.y, r, k);
+    if (c == PIECE_BLACK) DrawCircleLines((int)screen.x, (int)screen.y, r - 1.0f, k);
+}
 #define COLOR_BASELINE (Color){ 100, 255, 100, 150 }  // Green translucent (muted for baseline)
 #define COLOR_BASELINE_MUTED (Color){ 100, 255, 100, 76 }  // 30% alpha of team color
 
@@ -598,7 +605,7 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         else c = COLOR_QUEEN;
         
         DrawCircle((int)screen.x, (int)screen.y, piece_r, c);
-        DrawCircleLines((int)screen.x, (int)screen.y, piece_r, coin_outline_color(board->pieces[i].color));
+        draw_coin_rim(screen, piece_r, board->pieces[i].color);
     }
     
     // Pocketed pieces (drawn at their pocketed positions near corners)
@@ -617,7 +624,7 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         else c = COLOR_QUEEN;
         
         DrawCircle((int)screen.x, (int)screen.y, piece_r, c);
-        DrawCircleLines((int)screen.x, (int)screen.y, piece_r, coin_outline_color(board->pocketed_pieces[i].color));
+        draw_coin_rim(screen, piece_r, board->pocketed_pieces[i].color);
     }
     
     // Striker: drawn at its tracked visual position (glides between turns, follows physics during a shot)

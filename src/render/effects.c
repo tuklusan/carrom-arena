@@ -124,12 +124,12 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
         Vec2 sp = math_world_to_screen(vp, pos);
         float r = ((i == EFFECTS_STRIKER_ID) ? L->striker_r_px : L->piece_r_px) * scale;
         Color col = (f->color == PIECE_WHITE) ? (Color){ 240, 240, 240, 255 }
-                  : (f->color == PIECE_BLACK) ? (Color){ 30, 30, 30, 255 }
+                  : (f->color == PIECE_BLACK) ? (Color){ 62, 64, 74, 255 }
                   : (f->color == PIECE_QUEEN) ? (Color){ 220, 30, 30, 255 }
                   : (Color){ 255, 215, 0, 255 };
         col.a = (unsigned char)(255.0f * alpha);
         DrawCircle((int)sp.x, (int)sp.y, r, col);
-        DrawCircleLines((int)sp.x, (int)sp.y, r, (Color){ 20, 20, 20, col.a });
+        DrawCircleLines((int)sp.x, (int)sp.y, r, (f->color == PIECE_BLACK) ? (Color){ 200, 205, 215, col.a } : (Color){ 20, 20, 20, col.a });
     }
 
     // Pocket fade effects for recently pocketed pieces
