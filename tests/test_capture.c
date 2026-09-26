@@ -83,14 +83,14 @@ void test_capture_completes_bounded(void) {
     if (display && display[0]) {
         snprintf(cmd, sizeof(cmd),
             "rm -rf %s && mkdir -p %s && "
-            "timeout 60 ./carrom_arena --mode=capture --seed=42 --headless "
+            "$(command -v timeout >/dev/null 2>&1 && echo timeout 60) ./carrom_arena --mode=capture --seed=42 --headless "
             "--frames=5 --capture-dir=%s > %s 2>&1",
             dir, dir, dir, logpath);
     } else {
         // Local dev: use xvfb-run as before
         snprintf(cmd, sizeof(cmd),
             "rm -rf %s && mkdir -p %s && "
-            "timeout 60 xvfb-run -a -s '-screen 0 1920x1080x24' "
+            "$(command -v timeout >/dev/null 2>&1 && echo timeout 60) xvfb-run -a -s '-screen 0 1920x1080x24' "
             "./carrom_arena --mode=capture --seed=42 --headless "
             "--frames=5 --capture-dir=%s > %s 2>&1",
             dir, dir, dir, logpath);
