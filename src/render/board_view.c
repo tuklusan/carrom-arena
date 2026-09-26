@@ -77,11 +77,33 @@ static void robot_box(const RobotFrame* f, float u0, float u1, float v0, float v
     DrawLineEx(d, a, 1.5f, line);
 }
 
+/* Like robot_box, but rotated by `ang` about the pivot (pu, pv) in the robot frame (used for flapping arms). */
+static void robot_rbox(const RobotFrame* f, float pu, float pv, float ang, float u0, float u1, float v0, float v1, Color fill, Color line) {
+    float c = cosf(ang), sn = sinf(ang);
+    float us[4] = { u0, u0, u1, u1 }, vs[4] = { v0, v1, v1, v0 };
+    Vector2 p[4];
+    for (int i = 0; i < 4; i++) {
+        float du = us[i] - pu, dv = vs[i] - pv;
+        p[i] = robot_pt(f, pu + du * c - dv * sn, pv + du * sn + dv * c);
+    }
+    draw_tri_any_winding(p[0], p[1], p[2], fill);
+    draw_tri_any_winding(p[0], p[2], p[3], fill);
+    for (int i = 0; i < 4; i++) DrawLineEx(p[i], p[(i + 1) % 4], 1.5f, line);
+}
+
+/* Idle animation for a waiting robot: every seat gets its own incommensurate frequencies and phases, so no two match. */
+static float idle_wave(int seat, int k, float t) {
+    float fa = 0.9f + 0.37f * (float)seat + 0.23f * (float)k;
+    float fb = 0.5f + 0.29f * (float)((seat * 3 + k) % 5);
+    float pa = 1.7f * (float)(seat + 1) + 2.3f * (float)k, pb = 0.9f * (float)(seat + 2) + 1.1f * (float)k;
+    return 0.6f * sinf(t * fa + pa) + 0.4f * sinf(t * fb + pb);   /* -1..1, irregular */
+}
+
 /* The robots belong to the PAIRS, not to a coin colour: north/south are always red, east/west always blue. (The `team`
  * argument keeps the old name: TEAM_WHITE draws red, TEAM_BLACK blue.) */
 /* A robot player, seen from above: antenna and head at the seat, arms, shoulders and a chest panel reaching toward the board.
  * `angle` is the direction pointing away from the board (as the old figures used it), so the body extends the other way. */
-static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float halo_pulse, float alpha) {
+static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float halo_pulse, float alpha, int seat, float t) {
     Vec2 screen = math_world_to_screen(vp, world_pos);
     float fref = (float)L->board_size * FIG_SCALE;
     float hr = fref / 25.0f;                       /* head half-size */
@@ -103,12 +125,15 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     float sh1 = sh0 + 0.75f * hr;
     float torso_end = sh0 + fref / 12.0f;          /* same reach as the old figure */
 
-    /* arms hang from the shoulders, with square hands */
+    /* arms hang from the shoulders, with square hands; a waiting robot flaps each arm on its own, swinging about the shoulder */
     float arm_v = 1.3f * hr;
-    robot_box(&f, sh0 + 0.1f * hr, torso_end - 0.2f * hr, arm_v, arm_v + 0.4f * hr, steel, line);
-    robot_box(&f, sh0 + 0.1f * hr, torso_end - 0.2f * hr, -arm_v - 0.4f * hr, -arm_v, steel, line);
-    robot_box(&f, torso_end - 0.55f * hr, torso_end + 0.15f * hr, arm_v - 0.05f * hr, arm_v + 0.45f * hr, dark, line);
-    robot_box(&f, torso_end - 0.55f * hr, torso_end + 0.15f * hr, -arm_v - 0.45f * hr, -arm_v + 0.05f * hr, dark, line);
+    float flap_r = 0.0f, flap_l = 0.0f;
+    if (!is_current_turn) { flap_r = 0.9f * idle_wave(seat, 0, t * 1.8f); flap_l = 0.9f * idle_wave(seat, 1, t * 1.8f); }
+    float pu = sh0 + 0.1f * hr;
+    robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, sh0 + 0.1f * hr, torso_end - 0.2f * hr, arm_v, arm_v + 0.4f * hr, steel, line);
+    robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, torso_end - 0.55f * hr, torso_end + 0.15f * hr, arm_v - 0.05f * hr, arm_v + 0.45f * hr, dark, line);
+    robot_rbox(&f, pu, -arm_v - 0.2f * hr, flap_l, sh0 + 0.1f * hr, torso_end - 0.2f * hr, -arm_v - 0.4f * hr, -arm_v, steel, line);
+    robot_rbox(&f, pu, -arm_v - 0.2f * hr, flap_l, torso_end - 0.55f * hr, torso_end + 0.15f * hr, -arm_v - 0.45f * hr, -arm_v + 0.05f * hr, dark, line);
     /* torso with a chest panel and three lights */
     robot_box(&f, sh0, torso_end, -1.1f * hr, 1.1f * hr, base, line);
     robot_box(&f, sh0 + 0.9f * hr, torso_end - 0.25f * hr, -0.8f * hr, 0.8f * hr, dark, line);
@@ -124,6 +149,15 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     robot_box(&f, -hr, hr, -1.05f * hr, 1.05f * hr, light, line);
     robot_box(&f, 0.05f * hr, 0.55f * hr, -0.7f * hr, -0.2f * hr, eye, line);
     robot_box(&f, 0.05f * hr, 0.55f * hr, 0.2f * hr, 0.7f * hr, eye, line);
+    /* pupils: a waiting robot rolls its eyes along its own circle, at its own speed and direction */
+    if (!is_current_turn) {
+        float dir = (seat & 1) ? -1.0f : 1.0f;
+        float ph = dir * t * (1.6f + 0.55f * (float)seat) + 1.3f * (float)seat + 0.8f * idle_wave(seat, 2, t);
+        float ru = 0.13f * hr * cosf(ph), rv = 0.13f * hr * sinf(ph);
+        Vector2 pl = robot_pt(&f, 0.3f * hr + ru, -0.45f * hr + rv), pr = robot_pt(&f, 0.3f * hr + ru, 0.45f * hr + rv);
+        DrawCircleV(pl, hr * 0.11f, (Color){ 20, 20, 28, (unsigned char)(255 * alpha) });
+        DrawCircleV(pr, hr * 0.11f, (Color){ 20, 20, 28, (unsigned char)(255 * alpha) });
+    }
     robot_box(&f, 0.72f * hr, 0.9f * hr, -0.5f * hr, 0.5f * hr, dark, line);
     /* antenna with a ball */
     Vector2 a0 = robot_pt(&f, -hr, 0.0f), a1 = robot_pt(&f, -1.75f * hr, 0.0f);
@@ -400,9 +434,7 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     double wall_time = GetTime();
     float figure_alpha = 1.0f;
     bool is_thinking_or_preview = (game_phase == PHASE_THINKING || game_phase == PHASE_AIM_PREVIEW);
-    if (is_thinking_or_preview) {
-        figure_alpha = compute_flash_alpha(wall_time);
-    }
+    (void)is_thinking_or_preview;   /* the figures no longer fade; waiting robots animate instead */
     
     // Current time for halo pulse animation
     float current_time = (float)wall_time;
@@ -575,10 +607,10 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     }
 
     // Draw human figures for all four seats
-    draw_human_figure(vp, L, north_world, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH, halo_pulse_n, figure_alpha);
-    draw_human_figure(vp, L, south_world, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, halo_pulse_s, figure_alpha);
-    draw_human_figure(vp, L, east_world, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_EAST, halo_pulse_e, figure_alpha);
-    draw_human_figure(vp, L, west_world, M_PI, TEAM_BLACK, current_turn_seat == SEAT_WEST, halo_pulse_w, figure_alpha);
+    draw_human_figure(vp, L, north_world, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH, halo_pulse_n, figure_alpha, SEAT_NORTH, current_time);
+    draw_human_figure(vp, L, south_world, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, halo_pulse_s, figure_alpha, SEAT_SOUTH, current_time);
+    draw_human_figure(vp, L, east_world, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_EAST, halo_pulse_e, figure_alpha, SEAT_EAST, current_time);
+    draw_human_figure(vp, L, west_world, M_PI, TEAM_BLACK, current_turn_seat == SEAT_WEST, halo_pulse_w, figure_alpha, SEAT_WEST, current_time);
     
     // Pockets
     float pocket_r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM);
