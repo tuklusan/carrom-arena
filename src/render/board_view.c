@@ -26,7 +26,7 @@ static inline float compute_flash_alpha(double wall_time) {
 }
 
 /* Colors */
-#define COLOR_BOARD (Color){ 139, 105, 70, 255 }      // Wood brown
+#define COLOR_BOARD (Color){ 10, 20, 40, 120 }         // tinted glass: the backdrop shows through, a shade darker (visual only)
 #define COLOR_CUSHION (Color){ 100, 70, 40, 255 }     // Darker brown
 #define COLOR_POCKET (Color){ 0, 0, 0, 255 }          // Black
 #define COLOR_WHITE_PIECE (Color){ 240, 240, 240, 255 }
