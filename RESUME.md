@@ -75,7 +75,7 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
 ## Build system (2026-09-26)
 - `build/` is tracked: `build.py`, `pins.txt` (raylib/Box2D/Unity commit shas), `tools.txt` (pip-installed cmake 3.31.6, ninja 1.13.0). Output goes to `out/` (ignored).
 - Portability fixes made for macOS/clang: explicit narrowing of M_PI angles in `board.c`, `-Wformat-nonliteral` pragmas on the two log forwarders, `-Wno-implicit-float-conversion` for clang, no `-lrt` on Apple, `capture_test` uses `timeout` only if present and is skipped on Windows and macOS CI (no window system on those runners).
-- CMakeLists forces CMAKE_BUILD_TYPE=Debug, so `--build-type Release` has no effect (every exe is a Debug build).
+- The requested build type is honoured (Debug only when none is given). CI builds and tests Debug and Release on all six runners (`--build-type Debug,Release`); artifacts are `...-debug` and `...-release`. Box2D's hardcoded -Werror is neutralised (COMPILE_WARNING_AS_ERROR OFF, -Wno-error=maybe-uninitialized) and the Box2D header patch now recognises its own edit (it used to re-apply on every configure).
 - The dependency/ccache caching from the first attempt was dropped when the workflow became a call to `build.py` (actions/cache steps do not fit a one-line workflow); deps are fetched depth-1 each run (seconds).
 
 ## Open items
