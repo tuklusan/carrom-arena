@@ -77,6 +77,12 @@ void test_capture_completes_bounded(void) {
         "--frames=5 --capture-dir=%s > %s 2>&1",
         dir, dir, dir, logpath);
 #else
+#ifdef __APPLE__
+    /* GitHub macOS runners have no display: GLFW cannot create the window (glfwGetWindowPos on NULL), so skip in CI, as on Windows. */
+    if (getenv("CI") && getenv("RUNNER_OS") && strcmp(getenv("RUNNER_OS"), "macOS") == 0) {
+        return;
+    }
+#endif
     snprintf(logpath, sizeof(logpath), "%s/log.txt", dir);
     // If DISPLAY is already set (e.g. CI setup Xvfb externally), skip xvfb-run
     const char* display = getenv("DISPLAY");
