@@ -104,7 +104,7 @@ static float idle_wave(int seat, int k, float t) {
  * argument keeps the old name: TEAM_WHITE draws red, TEAM_BLACK blue.) */
 /* A robot player, seen from above: antenna and head at the seat, arms, shoulders and a chest panel reaching toward the board.
  * `angle` is the direction pointing away from the board (as the old figures used it), so the body extends the other way. */
-static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float alpha, int seat, float t) {
+static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float alpha, int seat, float t, float reach) {
     Vec2 screen = math_world_to_screen(vp, world_pos);
     float fref = (float)L->board_size * FIG_SCALE;
     float hr = fref / 25.0f;                       /* head half-size */
@@ -126,14 +126,19 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     float sh1 = sh0 + 0.75f * hr;
     float torso_end = sh0 + fref / 12.0f;          /* same reach as the old figure */
 
-    /* arms hang from the shoulders, with square hands; a waiting robot flaps each arm on its own, swinging about the shoulder */
+    /* arms hang from the shoulders, with square hands; a waiting robot flaps each arm on its own, swinging about the shoulder.
+     * The robot at the striker (`reach`, 0..1) instead reaches its right arm out toward the striker: the spin fades out,
+     * the arm stretches forward and pulls in toward the centreline, so it points straight down the shot line the body
+     * has already turned to face. */
     float arm_v = 1.3f * hr;
     float flap_r = 0.0f, flap_l = 0.0f;
     if (!is_current_turn) { flap_r = 0.9f * idle_wave(seat, 0, t * 1.8f); flap_l = 0.9f * idle_wave(seat, 1, t * 1.8f); }
-    else { flap_r = 14.0f * t; flap_l = 10.5f * t + 2.0f; }   /* the robot whose turn it is spins BOTH arms fast (about 2 and 1.7 turns a second), out of step with each other */
+    else { flap_r = 14.0f * t * (1.0f - reach); flap_l = 10.5f * t + 2.0f; }   /* the robot whose turn it is spins both arms (about 2 and 1.7 turns a second), out of step with each other, until the right arm reaches out */
     float pu = sh0 + 0.1f * hr;
-    robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, sh0 + 0.1f * hr, torso_end - 0.2f * hr, arm_v, arm_v + 0.4f * hr, steel, line);
-    robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, torso_end - 0.55f * hr, torso_end + 0.15f * hr, arm_v - 0.05f * hr, arm_v + 0.45f * hr, dark, line);
+    float reach_extra = reach * 1.5f * hr;             /* the hand pushes further forward as it reaches */
+    float reach_arm_v = arm_v * (1.0f - 0.55f * reach); /* and pulls in toward the centreline */
+    robot_rbox(&f, pu, reach_arm_v + 0.2f * hr, flap_r, sh0 + 0.1f * hr, torso_end - 0.2f * hr + reach_extra, reach_arm_v, reach_arm_v + 0.4f * hr, steel, line);
+    robot_rbox(&f, pu, reach_arm_v + 0.2f * hr, flap_r, torso_end - 0.55f * hr + reach_extra, torso_end + 0.15f * hr + reach_extra, reach_arm_v - 0.05f * hr, reach_arm_v + 0.45f * hr, dark, line);
     robot_rbox(&f, pu, -arm_v - 0.2f * hr, flap_l, sh0 + 0.1f * hr, torso_end - 0.2f * hr, -arm_v - 0.4f * hr, -arm_v, steel, line);
     robot_rbox(&f, pu, -arm_v - 0.2f * hr, flap_l, torso_end - 0.55f * hr, torso_end + 0.15f * hr, -arm_v - 0.45f * hr, -arm_v + 0.05f * hr, dark, line);
     /* torso with a chest panel and three lights */
@@ -182,6 +187,9 @@ typedef struct {
     bool fig_valid;
     bool was_gone;      /* the striker fell into a pocket during the last shot */
     float appear;       /* 0..1 fade-in of a fresh striker handed to the next player */
+    float reach[4];           /* 0..1 per seat: how far into the "moved to the shot line and reaching" pose */
+    Vec2 aim_pose_pos[4];     /* where that seat stands at reach=1 (cached: still needed while reach eases back to 0) */
+    float aim_pose_angle[4];  /* which way it faces at reach=1 */
 } VisualState;
 
 static VisualState g_vis = { .appear = 1.0f };
@@ -199,6 +207,33 @@ static float approach_f(float cur, float target, float max_step) {
     if (d > max_step) return cur + max_step;
     if (d < -max_step) return cur - max_step;
     return target;
+}
+
+/* Shortest-path interpolation between two angles (radians), so a blend never spins the long way round. */
+static float lerp_angle_shortest(float a, float b, float t) {
+    float d = b - a;
+    while (d > (float)M_PI) d -= 2.0f * (float)M_PI;
+    while (d < -(float)M_PI) d += 2.0f * (float)M_PI;
+    return a + d * t;
+}
+
+/* Where a ray from `pos` (assumed inside the board) in direction `angle` exits the board's inner (cushion) edge. Used to
+ * find where the aim line, extended BACKWARDS through the striker, would leave the board - the robot's new spot while
+ * it lines up the shot. */
+static Vec2 project_to_board_edge(Vec2 pos, float angle) {
+    const float lim = 0.5f - CUSHION_THICKNESS;
+    float c = cosf(angle), sn = sinf(angle);
+    float t = 1e9f;
+    if (fabsf(c) > 1e-6f) {
+        float tx = ((c > 0.0f ? lim : -lim) - pos.x) / c;
+        if (tx > 0.0f && tx < t) t = tx;
+    }
+    if (fabsf(sn) > 1e-6f) {
+        float ty = ((sn > 0.0f ? lim : -lim) - pos.y) / sn;
+        if (ty > 0.0f && ty < t) t = ty;
+    }
+    if (t > 1e8f) t = 0.0f;
+    return (Vec2){ pos.x + c * t, pos.y + sn * t };
 }
 
 static Vec2 approach_v(Vec2 cur, Vec2 target, float max_step) {
@@ -581,13 +616,38 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         south_world.x = g_vis.fig[SEAT_SOUTH];
         east_world.y  = g_vis.fig[SEAT_EAST];
         west_world.y  = g_vis.fig[SEAT_WEST];
+
+        /* Moving to the shot line and reaching: as the aim line grows (AIM_PREVIEW), the shooting robot moves in exact
+         * lock-step with it to where the line, extended backwards through the striker, leaves the board, turns to face
+         * straight down the line, and reaches out; once the shot fires it smoothly eases back to its normal spot and
+         * facing (`REACH_WITHDRAW_SPEED`, about 0.4 s). */
+        #define REACH_WITHDRAW_SPEED 2.5f
+        for (int s = 0; s < 4; s++) {
+            float target = 0.0f;
+            if (game && is_aim_preview && game->computed_shot_valid && game->turn_seat == (Seat)s) {
+                target = game->aim_line_progress;
+                float back_angle = math_wrap_angle(game->computed_shot_plan.aim_angle + (float)M_PI);
+                g_vis.aim_pose_angle[s] = back_angle;
+                g_vis.aim_pose_pos[s] = project_to_board_edge(g_vis.striker, back_angle);
+            }
+            if (target > g_vis.reach[s]) g_vis.reach[s] = target;
+            else g_vis.reach[s] = approach_f(g_vis.reach[s], target, REACH_WITHDRAW_SPEED * frame_dt);
+        }
     }
+    north_world = vec2_lerp(north_world, g_vis.aim_pose_pos[SEAT_NORTH], g_vis.reach[SEAT_NORTH]);
+    south_world = vec2_lerp(south_world, g_vis.aim_pose_pos[SEAT_SOUTH], g_vis.reach[SEAT_SOUTH]);
+    east_world  = vec2_lerp(east_world,  g_vis.aim_pose_pos[SEAT_EAST],  g_vis.reach[SEAT_EAST]);
+    west_world  = vec2_lerp(west_world,  g_vis.aim_pose_pos[SEAT_WEST],  g_vis.reach[SEAT_WEST]);
+    float north_angle = lerp_angle_shortest(-(float)M_PI / 2.0f, g_vis.aim_pose_angle[SEAT_NORTH], g_vis.reach[SEAT_NORTH]);
+    float south_angle  = lerp_angle_shortest((float)M_PI / 2.0f,  g_vis.aim_pose_angle[SEAT_SOUTH], g_vis.reach[SEAT_SOUTH]);
+    float east_angle   = lerp_angle_shortest(0.0f,                g_vis.aim_pose_angle[SEAT_EAST],  g_vis.reach[SEAT_EAST]);
+    float west_angle   = lerp_angle_shortest((float)M_PI,         g_vis.aim_pose_angle[SEAT_WEST],  g_vis.reach[SEAT_WEST]);
 
     // Draw human figures for all four seats
-    draw_human_figure(vp, L, north_world, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH, figure_alpha, SEAT_NORTH, current_time);
-    draw_human_figure(vp, L, south_world, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, figure_alpha, SEAT_SOUTH, current_time);
-    draw_human_figure(vp, L, east_world, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_EAST, figure_alpha, SEAT_EAST, current_time);
-    draw_human_figure(vp, L, west_world, M_PI, TEAM_BLACK, current_turn_seat == SEAT_WEST, figure_alpha, SEAT_WEST, current_time);
+    draw_human_figure(vp, L, north_world, north_angle, TEAM_WHITE, current_turn_seat == SEAT_NORTH, figure_alpha, SEAT_NORTH, current_time, g_vis.reach[SEAT_NORTH]);
+    draw_human_figure(vp, L, south_world, south_angle, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, figure_alpha, SEAT_SOUTH, current_time, g_vis.reach[SEAT_SOUTH]);
+    draw_human_figure(vp, L, east_world, east_angle, TEAM_BLACK, current_turn_seat == SEAT_EAST, figure_alpha, SEAT_EAST, current_time, g_vis.reach[SEAT_EAST]);
+    draw_human_figure(vp, L, west_world, west_angle, TEAM_BLACK, current_turn_seat == SEAT_WEST, figure_alpha, SEAT_WEST, current_time, g_vis.reach[SEAT_WEST]);
     
     // Pockets
     float pocket_r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM);

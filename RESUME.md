@@ -152,6 +152,18 @@ Dead code also removed while at it: `distance_to_board_boundary` (math.c/vecmath
   given (`renderer_set_radio`'s availability now requires `audio_ready()` too). `audio_init()` logs a line to the debug
   file when no device is found, so a missing radio button is traceable to "no audio" rather than looking like a bug.
 
+## The shooting robot lines up the shot (2026-09-27)
+When the aim line starts extending (AIM_PREVIEW), the shooting robot moves off its usual spot, in exact lock-step with the
+line's own growth (`game->aim_line_progress`): to where that line, extended BACKWARDS through the striker, would leave the
+board (`project_to_board_edge`, a ray-box exit against the cushion line); it turns to face straight down the line
+(shortest-path angle blend, `lerp_angle_shortest`); its right arm stops spinning, stretches forward and pulls in toward the
+centreline, reaching for the striker. Once the shot fires it eases back to its normal spot and facing over about 0.4 s
+(`REACH_WITHDRAW_SPEED`, `render/board_view.c`), not an instant snap. Per-seat state (`VisualState.reach/aim_pose_pos/aim_pose_angle`)
+so all four seats animate independently; verified with a burst of screenshots through a whole aim-preview-to-shot sequence
+(the move/turn/reach growing with the line, the pose held while the shot plays, then easing back over several frames).
+The operator chose (asked directly): the position is unclamped (can go past where the board's own edge nominally ends for a
+very angled shot) and the rotation is a full, exact turn to face the line (no maximum-angle clamp).
+
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
 - Should the ICF GAME score (which decides G) be reattributed by physical pair the same way B and P now are (see the compliance
