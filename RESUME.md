@@ -152,17 +152,29 @@ Dead code also removed while at it: `distance_to_board_boundary` (math.c/vecmath
   given (`renderer_set_radio`'s availability now requires `audio_ready()` too). `audio_init()` logs a line to the debug
   file when no device is found, so a missing radio button is traceable to "no audio" rather than looking like a bug.
 
-## The shooting robot lines up the shot (2026-09-27)
-When the aim line starts extending (AIM_PREVIEW), the shooting robot moves off its usual spot, in exact lock-step with the
-line's own growth (`game->aim_line_progress`): to where that line, extended BACKWARDS through the striker, would leave the
-board (`project_to_board_edge`, a ray-box exit against the cushion line); it turns to face straight down the line
-(shortest-path angle blend, `lerp_angle_shortest`); its right arm stops spinning, stretches forward and pulls in toward the
-centreline, reaching for the striker. Once the shot fires it eases back to its normal spot and facing over about 0.4 s
-(`REACH_WITHDRAW_SPEED`, `render/board_view.c`), not an instant snap. Per-seat state (`VisualState.reach/aim_pose_pos/aim_pose_angle`)
-so all four seats animate independently; verified with a burst of screenshots through a whole aim-preview-to-shot sequence
-(the move/turn/reach growing with the line, the pose held while the shot plays, then easing back over several frames).
-The operator chose (asked directly): the position is unclamped (can go past where the board's own edge nominally ends for a
-very angled shot) and the rotation is a full, exact turn to face the line (no maximum-angle clamp).
+## The shooting robot lines up the shot: telescoping arm and fingers (2026-09-27, corrected the same day)
+The FIRST version moved the robot's whole body onto the board's cushion line - wrong (the operator caught it: "the robot's
+body CANNOT ENTER THE BOARD"). Corrected: the body never leaves its own fixed outside-the-board line (`north_fixed_y` etc);
+only where it stands ALONG that line changes, to wherever the aim line - extended BACKWARDS through the striker - crosses
+that SAME fixed line (`ray_cross_fixed_line`, replacing the old board-edge projection), in exact lock-step with the line's
+own growth (`game->aim_line_progress`). It still turns (a vertical-axis, top-down turn, per the operator) to face straight
+down the line (shortest-path blend, `lerp_angle_shortest`).
+Reaching the striker is now a real telescoping arm: three sliding segments (`draw_human_figure`, `render/board_view.c`)
+extend from the shoulder, across the cushion, stopping just short of the striker's near side; a hand of three telescoping
+fingers (thumb, index, middle) then continues from there. Two of the three extend on to the striker's FAR side to flick
+it; which pair depends on the shot (`classify_strike_side`, comparing the shot's own direction to the seat's ordinary
+square-on facing): a forward strike pinches with thumb+middle, a parallel/low strike to the left flicks with thumb+index,
+to the right with index+middle; the third finger stays short and never touches the striker. Once the shot fires everything
+eases back over about 0.4 s (`REACH_WITHDRAW_SPEED`), not an instant snap. Per-seat state
+(`VisualState.reach/aim_pose_pos/aim_pose_angle/aim_pose_side`), so all four seats animate independently.
+Verified with screenshots through a whole aim-preview-to-shot sequence: the body stays off the board and turns correctly;
+the arm crosses the cushion and a finger tip is visible flicking past the striker's edge. Caveat: at this game's small
+sprite scale (about a 9-10 px head radius) the three fingers are only a pixel or two wide each and read as one small dark
+mark beside the striker, not as three separately readable digits; the mechanism (which pair extends, distances) is
+implemented as described, but seeing three distinct fingers by eye would need the whole hand enlarged.
+The operator chose (asked directly, before the correction above): the along-line position is unclamped (can go past where
+the board's own edge nominally ends for a very angled shot) and the rotation is a full, exact turn to face the line (no
+maximum-angle clamp).
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
