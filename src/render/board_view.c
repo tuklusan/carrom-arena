@@ -1,6 +1,7 @@
 #include <math.h>
 #include "board_view.h"
 #include "piece_draw.h"
+#include "striker_draw.h"
 #include "effects.h"
 #include "theme.h"
 #include "renderer.h"
@@ -54,9 +55,9 @@ static void draw_coin_rim(Vec2 screen, float r, PieceColor c) {
 #define COLOR_TURN_HIGHLIGHT (Color){ 255, 215, 0, 255 }      // Gold highlight for current turn
 
 /* Aim preview line colors */
-#define COLOR_AIM_PREVIEW_LINE (Color){ 255, 255, 0, 255 }    // Yellow
+#define COLOR_AIM_PREVIEW_LINE (Color){ 214, 160, 70, 235 }    // Subdued amber (distinct from the striker's brighter gold)
 #define COLOR_AIM_PREVIEW_OUTLINE (Color){ 0, 0, 0, 255 }     // Black outline
-#define COLOR_AIM_PREVIEW_ARROW (Color){ 255, 255, 0, 255 }   // Yellow arrowhead
+#define COLOR_AIM_PREVIEW_ARROW (Color){ 214, 160, 70, 235 }   // Subdued amber arrowhead
 
 static void draw_tri_any_winding(Vector2 a, Vector2 b, Vector2 c, Color col);
 
@@ -653,11 +654,7 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
             DrawCircle((int)screen.x, (int)screen.y, striker_r, (Color){ 255, 215, 0, (unsigned char)(fa * g_vis.appear * 255) });
             DrawCircleLines((int)screen.x, (int)screen.y, striker_r, (Color){ 255, 255, 255, (unsigned char)(fa * g_vis.appear * 100) });
         } else {
-            Color sc = COLOR_STRIKER, lc = COLOR_LINE;
-            sc.a = (unsigned char)(sc.a * g_vis.appear);
-            lc.a = (unsigned char)(lc.a * g_vis.appear);
-            DrawCircle((int)screen.x, (int)screen.y, striker_r, sc);
-            DrawCircleLines((int)screen.x, (int)screen.y, striker_r, lc);
+            draw_striker_polished((Vector2){ screen.x, screen.y }, striker_r, (unsigned char)(255.0f * g_vis.appear));
         }
     }
 

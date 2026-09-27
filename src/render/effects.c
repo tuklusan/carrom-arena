@@ -6,6 +6,8 @@
 #include <raylib.h>
 #include <stdio.h>
 #include "common/vecmath.h"
+#include "piece_draw.h"
+#include "striker_draw.h"
 
 #define MAX_POCKET_FADE_TIME 0.4f  // pocket flash: 400 ms (twice the original 200 ms)
 #define POCKET_SINK_TIME 0.4f      // sim seconds a coin takes to sink out of sight in the hole
@@ -188,13 +190,16 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
         }
         Vec2 sp = math_world_to_screen(vp, pos);
         float r = ((i == EFFECTS_STRIKER_ID) ? L->striker_r_px : L->piece_r_px) * scale;
-        Color col = (f->color == PIECE_WHITE) ? (Color){ 240, 240, 240, 255 }
-                  : (f->color == PIECE_BLACK) ? (Color){ 62, 64, 74, 255 }
-                  : (f->color == PIECE_QUEEN) ? (Color){ 220, 30, 30, 255 }
-                  : (Color){ 255, 215, 0, 255 };
-        col.a = (unsigned char)(255.0f * alpha);
-        DrawCircle((int)sp.x, (int)sp.y, r, col);
-        DrawCircleLines((int)sp.x, (int)sp.y, r, (f->color == PIECE_BLACK) ? (Color){ 200, 205, 215, col.a } : (Color){ 20, 20, 20, col.a });
+        if (i == EFFECTS_STRIKER_ID) {
+            draw_striker_polished((Vector2){ sp.x, sp.y }, r, (unsigned char)(255.0f * alpha));
+        } else {
+            Color col = (f->color == PIECE_WHITE) ? (Color){ 240, 240, 240, 255 }
+                      : (f->color == PIECE_BLACK) ? (Color){ 62, 64, 74, 255 }
+                      : (Color){ 220, 30, 30, 255 };
+            col.a = (unsigned char)(255.0f * alpha);
+            DrawCircle((int)sp.x, (int)sp.y, r, col);
+            DrawCircleLines((int)sp.x, (int)sp.y, r, (f->color == PIECE_BLACK) ? (Color){ 200, 205, 215, col.a } : (Color){ 20, 20, 20, col.a });
+        }
     }
 
     // The pocketed striker sliding back to the next player, around the coins (ease in and out along its route)
@@ -217,8 +222,7 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
         float fade = ss->t / 0.25f;                                /* it climbs out of the pocket */
         if (fade > 1.0f) fade = 1.0f;
         Vec2 sp = math_world_to_screen(vp, pos);
-        DrawCircle((int)sp.x, (int)sp.y, L->striker_r_px, (Color){ 255, 215, 0, (unsigned char)(255.0f * fade) });
-        DrawCircleLines((int)sp.x, (int)sp.y, L->striker_r_px, (Color){ 255, 255, 255, (unsigned char)(100.0f * fade) });
+        draw_striker_polished((Vector2){ sp.x, sp.y }, L->striker_r_px, (unsigned char)(255.0f * fade));
     }
 
     // Coins sliding back onto the board

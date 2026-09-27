@@ -181,7 +181,7 @@ static void app_setup_renderer(AppContext* ctx) {
  * --------------------------------------------------------------------------- */
 // Use physics.h definitions: PHYSICS_HZ, PHYSICS_DT, MAX_SUBSTEPS
 
-#define AIM_PREVIEW_SECONDS 3.0   /* the launch line + arrow are shown for 3 s before the shot; they grow over the first 85% of it */
+#define AIM_PREVIEW_SECONDS 2.0   /* the launch line + arrow are shown for 2 s before the shot; they grow over the first 85% of it */
 
 /* The configured game speed (default 1x) applies only from striker LAUNCH until the board
  * SETTLES. Thinking, placement and aim preview always run at full (1x) speed. */

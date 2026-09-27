@@ -92,12 +92,20 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
   (ease in and out, 0.5-2.5 s) and `board_view.c` hands the striker over on arrival (`effects_take_striker_slide_done`). If a coin sits on the spot on the
   baseline the goal moves along the baseline to the nearest free place. Rendered mode only. (Verified by frames of a forced case; a real striker pocket is
   rare with the expert AI.)
-- Scoreboard: fixed 12 px font, every character in the same cell width, `RED  000 pts  00G` (points 000-999, games 00-99; out of range shows/resets to 0).
+- Scoreboard: fixed 12 px font, every character in the same cell width, `RED  000 00G` (no "pts" text; points 000-999, games 00-99; out of range shows/resets to 0).
   The points are LIVE: `scoring_live_board_points` = coins of the pair's colour in a pocket on the current board (a coin put back stops counting at once)
   plus 3 for a covered queen, on top of the finished boards' points (`score_base`, banked at each new board). This is a coin tally, not the rules' game
   score (`GameState.scores`, the ICF board points that decide the 25-point game); the two are different numbers.
-- Aim line: thin (1.5 px), grows from the middle of the striker to its final length (proportional to the strike force) over the first 85% of the aim preview,
-  which is now 3 s (`AIM_PREVIEW_SECONDS`). The line stops inside the arrowhead (it used to run to the tip and poke out as a tiny fork).
+- Aim line: thin (1.5 px), a subdued amber (`(214,160,70)`, distinct from the striker's brighter polished gold; was bright yellow), grows from the middle of
+  the striker to its final length (proportional to the strike force) over the first 85% of the aim preview, which is 2 s (`AIM_PREVIEW_SECONDS`). The line stops
+  inside the arrowhead (it used to run to the tip and poke out as a tiny fork).
+- Striker look: a polished-metal disc (`draw_striker_polished`, `render/striker_draw.h`) - a radial gradient (raylib `DrawCircleGradient`) from a bright warm
+  highlight to a darker antique-gold edge, a thin dark rim, a small offset specular highlight. Used everywhere the striker is a solid disc: normal draw, falling
+  into a pocket, sliding back to the next player. The THINKING-phase pulsing flash is unchanged.
+- Investigated (2026-09-27): "the games counter did not go up at the end of the first game" - reproduced and instrumented; the counter DOES increment correctly
+  the instant a game ends (checked in two independent runs, matching the rules engine's own count). A game only ends after 25 points or 8 boards, and each turn's
+  thinking/placement/aim-preview phases run at a fixed real time regardless of playback speed, so a game can take several minutes of real play; likely a BOARD
+  ending (which does not move the G counter) was mistaken for a game ending. No code change; told to the operator with the evidence.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
