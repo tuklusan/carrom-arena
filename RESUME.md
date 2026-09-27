@@ -1,6 +1,6 @@
 # Carrom Arena: RESUME playbook
 
-**Updated:** 2026-09-24 (UTC). Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
+**Updated:** 2026-09-26 (UTC). Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
 
 ## Repo state
 - `main` head: see `git log`; tag `beta-0.0.12` = the spinning-arms release; identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. The next tag is `beta-0.0.13` (only when the operator asks; never move existing tags).
@@ -11,7 +11,7 @@
 
 ## How to work (the evidence discipline)
 1. Edit on the Linux repo. Build with `cmake --build build_debug` (Debug + ASan/UBSan + -Werror), run `ctest` in `build_debug`.
-2. Commit, then `bash ~/clean_verify.sh` (clones the committed HEAD, builds, runs all tests; needs `100% tests passed`, currently 16/16). Then `bash ~/bin/push_all.sh`, then fast-forward the H: clone, then check CI.
+2. Commit, then `bash ~/clean_verify.sh` (clones the committed HEAD, builds, runs all tests; needs `100% tests passed`, currently 24/24). Then `bash ~/bin/push_all.sh`, then fast-forward the H: clone, then check CI.
 3. CI: see step 5; the old composite action `ci-cell` is gone.
 4. Look at the real game: run `carrom_arena --mode=rendered` on Xvfb via a SCRIPT FILE (never inline in an ssh command: `scripts/kill-all-runs.sh` kills any process whose command line contains the binary name, including your own shell), screenshot with `import -window root`, and Read the PNGs. `--mode=capture` currently writes blank white frames (open bug: the capture texture is only drawn when the window is hidden).
 5. Build and CI: `python build/build.py` (see `build/README.md`) is the ONLY build path, on the Linux clone and in GitHub Actions; `.github/workflows/ci.yml` just picks runners. Six runners cover all hosted architectures (ubuntu-24.04, ubuntu-24.04-arm, windows-2022, windows-11-arm, macos-15, macos-15-intel) and all pass. Queue rule: per runner kind one job runs and one may wait; `admit` rejects a third. Windows exe: `gh run download <run> -n carrom-arena-windows-2022`.
@@ -78,13 +78,19 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
 - The requested build type is honoured (Debug only when none is given). CI builds and tests Debug and Release on all six runners (`--build-type Debug,Release`); artifacts are `...-debug` and `...-release`. Box2D's hardcoded -Werror is neutralised (COMPILE_WARNING_AS_ERROR OFF, -Wno-error=maybe-uninitialized) and the Box2D header patch now recognises its own edit (it used to re-apply on every configure).
 - The dependency/ccache caching from the first attempt was dropped when the workflow became a call to `build.py` (actions/cache steps do not fit a one-line workflow); deps are fetched depth-1 each run (seconds).
 
-## Open items
-- Blank frames in `--mode=capture` (see above).
-- Aim preview holds 2 s per turn.
+## Open items (regenerated 2026-09-26)
+Decisions for the operator:
+- Outer-ring colour pattern of the ICF layout (W,W,B,B pairs vs alternating): undecided, cosmetic.
+- The active robot's antenna ball is still gold (only the outline and the arms were changed): keep or make it like the others?
+- Confirm on real hardware that the Release exe (`-release`, first optimised build ever shipped) plays like the old Debug ones; then decide whether Release is the only exe to hand out.
+- `capture_test` is skipped on Windows and macOS CI (no window system on those runners); accept, or provide a virtual display/headless path there. Related bug: `--mode=capture` writes blank frames.
+- The `admit` gate can be raced (two runs arriving in the same instant both pass; GitHub then cancels the older waiting job instead of failing the newcomer): accept, or add a stricter lock.
+Known gaps (nothing decided needed):
+- Aim preview holds 2 s per turn (confirm this is wanted).
 - Dues: a due with no own coin on the stash to return stays counted only (never enforced later).
-- Outer-ring colour pattern of the ICF layout (W,W,B,B pairs vs alternating) is undecided and cosmetic.
-- Remaining `-Wno-unused-function` hides dead statics (for example `distance_to_board_boundary` in `board_view.c` is now unused).
-- Possibly tag `beta-0.0.7` once the operator confirms the current build on real hardware.
+- `-Wno-unused-function` hides dead statics (for example `distance_to_board_boundary` in `board_view.c`).
+- Windows on ARM and macOS are verified only by CI builds and tests, not on real hardware.
+- CI notices: Node 20 actions run on Node 24, and the `ubuntu-latest` and `windows-11-arm` labels change later in 2026 (`admit` and `verdict` use ubuntu-latest).
 - The operator said earlier there are "many issues": collect more from hands-on testing of the latest exe.
 
 ## Locked
