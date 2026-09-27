@@ -172,9 +172,16 @@ the arm crosses the cushion and a finger tip is visible flicking past the strike
 sprite scale (about a 9-10 px head radius) the three fingers are only a pixel or two wide each and read as one small dark
 mark beside the striker, not as three separately readable digits; the mechanism (which pair extends, distances) is
 implemented as described, but seeing three distinct fingers by eye would need the whole hand enlarged.
-The operator chose (asked directly, before the correction above): the along-line position is unclamped (can go past where
-the board's own edge nominally ends for a very angled shot) and the rotation is a full, exact turn to face the line (no
-maximum-angle clamp).
+Two more corrections the same day:
+- Position: no longer an unclamped single infinite line (the operator's first answer, superseded) - the four seats' fixed
+  outside-the-board lines are now treated as ONE rectangle (`project_to_standing_rect`, a proper ray/box exit), so a shot
+  too raking to exit through its own seat's side carries the robot round the corner onto the neighbouring side instead of
+  off to the side indefinitely; still never on the board. Verified: a steep shot moved the robot right up against the
+  corner marker.
+- The right arm's spin: multiplying an ever-growing spin angle by `(1 - reach)` LOOKED like it kept whipping round right up
+  to the last moment then snapped, because the amplitude shrank but the angular speed did not. Fixed: the live spin angle
+  is captured the instant `reach` starts rising (`VisualState.arm_spin`, updated only while not reaching) and the arm eases
+  from THAT captured angle to a straight rest as `reach` goes 0 to 1 - a true slowdown, not a shrinking wobble.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
