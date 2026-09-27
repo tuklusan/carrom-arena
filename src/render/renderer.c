@@ -15,7 +15,8 @@
 #include "audio/audio.h"
 
 
-static const char* TITLE_TEXT = "SANYALnet Labs Carrom Arena";
+static const char* TITLE_LINE1 = "SANYALnet Labs";
+static const char* TITLE_LINE2 = "Carrom Arena";
 static const char* BLOG_LINK = "https://supratim-sanyal.blogspot.com/";
 
 struct Renderer {
@@ -152,6 +153,8 @@ static Rectangle radio_rect(int sw, int sh) {
 }
 
 #define SCOREBOARD_FONT 12                   /* fixed size (a tad larger than before), whatever the window does */
+#define SB_ROW1_Y 13                         /* the scoreboard's two text rows, so the title block below can match its bottom edge */
+#define SB_ROW2_Y 28
 #define SCOREBOARD_CHARS 15                  /* "G:00 B:00 P:000" */
 /* Every character gets the same cell width, so the numbers never shift the layout as the digits change */
 static int scoreboard_cell(void) { return MeasureText("W", SCOREBOARD_FONT) + 1; }
@@ -175,10 +178,10 @@ static int sb_clamp(int v, int max) { return (v < 0 || v > max) ? 0 : v; }
 
 static void draw_scoreboard(const Renderer* r, int sw, int sh) {
     (void)sw; (void)sh;
-    DrawRectangle(8, 14, 9, 9, THEME_RED);
-    draw_fixed_text(TextFormat("G:%02d B:%02d P:%03d", sb_clamp(r->score_games[0], 99), sb_clamp(r->score_boards[0], 99), sb_clamp(r->score_pts[0], 999)), 20, 13, WHITE);
-    DrawRectangle(8, 29, 9, 9, THEME_BLUE);
-    draw_fixed_text(TextFormat("G:%02d B:%02d P:%03d", sb_clamp(r->score_games[1], 99), sb_clamp(r->score_boards[1], 99), sb_clamp(r->score_pts[1], 999)), 20, 28, WHITE);
+    DrawRectangle(8, SB_ROW1_Y + 1, 9, 9, THEME_RED);
+    draw_fixed_text(TextFormat("G:%02d B:%02d P:%03d", sb_clamp(r->score_games[0], 99), sb_clamp(r->score_boards[0], 99), sb_clamp(r->score_pts[0], 999)), 20, SB_ROW1_Y, WHITE);
+    DrawRectangle(8, SB_ROW2_Y + 1, 9, 9, THEME_BLUE);
+    draw_fixed_text(TextFormat("G:%02d B:%02d P:%03d", sb_clamp(r->score_games[1], 99), sb_clamp(r->score_boards[1], 99), sb_clamp(r->score_pts[1], 999)), 20, SB_ROW2_Y, WHITE);
 }
 
 static void draw_radio_button(const Renderer* r, int sw, int sh) {
@@ -235,18 +238,39 @@ bool renderer_radio_clicked(Renderer* r) {
     return c;
 }
 
+/* A bold, poster-style line: an outline in every direction plus a doubled-up fill, punchier than a plain DrawText */
+static void draw_punchy_text(const char* text, int center_x, int y, int fs, Color fill) {
+    int w = MeasureText(text, fs);
+    int x = center_x - w / 2;
+    Color outline = (Color){ 16, 18, 26, 255 };
+    for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            if (dx == 0 && dy == 0) continue;
+            DrawText(text, x + dx, y + dy, fs, outline);
+        }
+    }
+    DrawText(text, x, y, fs, fill);
+    DrawText(text, x + 1, y, fs, fill);   /* a touch heavier, without a second font */
+}
+
 static void draw_title_bar(Renderer* r, const Layout* L) {
-    (void)r;
     // Draw full-width title bar background line at even y for verification
     int title_bar_y = 8;
     DrawLineEx((Vector2){ 10, (float)title_bar_y }, (Vector2){ (float)(L->sw - 10), (float)title_bar_y }, 2, (Color){ 100, 100, 120, 255 });
     DrawLineEx((Vector2){ 10, (float)(title_bar_y + 1) }, (Vector2){ (float)(L->sw - 10), (float)(title_bar_y + 1) }, 1, (Color){ 100, 100, 120, 255 });
-    
-    int fs = L->font_size_title;
+
     int room = L->sw - 2 * scoreboard_width(r, L->sw, L->sh);   /* the title is centred: the scoreboard's width is lost on both sides */
-    while (fs > 10 && MeasureText(TITLE_TEXT, fs) > room) fs--;
-    int title_width = MeasureText(TITLE_TEXT, fs);
-    if (title_width <= room) DrawText(TITLE_TEXT, (L->sw - title_width) / 2, title_bar_y + 4, fs, WHITE);
+    int top = title_bar_y + 4;
+    int bottom = SB_ROW2_Y + SCOREBOARD_FONT + 2;   /* two lines, reaching down to the scoreboard's own bottom edge */
+    int gap = 2;
+    int fs = (bottom - top - gap) / 2;
+    if (fs > 30) fs = 30;
+    if (fs < 10) fs = 10;
+    while (fs > 8 && (MeasureText(TITLE_LINE1, fs) > room || MeasureText(TITLE_LINE2, fs) > room)) fs--;
+    int line_h = fs + gap;
+    Color fill = (Color){ 255, 240, 205, 255 };   /* a warm, brighter white: more pop than plain WHITE against the steel-blue backdrop */
+    if (MeasureText(TITLE_LINE1, fs) <= room) draw_punchy_text(TITLE_LINE1, L->sw / 2, top, fs, fill);
+    if (MeasureText(TITLE_LINE2, fs) <= room) draw_punchy_text(TITLE_LINE2, L->sw / 2, top + line_h, fs, fill);
 }
 
 static void draw_footer_band(Renderer* r, const Layout* L) {
