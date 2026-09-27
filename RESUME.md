@@ -191,6 +191,16 @@ Two more corrections the same day:
   it never leaves the shoulder at any point in between. The telescoping fingers now begin exactly at the stretched hand's
   own tip, in the same rotated frame, so there is no seam there either. Verified with screenshots at two consecutive
   moments: the arm runs continuously from the shoulder, across the cushion, to the striker.
+A further correction, same feature (2026-09-27): the operator reported "the arm becomes disjoint from robot as robot
+rotates" - a different trigger than the two fixes above (those were about the arm's own SHAPE; this one is about body
+ROTATION). Root cause: the arm's stretch target (`u_to_striker`/`v_to_striker`, where the striker sits in the robot's own
+u,v terms) was computed against the LIVE, still-turning body frame. For a shot needing a large turn (especially the
+corner-wrap cases just above), the target swung around while the body was mid-rotation, which looked like the arm tearing
+away from the shoulder as the robot turned. Fixed by computing that target against a separate frame built from the FINAL
+orientation the body is turning to (`VisualState.aim_pose_angle`, already cached for the turn animation itself), not the
+live blending angle; the target now stays fixed while only the arm's shape (still drawn through the live-rotating frame)
+eases toward it, so it can never appear to leave the shoulder mid-turn. Verified with a seed=22 screenshot sequence
+through a large corner-wrap rotation: the arm runs continuously from the shoulder to the hand at every sampled frame.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
