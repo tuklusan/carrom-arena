@@ -232,15 +232,10 @@ static Vec2 thinking_striker_world(Seat seat, double wall_time) {
     }
 }
 
-/* Draw aim preview line from striker position in aim direction.
- * Called INSIDE BeginMode2D() camera, AFTER striker draw.
- * Origin = striker's current rendered position (interpolated physics position if use_physics, else game->board.striker.position).
- * Direction = game->computed_shot_plan.aim_angle.
- * Natural length = game->computed_shot_plan.power * 0.5f * sqrtf(2.0f) (power * half-diagonal).
- * Clamped length = min(natural_len, distance_to_board_boundary(striker_pos, aim_angle) - 0.01f).
- * Draw solid line >=3px thick with visible arrowhead at far end.
- * Color: high contrast (YELLOW with dark outline).
- */
+/* The upcoming stroke's aim line, drawn INSIDE BeginMode2D() AFTER the striker.
+ * Origin = the striker's current rendered position. Direction = game->computed_shot_plan.aim_angle.
+ * Length is strictly proportional to the strike force (see aim_line_length) and grows in over the aim
+ * preview (see aim_line_progress). Thin line, subdued amber, with an arrowhead at the far end. */
 /* raylib culls clockwise triangles, so draw both windings to be sure the arrowhead is visible */
 static void draw_tri_any_winding(Vector2 a, Vector2 b, Vector2 c, Color col) {
     DrawTriangle(a, b, c, col);

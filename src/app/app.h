@@ -13,8 +13,7 @@ extern "C" {
 typedef enum {
     APP_MODE_RENDERED,      // Normal rendered arena mode (raylib)
     APP_MODE_DIAGNOSTIC,    // Deterministic single-seed diagnostic
-    APP_MODE_SOAK,          // Headless accelerated soak test
-    APP_MODE_CAPTURE        // Graphical verification/capture mode
+    APP_MODE_SOAK           // Headless accelerated soak test
 } AppMode;
 
 /* -----------------------------------------------------------------------------
@@ -26,16 +25,13 @@ typedef struct {
     uint32_t boards;            // Number of boards (soak mode)
     uint32_t seeds;             // Number of seeds (soak mode)
     uint32_t matches;           // Matches per board/seed (soak mode)
-    uint32_t frames;            // Frames to capture (capture mode)
     const char* trace_dir;      // Output directory for traces/logs
-    const char* capture_dir;    // Output directory for frame captures
     bool verbose;               // Verbose logging
-    bool headless;              // Force headless (no raylib window)
-    int window_width;           // Window width (rendered/capture)
-    int window_height;          // Window height (rendered/capture)
+    int window_width;           // Window width
+    int window_height;          // Window height
     float playback_speed;       // Simulation speed multiplier (0.05-4.0)
     uint32_t ai_budget_ms;      // AI decision time budget in milliseconds (default 250)
-    bool debug_phase;           // Enable per-frame phase debug logging in capture mode
+    bool debug_phase;           // Enable per-frame phase debug logging
     bool no_radio;              // Do not start the internet radio
 } AppConfig;
 
@@ -47,16 +43,13 @@ static inline AppConfig app_config_default(void) {
         .boards = 100,
         .seeds = 100,
         .matches = 10,
-        .frames = 300,
         .trace_dir = "traces",
-        .capture_dir = "captures",
         .verbose = false,
-        .headless = false,
         .window_width = 560,
         .window_height = 560,
         .playback_speed = 1.0f,   // real-time (1x) default; keys change it, 0.05x-4x
         .ai_budget_ms = 150,      // R5: Default AI budget: 150ms (lowered from 250)
-        .debug_phase = false,     // Per-frame phase debug logging in capture mode
+        .debug_phase = false,     // Per-frame phase debug logging
         .no_radio = false
     };
 }
@@ -74,7 +67,6 @@ int app_run(AppContext* ctx);  // Returns exit code
 int app_run_rendered(AppContext* ctx);
 int app_run_diagnostic(AppContext* ctx);
 int app_run_soak(AppContext* ctx);
-int app_run_capture(AppContext* ctx);
 
 /* CLI Parsing */
 AppConfig app_parse_args(int argc, char* argv[]);

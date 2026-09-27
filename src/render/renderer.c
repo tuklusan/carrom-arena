@@ -19,17 +19,11 @@ static const char* TITLE_TEXT = "SANYALnet Labs Carrom Arena";
 static const char* BLOG_LINK = "https://supratim-sanyal.blogspot.com/";
 
 struct Renderer {
-    int width;
-    int height;
-    bool capture_mode;
-    bool hidden_window;
     bool paused;
     float playback_speed;
     bool debug_phase;           // Enable per-frame phase debug logging
     int debug_frame_count;      // Frame counter for debug logging (first 30 frames)
     Viewport viewport;
-    RenderTexture2D capture_texture;
-    char capture_dir[256];
     Layout current_layout;
     Team turn_team;
     int score_games[2], score_boards[2], score_pts[2];   /* red, blue: G (this match), B (this game), P (this game) */
@@ -94,7 +88,6 @@ void layout_compute(int sw, int sh, Layout* out) {
     out->hud_start_y = out->title_band_h + 10;
 
     out->figure_scale = board_size_f / 360.0f;
-    out->figure_halo_base_r = 10.0f * out->figure_scale;
     out->striker_r_px = board_size_f * STRIKER_RADIUS_NORM / BOARD_SIDE_NORM;
     out->piece_r_px = board_size_f * PIECE_RADIUS_NORM / BOARD_SIDE_NORM;
 }
@@ -287,50 +280,34 @@ static void raylib_log_to_file(int level, const char* text, va_list args) {
 #pragma clang diagnostic pop
 #endif
 
-Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window, bool debug_phase, float initial_speed) {
+Renderer* renderer_create(int width, int height, const char* title, bool debug_phase, float initial_speed) {
     (void)title;
-    
+
     Renderer* r = calloc(1, sizeof(Renderer));
     if (!r) return NULL;
-    
-    r->capture_mode = capture_mode;
-    r->hidden_window = hidden_window;
+
     r->paused = false;
     r->playback_speed = initial_speed;  // R14f: use initial speed
     r->debug_phase = debug_phase;
     r->debug_frame_count = 0;
-    r->width = width;
-    r->height = height;
-    
+
     r->viewport = (Viewport){0};
-    
-    unsigned int flags = FLAG_WINDOW_HIGHDPI | FLAG_VSYNC_HINT;
-    if (hidden_window) {
-        flags |= FLAG_WINDOW_HIDDEN;
-    }
+
     SetTraceLogCallback(raylib_log_to_file);
-    SetConfigFlags(flags);
+    SetConfigFlags(FLAG_WINDOW_HIGHDPI | FLAG_VSYNC_HINT);
     InitWindow(width, height, "SANYALnet Labs Carrom Arena");
     if (!IsWindowReady()) {
         free(r);
         return NULL;
     }
     SetTargetFPS(60);
-    
-    if (capture_mode) {
-        r->capture_texture = LoadRenderTexture(GetScreenWidth(), GetScreenHeight());
-    }
-    
+
     return r;
 }
 
 void renderer_destroy(Renderer* r) {
     if (!r) return;
-    
-    if (r->capture_mode) {
-        UnloadRenderTexture(r->capture_texture);
-    }
-    
+
     CloseWindow();
     free(r);
 }
@@ -382,15 +359,7 @@ void renderer_begin(Renderer* r) {
     int sw = GetScreenWidth();
     int sh = GetScreenHeight();
     
-    // Check if window was resized and recreate capture texture if needed
-    if (r->capture_mode && (sw != r->width || sh != r->height)) {
-        r->width = sw;
-        r->height = sh;
-        UnloadRenderTexture(r->capture_texture);
-        r->capture_texture = LoadRenderTexture(sw, sh);
-    }
-    
-    // Compute layout once per frame, store in renderer
+        // Compute layout once per frame, store in renderer
     layout_compute(sw, sh, &r->current_layout);
     Layout* L = &r->current_layout;
     
@@ -402,19 +371,11 @@ void renderer_begin(Renderer* r) {
         r->debug_frame_count++;
     }
     
-    if (r->capture_mode && r->hidden_window) {
-        // Headless capture: render directly to texture, no main window drawing
-        BeginTextureMode(r->capture_texture);
-        ClearBackground(GAME_BACKGROUND);
-        draw_background(sw, sh, r->turn_team, GetTime());
-    } else {
-        // Interactive or windowed capture: render to main window
-        BeginDrawing();
-        ClearBackground(GAME_BACKGROUND);
-        draw_background(sw, sh, r->turn_team, GetTime());
-    }
+    BeginDrawing();
+    ClearBackground(GAME_BACKGROUND);
+    draw_background(sw, sh, r->turn_team, GetTime());
     
-    draw_title_bar(r, L);
+        draw_title_bar(r, L);
     draw_footer_band(r, L);
     draw_scoreboard(r, sw, sh);
     if (r->radio_available) draw_radio_button(r, sw, sh);
@@ -438,13 +399,7 @@ void renderer_end_board(Renderer* r) {
 }
 
 void renderer_end(Renderer* r) {
-    if (r->capture_mode && r->hidden_window) {
-        // Headless capture: end texture mode
-        EndTextureMode();
-    } else {
-        // Interactive or windowed capture: end main window drawing
-        EndDrawing();
-    }
+    EndDrawing();
 }
 
 void renderer_draw_board(Renderer* r, const BoardState* board, const PhysicsWorld* physics, float alpha, int game_phase, const GameState* game, double placement_timer) {
@@ -475,23 +430,4 @@ void renderer_draw_effects(Renderer* r, const GameState* game, double placement_
     };
     
     effects_draw(vp, game, placement_timer, L);
-}
-
-void renderer_capture_frame(Renderer* r, const char* dir, uint64_t frame_num, int game_phase, double placement_timer, float playback_speed, const BoardState* board) {
-    if (!r->capture_mode) return;
-    
-    char path[512];
-    snprintf(path, sizeof(path), "%s/frame_%06llu.png", dir, (unsigned long long)frame_num);
-    
-    Image img = LoadImageFromTexture(r->capture_texture.texture);
-    ImageFlipVertical(&img);
-    ExportImage(img, path);
-    UnloadImage(img);
-    
-    // Debug phase logging
-    if (r->debug_phase) {
-        platform_diag_logf("frame=%llu phase=%d placement_timer=%.3f playback_speed=%.2f striker_x=%.4f striker_y=%.4f\n",
-                (unsigned long long)frame_num, game_phase, placement_timer, playback_speed, 
-                board->striker.position.x, board->striker.position.y);
-    }
 }

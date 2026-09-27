@@ -34,16 +34,13 @@ coverage/
 .nyc_output/
 # Operator-run artefacts (kimi + local build trees)
 build_*/
-carrom_capture_test_*/
 Testing/
 wip_*.patch
 .kimi_run/
 traces/
-captures/
 
 # local run artefacts
 .kimi_*
 striker_measure.csv
 speed_test/
-captures/
 *.jsonl

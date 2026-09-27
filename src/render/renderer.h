@@ -35,7 +35,6 @@ typedef struct {
     int hud_line_height;           // HUD line height
     int hud_start_y;               // HUD start Y
     float figure_scale;            // Scale factor for human figures
-    float figure_halo_base_r;      // Base halo radius for figures
     float striker_r_px;            // Striker radius in pixels
     float piece_r_px;              // Piece radius in pixels
     int figure_band_h;             // Height of each figure band (N and S)
@@ -49,7 +48,7 @@ void layout_compute(int sw, int sh, Layout* out);
 
 typedef struct Renderer Renderer;
 
-Renderer* renderer_create(int width, int height, const char* title, bool capture_mode, bool hidden_window, bool debug_phase, float initial_speed);
+Renderer* renderer_create(int width, int height, const char* title, bool debug_phase, float initial_speed);
 void renderer_destroy(Renderer* renderer);
 
 void renderer_poll_events(Renderer* renderer);
@@ -74,7 +73,6 @@ void renderer_end(Renderer* renderer);
 void renderer_draw_board(Renderer* renderer, const BoardState* board, const PhysicsWorld* physics, float alpha, int game_phase, const GameState* game, double placement_timer);
 void renderer_draw_effects(Renderer* renderer, const GameState* game, double placement_timer);
 
-void renderer_capture_frame(Renderer* renderer, const char* dir, uint64_t frame_num, int game_phase, double placement_timer, float playback_speed, const BoardState* board);
 
 #ifdef __cplusplus
 }

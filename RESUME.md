@@ -13,7 +13,7 @@
 1. Edit on the Linux repo. Build with `cmake --build build_debug` (Debug + ASan/UBSan + -Werror), run `ctest` in `build_debug`.
 2. Commit, then `bash ~/clean_verify.sh` (clones the committed HEAD, builds, runs all tests; needs `100% tests passed`, currently 24/24). Then `bash ~/bin/push_all.sh`, then fast-forward the H: clone, then check CI.
 3. CI: see step 5; the old composite action `ci-cell` is gone.
-4. Look at the real game: run `carrom_arena --mode=rendered` on Xvfb via a SCRIPT FILE (never inline in an ssh command: `scripts/kill-all-runs.sh` kills any process whose command line contains the binary name, including your own shell), screenshot with `import -window root`, and Read the PNGs. `--mode=capture` currently writes blank white frames (open bug: the capture texture is only drawn when the window is hidden).
+4. Look at the real game: run `carrom_arena --mode=rendered` on Xvfb via a SCRIPT FILE (never inline in an ssh command: `scripts/kill-all-runs.sh` kills any process whose command line contains the binary name, including your own shell), screenshot with `import -window root`, and Read the PNGs. (2026-09-27: `--mode=capture` is REMOVED - this Xvfb + `import` approach fully superseded it; see below.)
 5. Build and CI: `python build/build.py` (see `build/README.md`) is the ONLY build path, on the Linux clone and in GitHub Actions; `.github/workflows/ci.yml` just picks runners. Six runners cover all hosted architectures (ubuntu-24.04, ubuntu-24.04-arm, windows-2022, windows-11-arm, macos-15, macos-15-intel) and all pass. Queue rule: per runner kind one job runs and one may wait; `admit` rejects a third. Windows exe: `gh run download <run> -n carrom-arena-windows-2022`.
 6. Never write the shared machine password anywhere. Never push kimi config. No attribution lines in commits. Do not squash GitHub history (the operator said hold off).
 
@@ -126,12 +126,21 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
   thinking/placement/aim-preview phases run at a fixed real time regardless of playback speed, so a game can take several minutes of real play; likely a BOARD
   ending (which does not move the G counter) was mistaken for a game ending. No code change; told to the operator with the evidence.
 
+## Capture mode removed (2026-09-27)
+`--mode=capture` (PNG-per-frame dump), `capture_test`, `--frames`/`--capture-dir`/`--headless`, the renderer's off-screen `capture_texture`/`FLAG_WINDOW_HIDDEN`
+path, and the orphaned (never built - no CMake target) `src/app/capture.c` are all gone: dead weight once the Xvfb + `import -window root` +
+Read-the-PNG method (step 4 above) took over as how this project actually does visual QA and debugging. The one still-open bug this removes
+(`--mode=capture` writing blank frames outside `--headless`) is moot now. 25 tests (was 26).
+
+Dead code also removed while at it: `distance_to_board_boundary` (math.c/vecmath.h, computed but never called), `Layout.figure_halo_base_r`
+(computed but never read since the turn halo was removed), `GameState.aim_preview_progress` (written in five places, never read - superseded by
+`aim_line_progress`), and `Renderer.width`/`.height` (only existed to support capture-mode's window-resize detection).
+
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
 - Should the ICF GAME score (which decides G) be reattributed by physical pair the same way B and P now are (see the compliance
   question above)? This can change who wins games/matches once a game runs more than one board.
 - Confirm on real hardware that the Release exe (`-release`, the first optimised build ever shipped) plays like the old Debug ones; then decide whether Release is the only exe to hand out.
-- `capture_test` is skipped on Windows and macOS CI (no window system on those runners); accept, or provide a virtual display/headless path there. Related bug: `--mode=capture` writes blank frames.
 Known gaps (nothing decided needed):
 - Aim preview holds 3 s per turn (the aim line grows over 85% of it).
 - The scoreboard shows the live coin tally, not the ICF game score that ends a game at 25 points: confirm that is what is wanted.

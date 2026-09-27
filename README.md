@@ -93,7 +93,6 @@ Full certification: [`docs/archive/company/CROSS_PLATFORM_QA_CERTIFICATE.md`](do
 | **Rendered** | `--mode=rendered` (default) | Full graphical window, 60 FPS target |
 | **Diagnostic** | `--mode=diagnostic --seed=N` | Deterministic single-seed run, verbose trace |
 | **Soak** | `--mode=soak --boards=100 --seeds=100 --matches=10` | Headless stress test, maximum speed |
-| **Capture** | `--mode=capture --frames=300 --capture-dir=out` | Rendered + PNG frame dump for visual QA |
 
 ### Common Options
 
@@ -104,9 +103,7 @@ Full certification: [`docs/archive/company/CROSS_PLATFORM_QA_CERTIFICATE.md`](do
 | `--seeds N` | 100 | Distinct seeds (soak) |
 | `--matches N` | 10 | Matches per board/seed (soak) |
 | `--trace-dir DIR` | `traces/` | JSONL trace output directory |
-| `--capture-dir DIR` | `captures/` | Frame capture output directory |
 | `--verbose` | off | Human-readable log mirror |
-| `--headless` | off | Force no window (useful in CI) |
 | `--width W` | 1280 | Window width |
 | `--height H` | 720 | Window height |
 
@@ -120,14 +117,11 @@ Full certification: [`docs/archive/company/CROSS_PLATFORM_QA_CERTIFICATE.md`](do
 
 # Full certification soak (Article 16.5)
 ./out/carrom_arena --mode=soak --boards=100 --seeds=100 --matches=10
-
-# Frame capture for visual verification
-./out/carrom_arena --mode=capture --seed=999 --frames=300 --capture-dir=captures
 ```
 
 ---
 
-## Controls (Rendered / Capture Modes)
+## Controls (Rendered Mode)
 
 | Key | Action |
 |-----|--------|
@@ -150,8 +144,7 @@ src/
 │   ├── main.c           # CLI parsing, entry point
 │   ├── app.c            # Shared simulation loop (4 modes)
 │   ├── diagnostic.c     # Diagnostic mode entry
-│   ├── soak.c           # Soak mode entry
-│   └── capture.c        # Capture mode entry
+│   └── soak.c           # Soak mode entry
 ├── common/              # Shared types, math, RNG, strategy profiles
 │   ├── types.h          # Authoritative data model (MatchState, ShotPlan, etc.)
 │   ├── rng.h/.c         # PCG32 with per-seat stream splitting
@@ -173,7 +166,7 @@ src/
 │   ├── shot_candidates.c      # Legal placements → tactical candidates → variants
 │   └── shot_evaluator.c       # Scratch sim + 6-component scoring
 ├── render/              # Presentation layer ONLY (reads authoritative state)
-│   ├── renderer.c       # raylib draw loop, camera, capture
+│   ├── renderer.c       # raylib draw loop, camera
 │   ├── board_view.c     # Board, pieces, cushions, pockets, baselines
 │   ├── hud.c            # Score, turn, player panels, queen/dues
 │   └── effects.c        # Aim line, power bar, pocket fade (200 ms)

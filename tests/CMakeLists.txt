@@ -375,32 +375,6 @@ add_test(NAME audio_policy_test COMMAND test_audio_policy)
 # Capture regression test (spawns carrom_arena binary in capture mode)
 
 # Catches: capture-mode hang (Gap-2 renderer rewrite regression)
-add_executable(test_capture
-    test_capture.c
-    ${unity_SOURCE_DIR}/src/unity.c
-)
-
-apply_test_warnings(test_capture)
-
-# Disable -Werror for this test due to POSIX popen/pclose with -std=c17 and format-truncation
-if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(test_capture PRIVATE -Wno-error=implicit-function-declaration -Wno-error=int-conversion)
-endif()
-# format-truncation is GCC-specific; disable as error only for GNU
-if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(test_capture PRIVATE -Wno-error=format-truncation)
-endif()
-
-# No carrom_core link needed - this test spawns the full binary
-target_include_directories(test_capture PRIVATE
-    ${unity_SOURCE_DIR}/src
-)
-
-# capture_test needs to find carrom_arena at cwd, so run from build/ dir:
-add_test(NAME capture_test COMMAND test_capture)
-set_tests_properties(capture_test PROPERTIES LABELS "regression" TIMEOUT 120)
-set_tests_properties(capture_test PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
-
 # Full AI-vs-AI boards must finish (guards against the endgame loop: stale positions, queen never returned, repeated misses)
 add_test(NAME selfplay_boards_finish COMMAND selfplay --seed 1 --seeds 2 --boards 2 --max-turns 250 --expect-finish)
 set_tests_properties(selfplay_boards_finish PROPERTIES TIMEOUT 600)

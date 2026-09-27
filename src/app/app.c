@@ -53,7 +53,6 @@
     Controller* controllers[4];  // One per seat
     uint64_t frame_count;
     uint64_t shot_count;
-    uint64_t capture_frame_count;  // Persists across boards in capture mode
     bool running;
     bool paused;
     double last_frame_time;
@@ -110,8 +109,8 @@ static void app_init_match(AppContext* ctx) {
     ctx->shot_count = 0;
     
     // Set max candidates based on mode (R5)
-    // For capture/rendered mode, scale candidates with ai_budget_ms to make THINKING phase visible
-    if (ctx->config.mode == APP_MODE_RENDERED || ctx->config.mode == APP_MODE_CAPTURE) {
+    // For rendered mode, scale candidates with ai_budget_ms to make THINKING phase visible
+    if (ctx->config.mode == APP_MODE_RENDERED) {
         if (ctx->config.ai_budget_ms >= 1000) {
             ctx->max_candidates = 12;  // More candidates for visualization
         } else if (ctx->config.ai_budget_ms >= 500) {
@@ -165,16 +164,10 @@ static void app_setup_trace(AppContext* ctx) {
 
 static void app_setup_renderer(AppContext* ctx) {
     if (ctx->config.mode == APP_MODE_RENDERED) {
-        if (!ctx->config.headless) {
-            ctx->renderer = renderer_create(ctx->config.window_width, ctx->config.window_height, 
-                                             "Carrom Arena", false, false, ctx->config.debug_phase, ctx->playback_speed);
-            audio_init();   /* silent no-op when there is no audio device */
-            if (!ctx->config.no_radio) radio_init();   /* AH.FM, playing by default */
-        }
-    } else if (ctx->config.mode == APP_MODE_CAPTURE) {
-        // Capture mode always needs a renderer (windowed or hidden)
-        ctx->renderer = renderer_create(ctx->config.window_width, ctx->config.window_height, 
-                                         "Carrom Arena", true, ctx->config.headless, ctx->config.debug_phase, ctx->playback_speed);
+        ctx->renderer = renderer_create(ctx->config.window_width, ctx->config.window_height,
+                                         "Carrom Arena", ctx->config.debug_phase, ctx->playback_speed);
+        audio_init();   /* silent no-op when there is no audio device */
+        if (!ctx->config.no_radio) radio_init();   /* AH.FM, playing by default */
     }
 }
 
@@ -722,7 +715,6 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
             physics_reset_turn_timer(ctx->physics);
             ctx->game.phase = PHASE_THINKING;
             ctx->game.computed_shot_valid = false;
-            ctx->game.aim_preview_progress = 0.0f;
             ctx->thinking_phase_active = true;
             ctx->thinking_timer = 0.0;
             ctx->pending_shot_valid = false;
@@ -749,19 +741,11 @@ int app_run_simulation(AppContext* ctx) {
     ctx->aim_preview_active = false;
     ctx->aim_preview_timer = 0.0;
     
-    // Wall-time budget for capture mode (hard timeout to prevent hangs)
-    double capture_start_wall = 0.0;
-    double capture_max_wall = 0.0;
-    if (ctx->config.mode == APP_MODE_CAPTURE) {
-        capture_start_wall = platform_time_now();
-        capture_max_wall = (ctx->config.frames * 0.5 > 30.0) ? ctx->config.frames * 0.5 : 30.0;
-    }
-    
     // Initialize first board - start with THINKING for first turn
     match_start_board(&ctx->match, &ctx->game, &ctx->rng);
     physics_sync_from_board(ctx->physics, &ctx->game.board, ctx->game.turn_seat);
     ctx->arrange_wait = 0.0;
-    if (ctx->renderer && ctx->config.mode == APP_MODE_RENDERED) {      /* the very first scene: coins strewn about, then arranged */
+    if (ctx->renderer) {      /* the very first scene: coins strewn about, then arranged */
         Vec2 scattered[MAX_PIECES];
         app_scatter_positions(ctx->rng.master_seed, scattered);
         app_begin_arrange(ctx, scattered, ARRANGE_PAUSE_FIRST);
@@ -974,9 +958,6 @@ int app_run_simulation(AppContext* ctx) {
                         ctx->game.aim_line_progress = (float)(elapsed_scaled / AIM_PREVIEW_SECONDS);
                         if (ctx->game.aim_line_progress > 1.0f) ctx->game.aim_line_progress = 1.0f;
                         if (ctx->game.aim_line_progress < 0.0f) ctx->game.aim_line_progress = 0.0f;
-                        ctx->game.aim_preview_progress = (float)(elapsed_scaled / 0.3);
-                        if (ctx->game.aim_preview_progress > 1.0f) ctx->game.aim_preview_progress = 1.0f;
-                        if (ctx->game.aim_preview_progress < 0.0f) ctx->game.aim_preview_progress = 0.0f;
                         
                         if (ctx->aim_preview_timer <= 0.0) {
                             // 5 seconds elapsed (scaled) - execute the shot
@@ -988,8 +969,7 @@ int app_run_simulation(AppContext* ctx) {
                             
                             // FIRST: Invalidate computed shot so aim line clears BEFORE striker gains velocity
                             ctx->game.computed_shot_valid = false;
-                            ctx->game.aim_preview_progress = 0.0f;
-                            ctx->game.aim_line_progress = 0.0f;
+                                            ctx->game.aim_line_progress = 0.0f;
                             
                             // THEN: Execute the pre-computed shot plan
                             Seat seat = ctx->game.turn_seat;
@@ -1060,45 +1040,7 @@ int app_run_simulation(AppContext* ctx) {
             renderer_end_board(ctx->renderer);
             renderer_end(ctx->renderer);
             app_flight_frame(ctx, alpha, dt);
-
-            // Capture frames if in capture mode
-            if (ctx->config.mode == APP_MODE_CAPTURE && ctx->capture_frame_count < ctx->config.frames) {
-                renderer_capture_frame(ctx->renderer, ctx->config.capture_dir, ctx->capture_frame_count,
-                                       ctx->game.phase, ctx->placement_timer, ctx->playback_speed, &ctx->game.board);
-                ctx->capture_frame_count++;
-                
-                // Check if we've captured enough frames - exit simulation loop
-                if (ctx->capture_frame_count >= ctx->config.frames) {
-                    if (ctx->config.verbose) {
-                        platform_diag_logf("[DEBUG] Capture complete: %lu frames captured\n", (unsigned long)ctx->capture_frame_count);
-                    }
-                    ctx->running = false;
-                }
-            }
             ctx->frame_count++;
-            
-            // Hard wall-time budget for capture mode (belt-and-suspenders)
-            if (ctx->config.mode == APP_MODE_CAPTURE) {
-                double elapsed_wall = platform_time_now() - capture_start_wall;
-                if (elapsed_wall > capture_max_wall) {
-                    platform_diag_logf("[ERROR] Capture wall-time budget exceeded: %.2fs > %.2fs (frames=%lu)\n",
-                            elapsed_wall, capture_max_wall, (unsigned long)ctx->capture_frame_count);
-                    
-                    // Write .stall marker file
-                    if (ctx->config.capture_dir) {
-                        char stall_path[512];
-                        snprintf(stall_path, sizeof(stall_path), "%s/.stall", ctx->config.capture_dir);
-                        FILE* fp = platform_fopen_private(stall_path, "w");
-                        if (fp) {
-                            fprintf(fp, "Capture stalled at frame %lu after %.2f seconds (budget %.2fs)\n",
-                                    (unsigned long)ctx->capture_frame_count, elapsed_wall, capture_max_wall);
-                            fclose(fp);
-                        }
-                    }
-                    
-                    return 74;  // EX_IOERR
-                }
-            }
         }
         
         // Frame limiting with WaitTime to cap CPU (R5)
@@ -1153,12 +1095,10 @@ if (seed == 0) {
     // Setup subsystems
     app_setup_trace(ctx);
     app_setup_renderer(ctx);
-    if ((config->mode == APP_MODE_RENDERED && !config->headless) || config->mode == APP_MODE_CAPTURE) {
-        if (!ctx->renderer) {
-            platform_fatal("Could not open the game window (graphics initialisation failed).");
-            app_destroy(ctx);
-            return NULL;
-        }
+    if (config->mode == APP_MODE_RENDERED && !ctx->renderer) {
+        platform_fatal("Could not open the game window (graphics initialisation failed).");
+        app_destroy(ctx);
+        return NULL;
     }
     app_init_controllers(ctx);
     app_init_match(ctx);
@@ -1205,8 +1145,6 @@ int app_run(AppContext* ctx) {
             return app_run_diagnostic(ctx);
         case APP_MODE_SOAK:
             return app_run_soak(ctx);
-        case APP_MODE_CAPTURE:
-            return app_run_capture(ctx);
         default:
             return app_run_simulation(ctx);
     }
@@ -1243,44 +1181,6 @@ int app_run_soak(AppContext* ctx) {
     return 0;
 }
 
-int app_run_capture(AppContext* ctx) {
-    platform_mkdir(ctx->config.capture_dir);
-    
-    if (ctx->config.verbose) {
-        platform_diag_logf("[DEBUG] app_run_capture: target frames=%u\n", ctx->config.frames);
-    }
-    
-    uint32_t target_frames = ctx->config.frames;
-    uint32_t total_frames = 0;
-    
-    // Run multiple boards until we capture enough frames
-    while (total_frames < target_frames) {
-        // Ensure running state for each board
-        ctx->running = true;
-        
-        app_init_match(ctx);
-        match_start_board(&ctx->match, &ctx->game, &ctx->rng);
-        physics_sync_from_board(ctx->physics, &ctx->game.board, ctx->game.turn_seat);
-        
-        // Run simulation for this board, but stop if we hit target frames
-        uint32_t frames_before = ctx->frame_count;
-        app_run_simulation(ctx);
-        uint32_t frames_this_board = ctx->frame_count - frames_before;
-        total_frames += frames_this_board;
-        
-        if (ctx->config.verbose) {
-            platform_diag_logf("[DEBUG] Board complete: captured %u frames this board, total %u/%u\n", 
-                   frames_this_board, total_frames, target_frames);
-        }
-        
-        // If no frames captured, break to avoid infinite loop
-        if (frames_this_board == 0) {
-            break;
-        }
-    }
-    
-    return 0;
-}
 
 /* -----------------------------------------------------------------------------
  * CLI Parsing
@@ -1310,7 +1210,6 @@ AppConfig app_parse_args(int argc, char* argv[]) {
             if (strcmp(val, "rendered") == 0) config.mode = APP_MODE_RENDERED;
             else if (strcmp(val, "diagnostic") == 0) config.mode = APP_MODE_DIAGNOSTIC;
             else if (strcmp(val, "soak") == 0) config.mode = APP_MODE_SOAK;
-            else if (strcmp(val, "capture") == 0) config.mode = APP_MODE_CAPTURE;
         } else if ((val = get_arg_value(argc, argv, &i, "--seed")) != 0) {
             config.seed = strtoull(val, NULL, 10);
         } else if ((val = get_arg_value(argc, argv, &i, "--boards")) != 0) {
@@ -1319,12 +1218,8 @@ AppConfig app_parse_args(int argc, char* argv[]) {
             config.seeds = (uint32_t)strtoul(val, NULL, 10);
         } else if ((val = get_arg_value(argc, argv, &i, "--matches")) != 0) {
             config.matches = (uint32_t)strtoul(val, NULL, 10);
-        } else if ((val = get_arg_value(argc, argv, &i, "--frames")) != 0) {
-            config.frames = (uint32_t)strtoul(val, NULL, 10);
         } else if ((val = get_arg_value(argc, argv, &i, "--trace-dir")) != 0) {
             config.trace_dir = val;
-        } else if ((val = get_arg_value(argc, argv, &i, "--capture-dir")) != 0) {
-            config.capture_dir = val;
         } else if ((val = get_arg_value(argc, argv, &i, "--width")) != 0) {
             config.window_width = atoi(val);
         } else if ((val = get_arg_value(argc, argv, &i, "--height")) != 0) {
@@ -1340,8 +1235,6 @@ AppConfig app_parse_args(int argc, char* argv[]) {
             if (config.ai_budget_ms > 10000) config.ai_budget_ms = 10000;
         } else if (strcmp(argv[i], "--verbose") == 0) {
             config.verbose = true;
-        } else if (strcmp(argv[i], "--headless") == 0) {
-            config.headless = true;
         } else if (strcmp(argv[i], "--debug-phase") == 0) {
             config.debug_phase = true;
         } else if (strcmp(argv[i], "--no-radio") == 0) {
@@ -1362,20 +1255,17 @@ void app_print_usage(const char* prog_name) {
     printf("Carrom Arena - Autonomous Four-Player Carrom Simulation\n\n");
     printf("Usage: %s [options]\n\n", prog_name);
     printf("Options:\n");
-    printf("  --mode <mode>         Mode: rendered, diagnostic, soak, capture (default: rendered)\n");
+    printf("  --mode <mode>         Mode: rendered, diagnostic, soak (default: rendered)\n");
     printf("  --seed <n>            Master RNG seed (0 = random)\n");
     printf("  --boards <n>          Boards per seed (soak mode, default: 100)\n");
     printf("  --seeds <n>           Number of seeds (soak mode, default: 100)\n");
     printf("  --matches <n>         Matches per board/seed (soak mode, default: 10)\n");
-    printf("  --frames <n>          Frames to capture (capture mode, default: 300)\n");
     printf("  --trace-dir <path>    Trace output directory (default: traces)\n");
-    printf("  --capture-dir <path>  Capture output directory (default: captures)\n");
     printf("  --playback-speed <x>  Sim speed multiplier 0.05-4.0 (default: 1.0)\n");
     printf("  --ai-budget-ms <n>    AI decision time budget in ms (default: 150, range: 10-10000)\n");
     printf("  --verbose             Verbose logging\n");
     printf("  --no-radio            Do not start the AH.FM internet radio\n");
-    printf("  --headless            Force headless mode\n");
-    printf("  --debug-phase         Enable per-frame phase debug logging in capture mode\n");
+    printf("  --debug-phase         Enable per-frame phase debug logging\n");
     printf("  --width <n>           Window width (default: 560)\n");
     printf("  --height <n>          Window height (default: 560)\n");
     printf("  --help, -h            Show this help\n");
