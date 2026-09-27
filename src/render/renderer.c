@@ -32,7 +32,7 @@ struct Renderer {
     char capture_dir[256];
     Layout current_layout;
     Team turn_team;
-    int score_pts[2], score_games[2];   /* red, blue: points and games won, kept across games */
+    int score_games[2], score_boards[2], score_pts[2];   /* red, blue: G (this match), B (this game), P (this game) */
     bool radio_available, radio_playing;
     bool radio_clicked;
 };
@@ -159,7 +159,7 @@ static Rectangle radio_rect(int sw, int sh) {
 }
 
 #define SCOREBOARD_FONT 12                   /* fixed size (a tad larger than before), whatever the window does */
-#define SCOREBOARD_CHARS 12                  /* "RED  000 00G" (nnn = points, nnG = games) */
+#define SCOREBOARD_CHARS 15                  /* "G:00 B:00 P:000" */
 /* Every character gets the same cell width, so the numbers never shift the layout as the digits change */
 static int scoreboard_cell(void) { return MeasureText("W", SCOREBOARD_FONT) + 1; }
 
@@ -183,9 +183,9 @@ static int sb_clamp(int v, int max) { return (v < 0 || v > max) ? 0 : v; }
 static void draw_scoreboard(const Renderer* r, int sw, int sh) {
     (void)sw; (void)sh;
     DrawRectangle(8, 14, 9, 9, THEME_RED);
-    draw_fixed_text(TextFormat("RED  %03d %02dG", sb_clamp(r->score_pts[0], 999), sb_clamp(r->score_games[0], 99)), 20, 13, WHITE);
+    draw_fixed_text(TextFormat("G:%02d B:%02d P:%03d", sb_clamp(r->score_games[0], 99), sb_clamp(r->score_boards[0], 99), sb_clamp(r->score_pts[0], 999)), 20, 13, WHITE);
     DrawRectangle(8, 29, 9, 9, THEME_BLUE);
-    draw_fixed_text(TextFormat("BLUE %03d %02dG", sb_clamp(r->score_pts[1], 999), sb_clamp(r->score_games[1], 99)), 20, 28, WHITE);
+    draw_fixed_text(TextFormat("G:%02d B:%02d P:%03d", sb_clamp(r->score_games[1], 99), sb_clamp(r->score_boards[1], 99), sb_clamp(r->score_pts[1], 999)), 20, 28, WHITE);
 }
 
 static void draw_radio_button(const Renderer* r, int sw, int sh) {
@@ -224,9 +224,11 @@ static void draw_radio_button(const Renderer* r, int sw, int sh) {
     rlPopMatrix();
 }
 
-void renderer_set_scoreboard(Renderer* r, int red_points, int blue_points, int red_games, int blue_games) {
-    r->score_pts[0] = red_points;  r->score_pts[1] = blue_points;
-    r->score_games[0] = red_games; r->score_games[1] = blue_games;
+void renderer_set_scoreboard(Renderer* r, int red_games, int red_boards, int red_points,
+                             int blue_games, int blue_boards, int blue_points) {
+    r->score_games[0] = red_games;   r->score_games[1] = blue_games;
+    r->score_boards[0] = red_boards; r->score_boards[1] = blue_boards;
+    r->score_pts[0] = red_points;    r->score_pts[1] = blue_points;
 }
 
 void renderer_set_radio(Renderer* r, bool available, bool playing) {

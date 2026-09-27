@@ -60,7 +60,9 @@ void renderer_set_turn_team(Renderer* renderer, Team team);
 Layout renderer_get_layout(const Renderer* renderer);  /* colour of the backdrop accent */
 
 /* Scoreboard at the top left (red = the white team, blue = the black team) and the radio button at the bottom right */
-void renderer_set_scoreboard(Renderer* renderer, int red_points, int blue_points, int red_games, int blue_games);
+/* G = games won (this match), B = boards won (this game), P = points (this game); one triple per side */
+void renderer_set_scoreboard(Renderer* renderer, int red_games, int red_boards, int red_points,
+                             int blue_games, int blue_boards, int blue_points);
 void renderer_set_radio(Renderer* renderer, bool available, bool playing);
 bool renderer_radio_clicked(Renderer* renderer);   /* true once per click on the radio button */
 

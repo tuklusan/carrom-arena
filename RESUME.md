@@ -92,7 +92,26 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
   (ease in and out, 0.5-2.5 s) and `board_view.c` hands the striker over on arrival (`effects_take_striker_slide_done`). If a coin sits on the spot on the
   baseline the goal moves along the baseline to the nearest free place. Rendered mode only. (Verified by frames of a forced case; a real striker pocket is
   rare with the expert AI.)
-- Scoreboard: fixed 12 px font, every character in the same cell width, `RED  000 00G` (no "pts" text; points 000-999, games 00-99; out of range shows/resets to 0).
+- Scoreboard (2026-09-27, reworked): each side shows `G:00 B:00 P:000` (fixed font, every character the same cell width; out of range wraps to 0).
+  G = games won this MATCH (`total_games`, unchanged from before). B = boards won THIS GAME. P = points THIS GAME (the coin tally: coins of
+  the pair's colour pocketed, +3 for a covered queen; moves the instant a coin drops or returns). B and P both reset to 0 when a new game starts.
+- IMPORTANT for B (and P): ICF 43 gives the BREAKER's pair the white coins for THAT BOARD ONLY, and ICF 49a(i) has the break (and so the
+  colour) rotate to the other pair every board within a game (confirmed by `test_colour_rotation.c`). A board win or a coin is therefore
+  recorded by the rules engine under `boards_won_white`/`black` or `PIECE_WHITE`/`BLACK`, colours that can belong to EITHER physical pair
+  from one board to the next. B is computed by resolving each board's own `seats_swapped` at the moment it is decided
+  (`app_resolve_shot`'s `old_seats_swapped`, captured before the rules engine runs) and adding that board's win to the correct physical
+  pair (`ctx->pair_boards_won[0/1]`); P already did this per board (`scoring_live_board_points`). Verified: in an instrumented run where the
+  same PAIR won four boards in a row while the winning COLOUR bucket alternated white,black,white,black, B correctly read 4 for that pair
+  and 0 for the other; a naive direct `boards_won_white -> red` mapping would have shown 2 and 2 - wrong.
+- OPEN ICF-COMPLIANCE QUESTION (found while doing the above, not fixed): `GameState.scores.white/black`, which decides who wins a GAME
+  (25 points or ahead after 8 boards, ICF 56a) and increments `match.games_won_white/black`, is accumulated by COLOUR across the whole game,
+  the SAME colour bucket B was just found to misattribute. Since colour genuinely belongs to a different physical pair board to board
+  (same ICF 43/49a-i basis as above), and ICF 52-56 speak of "the player"'s/pair's points, not a colour's, `game.scores.white` most likely
+  MIXES the two physical pairs' points across a game's boards, so the GAME winner (and hence G) could be wrong whenever the breaker rotation
+  matters, i.e. essentially always once a game runs more than one board. This is a pre-existing property of the rules engine (not introduced
+  today) and fixing it is a rules-engine change (touches `finish_board`, `match.games_won_*`, and the tests that assert on them), which is
+  bigger than a display change: NOT done without the operator's decision, given "ICF compliance is non-negotiable".
+
   The points are LIVE: `scoring_live_board_points` = coins of the pair's colour in a pocket on the current board (a coin put back stops counting at once)
   plus 3 for a covered queen, on top of the finished boards' points (`score_base`, banked at each new board). This is a coin tally, not the rules' game
   score (`GameState.scores`, the ICF board points that decide the 25-point game); the two are different numbers.
@@ -109,6 +128,8 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
+- Should the ICF GAME score (which decides G) be reattributed by physical pair the same way B and P now are (see the compliance
+  question above)? This can change who wins games/matches once a game runs more than one board.
 - Confirm on real hardware that the Release exe (`-release`, the first optimised build ever shipped) plays like the old Debug ones; then decide whether Release is the only exe to hand out.
 - `capture_test` is skipped on Windows and macOS CI (no window system on those runners); accept, or provide a virtual display/headless path there. Related bug: `--mode=capture` writes blank frames.
 Known gaps (nothing decided needed):

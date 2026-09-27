@@ -34,7 +34,9 @@
     GameState game;
     PhysicsWorld* physics;
     TraceWriter* trace;
-    int score_base[2];     // red (N/S) and blue (E/W) points of the finished boards; the live board's coins are added on top
+    int score_base[2];       // red (N/S) and blue (E/W) points of the finished boards THIS GAME; the live board's coins are added on top
+    int pair_boards_won[2];  // red, blue: boards won THIS GAME, resolved per board (ICF 43: colour is per-board, so a colour-keyed
+                             // count would misattribute a board once the breaker, and so the colour, rotates to the other pair)
     int total_games[2];    // games won
     struct { double at; float speed; } bounce[4];   // striker floor bounces still to be heard
     int bounce_count;
@@ -452,7 +454,8 @@ static void app_shot_progress(AppContext* ctx) {
 }
 
 /* The scoreboard shows scoring_live_board_points (the coins pocketed on the current board, the queen once covered) on top of the
- * finished boards (score_base): it moves the moment a coin drops or comes back. Past 999 it starts again from 0. */
+ * finished boards THIS GAME (score_base, reset to 0 when a new game starts): it moves the moment a coin drops or comes back.
+ * Past 999 it starts again from 0. */
 static int app_live_points(AppContext* ctx, int pair) {
     int live = scoring_live_board_points(&ctx->game.board, pair);
     if (ctx->score_base[pair] + live > 999) ctx->score_base[pair] = -live;               /* past 999: start again from 0 */
@@ -534,6 +537,7 @@ static void app_begin_arrange(AppContext* ctx, const Vec2 from[MAX_PIECES], floa
 static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Extract facts for rules engine
     ShotFacts facts;
+    bool old_seats_swapped = ctx->game.board.seats_swapped;   /* the colour/pair mapping of the board being resolved */
     match_extract_facts(&ctx->game, result, &facts);
     
     // The coins have moved: the game state (what the AI plans from, and where the rules place a coin paid back) must show
@@ -548,15 +552,27 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     ctx->total_games[1] += (int)outcome.next_match_state.games_won_black - (int)ctx->match.games_won_black;
     for (int i = 0; i < 2; i++) if (ctx->total_games[i] > 99) ctx->total_games[i] = 0;   /* the board shows 00-99 games */
 
+    // Boards won this game, by PHYSICAL pair (not colour: ICF 43 gives the breaker white for that board only, and the
+    // breaker/colour rotates board to board within a game, so a colour-keyed count would swap identity mid-game)
+    {
+        int dwhite = (int)outcome.next_match_state.boards_won_white - (int)ctx->match.boards_won_white;
+        int dblack = (int)outcome.next_match_state.boards_won_black - (int)ctx->match.boards_won_black;
+        ctx->pair_boards_won[0] += old_seats_swapped ? dblack : dwhite;   /* red = N/S */
+        ctx->pair_boards_won[1] += old_seats_swapped ? dwhite : dblack;   /* blue = E/W */
+    }
+
     // Apply outcome to match and game states
     ctx->game = outcome.next_game_state;
     ctx->match = outcome.next_match_state;
 
     // The rendered arena never stops: after a game (or a whole match) the next one begins, and the scoreboard carries on
     TurnDecision decision = outcome.turn_decision;
-    if (ctx->config.mode == APP_MODE_RENDERED && (decision == TURN_GAME_OVER || decision == TURN_MATCH_OVER)) {
+    bool starting_new_game = (decision == TURN_GAME_OVER || decision == TURN_MATCH_OVER);
+    if (ctx->config.mode == APP_MODE_RENDERED && starting_new_game) {
         ctx->match.boards_won_white = 0;
         ctx->match.boards_won_black = 0;
+        ctx->pair_boards_won[0] = 0;
+        ctx->pair_boards_won[1] = 0;
         if (decision == TURN_MATCH_OVER) {
             ctx->match.games_won_white = 0;
             ctx->match.games_won_black = 0;
@@ -692,7 +708,10 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
         if (!match_is_over(&ctx->match)) {
             Vec2 prev_positions[MAX_PIECES];
             app_capture_positions(&ctx->game.board, prev_positions);
-            for (int pr = 0; pr < 2; pr++) ctx->score_base[pr] = app_live_points(ctx, pr);   /* the board's coins are banked */
+            for (int pr = 0; pr < 2; pr++) {
+                /* a new game starts P fresh at 0; otherwise the finished board's coins are banked into the running total */
+                ctx->score_base[pr] = starting_new_game ? 0 : app_live_points(ctx, pr);
+            }
             float pause = (outcome.turn_decision == TURN_MATCH_OVER) ? ARRANGE_PAUSE_MATCH
                         : (outcome.turn_decision == TURN_GAME_OVER) ? ARRANGE_PAUSE_GAME : ARRANGE_PAUSE_BOARD;
             match_start_board(&ctx->match, &ctx->game, &ctx->rng);
@@ -1028,7 +1047,9 @@ int app_run_simulation(AppContext* ctx) {
         if (ctx->renderer) {
             if (renderer_radio_clicked(ctx->renderer)) radio_toggle();
             renderer_set_radio(ctx->renderer, !ctx->config.no_radio, radio_is_playing());   /* the button is shown even without an audio device (then it does nothing) */
-            renderer_set_scoreboard(ctx->renderer, app_live_points(ctx, 0), app_live_points(ctx, 1), ctx->total_games[0], ctx->total_games[1]);
+            renderer_set_scoreboard(ctx->renderer,
+                                     ctx->total_games[0], ctx->pair_boards_won[0], app_live_points(ctx, 0),
+                                     ctx->total_games[1], ctx->pair_boards_won[1], app_live_points(ctx, 1));
             renderer_set_turn_team(ctx->renderer, ctx->game.active_player.team);
             renderer_begin(ctx->renderer);
             renderer_begin_board(ctx->renderer);
