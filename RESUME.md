@@ -137,10 +137,11 @@ Dead code also removed while at it: `distance_to_board_boundary` (math.c/vecmath
 `aim_line_progress`), and `Renderer.width`/`.height` (only existed to support capture-mode's window-resize detection).
 
 ## Title readability, app icon, audio-capability gate for the radio (2026-09-27)
-- Title: still two lines, still reaching down to the scoreboard's bottom edge, but now letter-spaced ("tracked") to spread
-  across the width available to the right of the scoreboard (it used to be centred on the WHOLE window, wasting a mirrored
-  margin on the right that nothing occupies; now centred in the actual open space, `draw_title_bar`/`fit_tracking` in
-  `render/renderer.c`). Same font size and height as before (no risk to the north figure just below it), just wider letters.
+- Title: two lines, letter-spaced ("tracked", `fit_tracking`) to spread across the width available, centred between the
+  BOARD's own left and right edges (`L->board_x` +/- `board_size/2`), not the whole window and not the space beside the
+  scoreboard - capped so it never reaches back under the scoreboard on the left. Font size 10 (smaller than the first
+  attempt) and brighter (`(255,253,230)`): measured on a screenshot to leave about 5px clear above the north figure's
+  antenna ball, which sits directly below since centring on the board also centres the title above that figure.
 - App icon: `assets/icon/app_icon.png` (256px, the running window's icon on every platform, embedded like the audio via
   `src/CMakeLists.txt` and set with `SetWindowIcon` in `renderer_create`) and `assets/icon/app_icon.ico` (multi-size, the
   Windows .exe's own file icon via `assets/icon/app_icon.rc`, `enable_language(RC)` on WIN32 in the top-level CMakeLists).

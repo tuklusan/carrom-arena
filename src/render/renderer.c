@@ -281,22 +281,22 @@ static void draw_title_bar(Renderer* r, const Layout* L) {
     DrawLineEx((Vector2){ 10, (float)title_bar_y }, (Vector2){ (float)(L->sw - 10), (float)title_bar_y }, 2, (Color){ 100, 100, 120, 255 });
     DrawLineEx((Vector2){ 10, (float)(title_bar_y + 1) }, (Vector2){ (float)(L->sw - 10), (float)(title_bar_y + 1) }, 1, (Color){ 100, 100, 120, 255 });
 
-    /* The title lives in the space to the right of the scoreboard (there is no mirrored panel on the right), so it is
-     * centred there rather than on the whole window: that alone frees up a lot of width the old centring wasted. */
-    int left_edge = scoreboard_width(r, L->sw, L->sh) + 10;
-    int right_edge = L->sw - 10;
-    int avail_w = right_edge - left_edge;
+    /* Centred between the board's own left and right edges (not the whole window, and not the space beside the
+     * scoreboard): that is what the board itself looks centred on. The width is still capped so the letter-spacing
+     * below never reaches back far enough to sit under the scoreboard on the left. */
+    int center_x = L->board_x + L->board_size / 2;
+    int scoreboard_right = scoreboard_width(r, L->sw, L->sh) + 10;
+    int half_w = center_x - scoreboard_right;
+    int right_half = (L->sw - 10) - center_x;
+    if (right_half < half_w) half_w = right_half;
+    int avail_w = half_w * 2;
     if (avail_w < 60) avail_w = 60;
-    int center_x = (left_edge + right_edge) / 2;
 
     int top = title_bar_y + 4;
-    int bottom = SB_ROW2_Y + SCOREBOARD_FONT + 2;   /* two lines, reaching down to the scoreboard's own bottom edge */
     int gap = 2;
-    int fs = (bottom - top - gap) / 2;
-    if (fs > 30) fs = 30;
-    if (fs < 10) fs = 10;
+    int fs = 10;   /* small enough that the two lines clear the north figure's antenna ball just below them (measured) */
     int line_h = fs + gap;
-    Color fill = (Color){ 255, 240, 205, 255 };   /* a warm, brighter white: more pop than plain WHITE against the steel-blue backdrop */
+    Color fill = (Color){ 255, 253, 230, 255 };   /* brighter than before: a near-white warm gold */
 
     int track1 = fit_tracking(TITLE_LINE1, fs, avail_w, 0.85f);
     int track2 = fit_tracking(TITLE_LINE2, fs, avail_w, 0.85f);
