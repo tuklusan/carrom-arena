@@ -1,5 +1,6 @@
 #include "audio.h"
 #include "audio_assets.h"
+#include "platform/platform.h"
 #define __USE_MINGW_ANSI_STDIO 1
 #include <raylib.h>
 #include <stdio.h>
@@ -45,7 +46,10 @@ static const AudioAsset* find_asset(const char* name) {
 bool audio_init(void) {
     if (g_ready) return true;
     InitAudioDevice();
-    if (!IsAudioDeviceReady()) return false;
+    if (!IsAudioDeviceReady()) {
+        platform_diag_logf("AUDIO: no device available; sound effects and the radio are disabled for this run\n");
+        return false;
+    }
     int loaded = 0;
     for (int c = 0; c < CUE_COUNT; c++) {
         g_variants[c] = 0;

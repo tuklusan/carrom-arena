@@ -136,6 +136,21 @@ Dead code also removed while at it: `distance_to_board_boundary` (math.c/vecmath
 (computed but never read since the turn halo was removed), `GameState.aim_preview_progress` (written in five places, never read - superseded by
 `aim_line_progress`), and `Renderer.width`/`.height` (only existed to support capture-mode's window-resize detection).
 
+## Title readability, app icon, audio-capability gate for the radio (2026-09-27)
+- Title: still two lines, still reaching down to the scoreboard's bottom edge, but now letter-spaced ("tracked") to spread
+  across the width available to the right of the scoreboard (it used to be centred on the WHOLE window, wasting a mirrored
+  margin on the right that nothing occupies; now centred in the actual open space, `draw_title_bar`/`fit_tracking` in
+  `render/renderer.c`). Same font size and height as before (no risk to the north figure just below it), just wider letters.
+- App icon: `assets/icon/app_icon.png` (256px, the running window's icon on every platform, embedded like the audio via
+  `src/CMakeLists.txt` and set with `SetWindowIcon` in `renderer_create`) and `assets/icon/app_icon.ico` (multi-size, the
+  Windows .exe's own file icon via `assets/icon/app_icon.rc`, `enable_language(RC)` on WIN32 in the top-level CMakeLists).
+  Original artwork (generated for this project, `assets/icon/CREDITS.md`): a polished-gold striker in front of a black
+  coin on a dark rounded-square badge, echoing `draw_striker_polished`. Verified: raylib decodes the embedded PNG on
+  Linux with no errors; the Windows resource compile itself is only proven by CI (windres on windows-2022).
+- Radio: the button is now hidden completely (not just inert) when there is no audio device, not only when `--no-radio` is
+  given (`renderer_set_radio`'s availability now requires `audio_ready()` too). `audio_init()` logs a line to the debug
+  file when no device is found, so a missing radio button is traceable to "no audio" rather than looking like a bug.
+
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
 - Should the ICF GAME score (which decides G) be reattributed by physical pair the same way B and P now are (see the compliance

@@ -3,6 +3,9 @@
 
 cmake_minimum_required(VERSION 3.25)
 project(CarromArena LANGUAGES C VERSION 1.0.0)
+if(WIN32)
+    enable_language(RC)   # the .exe icon (assets/icon/app_icon.rc)
+endif()
 
 # =============================================================================
 # C17 Standard & Extensions

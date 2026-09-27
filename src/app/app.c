@@ -1026,7 +1026,7 @@ int app_run_simulation(AppContext* ctx) {
         // Render (mode-specific)
         if (ctx->renderer) {
             if (renderer_radio_clicked(ctx->renderer)) radio_toggle();
-            renderer_set_radio(ctx->renderer, !ctx->config.no_radio, radio_is_playing());   /* the button is shown even without an audio device (then it does nothing) */
+            renderer_set_radio(ctx->renderer, !ctx->config.no_radio && audio_ready(), radio_is_playing());   /* the button (and the radio itself) needs a real audio device: no device, no button */
             renderer_set_scoreboard(ctx->renderer,
                                      ctx->total_games[0], ctx->pair_boards_won[0], app_live_points(ctx, 0),
                                      ctx->total_games[1], ctx->pair_boards_won[1], app_live_points(ctx, 1));

@@ -56,6 +56,17 @@ endif()
 # Render library (depends on raylib)
 
 # Embed the sound effects (assets/audio/*.ogg) into the executable as C arrays
+# Embed the app icon (assets/icon/app_icon.png) into the executable as a C array, set as the running window's icon
+# on every platform (renderer_create); the .exe's own file icon (Explorer, taskbar) comes separately from app_icon.rc.
+set(CARROM_ICON_PNG ${CMAKE_SOURCE_DIR}/assets/icon/app_icon.png)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CARROM_ICON_PNG})
+set(CARROM_ICON_C "${CMAKE_CURRENT_BINARY_DIR}/icon_asset.c")
+file(READ ${CARROM_ICON_PNG} _icon_hex HEX)
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _icon_bytes "${_icon_hex}")
+string(LENGTH "${_icon_hex}" _icon_hl)
+math(EXPR _icon_len "${_icon_hl} / 2")
+file(WRITE ${CARROM_ICON_C} "#include \"render/icon_asset.h\"\nconst unsigned char app_icon_png[] = {${_icon_bytes}};\nconst int app_icon_png_len = ${_icon_len};\n")
+
 file(GLOB CARROM_AUDIO_FILES ${CMAKE_SOURCE_DIR}/assets/audio/*.ogg)
 list(SORT CARROM_AUDIO_FILES)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CARROM_AUDIO_FILES})
@@ -83,6 +94,7 @@ add_library(carrom_render
     audio/audio.c
     audio/radio.c
     ${CARROM_AUDIO_C}
+    ${CARROM_ICON_C}
 )
 
 target_include_directories(carrom_render PUBLIC
@@ -228,6 +240,9 @@ add_executable(carrom_arena
     app/main.c
     app/app.c
 )
+if(WIN32)
+    target_sources(carrom_arena PRIVATE ${CMAKE_SOURCE_DIR}/assets/icon/app_icon.rc)   # the .exe's own icon
+endif()
 
 target_link_libraries(carrom_arena
     carrom_core

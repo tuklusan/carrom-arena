@@ -13,6 +13,7 @@
 #include <string.h>
 #include <math.h>
 #include "audio/audio.h"
+#include "render/icon_asset.h"
 
 
 static const char* TITLE_LINE1 = "SANYALnet Labs";
@@ -238,19 +239,40 @@ bool renderer_radio_clicked(Renderer* r) {
     return c;
 }
 
-/* A bold, poster-style line: an outline in every direction plus a doubled-up fill, punchier than a plain DrawText */
-static void draw_punchy_text(const char* text, int center_x, int y, int fs, Color fill) {
-    int w = MeasureText(text, fs);
-    int x = center_x - w / 2;
+/* A bold, poster-style line, letter-spaced ("tracking" extra px between characters) to spread it across the available
+ * width rather than leaving it small and cramped in the middle: an outline in every direction plus a doubled-up fill
+ * per character, punchier than a plain DrawText. */
+static void draw_punchy_text(const char* text, int center_x, int y, int fs, int tracking, Color fill) {
+    int n = (int)strlen(text);
+    int total_w = MeasureText(text, fs) + tracking * (n > 0 ? n - 1 : 0);
+    int x = center_x - total_w / 2;
     Color outline = (Color){ 16, 18, 26, 255 };
-    for (int dx = -1; dx <= 1; dx++) {
-        for (int dy = -1; dy <= 1; dy++) {
-            if (dx == 0 && dy == 0) continue;
-            DrawText(text, x + dx, y + dy, fs, outline);
+    for (int i = 0; text[i]; i++) {
+        char one[2] = { text[i], 0 };
+        int cw = MeasureText(one, fs);
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                if (dx == 0 && dy == 0) continue;
+                DrawText(one, x + dx, y + dy, fs, outline);
+            }
         }
+        DrawText(one, x, y, fs, fill);
+        DrawText(one, x + 1, y, fs, fill);   /* a touch heavier, without a second font */
+        x += cw + tracking;
     }
-    DrawText(text, x, y, fs, fill);
-    DrawText(text, x + 1, y, fs, fill);   /* a touch heavier, without a second font */
+}
+
+/* How much extra space to put between characters so `text` (at font size `fs`) spreads to about `frac` of `avail_w`,
+ * clamped to a sane range so short words do not end up looking like they are spelled out with a finger. */
+static int fit_tracking(const char* text, int fs, int avail_w, float frac) {
+    int n = (int)strlen(text);
+    if (n < 2) return 0;
+    int base_w = MeasureText(text, fs);
+    int target_w = (int)((float)avail_w * frac);
+    int tracking = (target_w - base_w) / (n - 1);
+    if (tracking < 0) tracking = 0;
+    if (tracking > 10) tracking = 10;
+    return tracking;
 }
 
 static void draw_title_bar(Renderer* r, const Layout* L) {
@@ -259,18 +281,27 @@ static void draw_title_bar(Renderer* r, const Layout* L) {
     DrawLineEx((Vector2){ 10, (float)title_bar_y }, (Vector2){ (float)(L->sw - 10), (float)title_bar_y }, 2, (Color){ 100, 100, 120, 255 });
     DrawLineEx((Vector2){ 10, (float)(title_bar_y + 1) }, (Vector2){ (float)(L->sw - 10), (float)(title_bar_y + 1) }, 1, (Color){ 100, 100, 120, 255 });
 
-    int room = L->sw - 2 * scoreboard_width(r, L->sw, L->sh);   /* the title is centred: the scoreboard's width is lost on both sides */
+    /* The title lives in the space to the right of the scoreboard (there is no mirrored panel on the right), so it is
+     * centred there rather than on the whole window: that alone frees up a lot of width the old centring wasted. */
+    int left_edge = scoreboard_width(r, L->sw, L->sh) + 10;
+    int right_edge = L->sw - 10;
+    int avail_w = right_edge - left_edge;
+    if (avail_w < 60) avail_w = 60;
+    int center_x = (left_edge + right_edge) / 2;
+
     int top = title_bar_y + 4;
     int bottom = SB_ROW2_Y + SCOREBOARD_FONT + 2;   /* two lines, reaching down to the scoreboard's own bottom edge */
     int gap = 2;
     int fs = (bottom - top - gap) / 2;
     if (fs > 30) fs = 30;
     if (fs < 10) fs = 10;
-    while (fs > 8 && (MeasureText(TITLE_LINE1, fs) > room || MeasureText(TITLE_LINE2, fs) > room)) fs--;
     int line_h = fs + gap;
     Color fill = (Color){ 255, 240, 205, 255 };   /* a warm, brighter white: more pop than plain WHITE against the steel-blue backdrop */
-    if (MeasureText(TITLE_LINE1, fs) <= room) draw_punchy_text(TITLE_LINE1, L->sw / 2, top, fs, fill);
-    if (MeasureText(TITLE_LINE2, fs) <= room) draw_punchy_text(TITLE_LINE2, L->sw / 2, top + line_h, fs, fill);
+
+    int track1 = fit_tracking(TITLE_LINE1, fs, avail_w, 0.85f);
+    int track2 = fit_tracking(TITLE_LINE2, fs, avail_w, 0.85f);
+    draw_punchy_text(TITLE_LINE1, center_x, top, fs, track1, fill);
+    draw_punchy_text(TITLE_LINE2, center_x, top + line_h, fs, track2, fill);
 }
 
 static void draw_footer_band(Renderer* r, const Layout* L) {
@@ -325,6 +356,12 @@ Renderer* renderer_create(int width, int height, const char* title, bool debug_p
         return NULL;
     }
     SetTargetFPS(60);
+
+    Image icon = LoadImageFromMemory(".png", app_icon_png, app_icon_png_len);
+    if (icon.data) {
+        SetWindowIcon(icon);
+        UnloadImage(icon);
+    }
 
     return r;
 }
