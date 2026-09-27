@@ -201,6 +201,18 @@ orientation the body is turning to (`VisualState.aim_pose_angle`, already cached
 live blending angle; the target now stays fixed while only the arm's shape (still drawn through the live-rotating frame)
 eases toward it, so it can never appear to leave the shoulder mid-turn. Verified with a seed=22 screenshot sequence
 through a large corner-wrap rotation: the arm runs continuously from the shoulder to the hand at every sampled frame.
+That fix was itself wrong (2026-09-27, same day): the operator reported the east seat specifically striking with a
+detached arm on EVERY shot, not just during a transient. Root cause: the arm's target was computed in the FINAL-
+orientation frame above, but drawn via `robot_rbox(&f, ...)` - the body's LIVE, still-rotating frame. Those are two
+different rotation bases whenever the two angles differ, which for any shot needing a real turn is the entire approach,
+not a moment; the (u,v) numbers, valid only in the final frame, were read directly as coordinates in the live frame, so
+the arm pointed the wrong way for as long as the body had not yet finished turning - a genuine coordinate-system bug, not
+a cosmetic wobble. Fixed per the operator's own diagnosis: the target is now recomputed every frame from the CURRENT live
+frame `f`, the same frame everything else about the arm uses - so the target and the shape are always in the same
+coordinate system, and the arm continuously re-aims at the striker's true position as the body turns. The `final_angle`
+parameter and the separate `final_f` frame were removed entirely. Verified with a seed=7 screenshot sequence covering the
+east seat's first turn (frames 049-052, the reach/rotation ramp through full reach): one continuous arm, no gap, at every
+sampled frame.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
