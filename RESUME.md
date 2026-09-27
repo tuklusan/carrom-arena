@@ -182,6 +182,15 @@ Two more corrections the same day:
   to the last moment then snapped, because the amplitude shrank but the angular speed did not. Fixed: the live spin angle
   is captured the instant `reach` starts rising (`VisualState.arm_spin`, updated only while not reaching) and the arm eases
   from THAT captured angle to a straight rest as `reach` goes 0 to 1 - a true slowdown, not a shrinking wobble.
+- The telescoping arm was drawn as a SEPARATE set of boxes starting near the body's centreline, while the ordinary resting
+  right arm (still drawn every frame, just with its spin eased to 0) stayed at its own resting position off to the side -
+  two disconnected pieces (the operator: "the telescopic arm...start disjoint"). Fixed: there is only ONE right arm now.
+  Its forearm and hand boxes always rotate about the SAME fixed shoulder pivot (as they always did), and as `reach` rises
+  their FAR edges (never the shoulder-side edge) interpolate from the resting shape to the outstretched one - straightening
+  onto the shot line and stretching toward the striker - so at `reach` = 0 it is pixel-identical to the old resting arm, and
+  it never leaves the shoulder at any point in between. The telescoping fingers now begin exactly at the stretched hand's
+  own tip, in the same rotated frame, so there is no seam there either. Verified with screenshots at two consecutive
+  moments: the arm runs continuously from the shoulder, across the cushion, to the striker.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:

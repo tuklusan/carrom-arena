@@ -128,15 +128,34 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     float torso_end = sh0 + fref / 12.0f;          /* same reach as the old figure */
 
     /* arms hang from the shoulders, with square hands; a waiting robot flaps each arm on its own, swinging about the shoulder.
-     * The robot at the striker (`reach`, 0..1) instead keeps its right arm still (the spin fades out) while a separate
-     * telescoping arm (below, after the torso) extends from the shoulder, across the cushion, to the striker. */
+     * The right arm of the robot at the striker (`reach`, 0..1) is the SAME shape throughout - it never disconnects from
+     * the shoulder: the spin (`flap_r`) eases to a straight rest, and as it does the arm itself also straightens (its own
+     * width collapses onto the shot line) and stretches out (its far edge grows toward the striker), still rotating about
+     * the one fixed shoulder pivot the whole time. Telescoping fingers (below) continue on from wherever that stretched
+     * arm ends. */
     float arm_v = 1.3f * hr;
     float flap_r = 0.0f, flap_l = 0.0f;
     if (!is_current_turn) { flap_r = 0.9f * idle_wave(seat, 0, t * 1.8f); flap_l = 0.9f * idle_wave(seat, 1, t * 1.8f); }
     else { flap_r = lerp_angle_shortest(arm_spin, 0.0f, reach); flap_l = 10.5f * t + 2.0f; }   /* the robot whose turn it is spins both arms (about 2 and 1.7 turns a second), out of step with each other; the right arm eases smoothly from its current spin to a straight rest as it starts telescoping */
     float pu = sh0 + 0.1f * hr;
-    robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, sh0 + 0.1f * hr, torso_end - 0.2f * hr, arm_v, arm_v + 0.4f * hr, steel, line);
-    robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, torso_end - 0.55f * hr, torso_end + 0.15f * hr, arm_v - 0.05f * hr, arm_v + 0.45f * hr, dark, line);
+
+    /* Where the striker sits in this robot's own (u,v) frame - needed once `reach` > 0 to stretch the right arm and hand
+     * at it (and, further below, the fingers). u0/u1 track the SAME shoulder-to-hand box the resting arm always uses. */
+    Vec2 s_screen = math_world_to_screen(vp, striker_world);
+    float sdx = s_screen.x - screen.x, sdy = s_screen.y - screen.y;
+    float u_to_striker = sdx * f.back.x + sdy * f.back.y;
+    float v_to_striker = sdx * f.right.x + sdy * f.right.y;
+    float striker_r = math_world_to_screen_dist(vp, STRIKER_RADIUS_NORM);
+    float u_near = u_to_striker - striker_r * 1.05f;   /* just short of the striker's NEAR side: where the arm ends and the fingers begin */
+    float u_far = u_to_striker + striker_r * 1.05f;    /* the striker's FAR side: where the flicking fingers reach to */
+
+    float fore_u1  = torso_end - 0.2f * hr  + (u_near - 0.35f * hr - (torso_end - 0.2f * hr))  * reach;
+    float hand_u0  = torso_end - 0.55f * hr + (u_near - 0.5f  * hr - (torso_end - 0.55f * hr))  * reach;
+    float hand_u1  = torso_end + 0.15f * hr + (u_near                - (torso_end + 0.15f * hr))  * reach;
+    float v_lo = (arm_v - 0.05f * hr)       + ((v_to_striker - 0.16f * hr) - (arm_v - 0.05f * hr)) * reach;
+    float v_hi = (arm_v + 0.45f * hr)       + ((v_to_striker + 0.16f * hr) - (arm_v + 0.45f * hr)) * reach;
+    robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, sh0 + 0.1f * hr, fore_u1, v_lo + 0.05f * hr, v_hi - 0.05f * hr, steel, line);
+    robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, hand_u0, hand_u1, v_lo, v_hi, dark, line);
     robot_rbox(&f, pu, -arm_v - 0.2f * hr, flap_l, sh0 + 0.1f * hr, torso_end - 0.2f * hr, -arm_v - 0.4f * hr, -arm_v, steel, line);
     robot_rbox(&f, pu, -arm_v - 0.2f * hr, flap_l, torso_end - 0.55f * hr, torso_end + 0.15f * hr, -arm_v - 0.45f * hr, -arm_v + 0.05f * hr, dark, line);
     /* torso with a chest panel and three lights */
@@ -146,41 +165,22 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
         Vector2 p = robot_pt(&f, sh0 + 1.35f * hr, (float)k * 0.42f * hr);
         DrawCircleV(p, hr * 0.15f, eye);
     }
-    /* The telescoping arm (three sliding segments, "pivots") that reaches to the striker while aiming: it grows in exact
-     * step with `reach`, from nothing at the shoulder to reaching just past the striker's centre, then a small hand of
-     * three telescoping fingers (thumb, index, middle) fans out at the tip; two of the three extend further to flank
-     * and flick the striker, chosen by `strike_side` (0 forward: thumb+middle; 1 left: thumb+index; 2 right: index+middle). */
+    /* The hand of three telescoping fingers (thumb, index, middle), continuing on exactly from the stretched right hand's
+     * own tip (`hand_u1`, still on the SAME rotated frame, so there is no gap): two of the three extend on to the
+     * striker's FAR side to flick it, chosen by `strike_side` (0 forward: thumb+middle; 1 left: thumb+index; 2 right:
+     * index+middle); the third stays short of the striker so it never touches it. */
     if (reach > 0.002f) {
-        Vec2 s_screen = math_world_to_screen(vp, striker_world);
-        float dx = s_screen.x - screen.x, dy = s_screen.y - screen.y;
-        float u_to_striker = dx * f.back.x + dy * f.back.y;
-        float v_to_striker = dx * f.right.x + dy * f.right.y;
-        float striker_r = math_world_to_screen_dist(vp, STRIKER_RADIUS_NORM);
-        float u0 = sh0 + 0.15f * hr;                            /* the shoulder: where the telescoping arm starts */
-        float u_near = u_to_striker - striker_r * 1.05f;        /* just short of the striker's NEAR side: where the arm ends and the hand begins */
-        float u_far = u_to_striker + striker_r * 1.05f;         /* the striker's FAR side: where the flicking fingers reach to */
-        float u_arm_end = u0 + (u_near - u0) * reach;           /* the arm itself grows only this far, in step with reach */
-        float seg = (u_arm_end - u0) / 3.0f;                    /* three equal telescoping segments */
-        float v_now = v_to_striker * reach;                     /* the whole arm drifts onto the shot line as it extends */
-        float arm_hw = 0.16f * hr;                              /* arm half-width, tapering slightly segment to segment */
-        for (int seg_i = 0; seg_i < 3; seg_i++) {
-            float a = u0 + seg * (float)seg_i, b = u0 + seg * (float)(seg_i + 1);
-            float hw = arm_hw * (1.0f - 0.12f * (float)seg_i);
-            robot_box(&f, a, b - 0.05f * hr, v_now - hw, v_now + hw, steel, line);
-        }
-        /* the hand: three telescoping fingers (thumb/index/middle, fanned by v-offset) starting where the arm stops (the
-         * striker's near side); the active pair (per strike_side) telescopes on to the striker's FAR side to flick it,
-         * the third stays short of the striker so it never touches it. */
-        float finger_active_end = u_arm_end + (u_far - u_arm_end) * reach;
-        float finger_idle_end   = u_arm_end + (u_near - u_arm_end) * reach * 0.4f;
+        float v_now = 0.5f * (v_lo + v_hi);
+        float finger_active_end = hand_u1 + (u_far - hand_u1) * reach;
+        float finger_idle_end   = hand_u1 + (u_near - hand_u1) * reach * 0.4f;
         float thumb_end  = (strike_side == 0 || strike_side == 1) ? finger_active_end : finger_idle_end;
         float index_end  = (strike_side == 1 || strike_side == 2) ? finger_active_end : finger_idle_end;
         float middle_end = (strike_side == 0 || strike_side == 2) ? finger_active_end : finger_idle_end;
         float thumb_v = v_now - 0.30f * hr, index_v = v_now, middle_v = v_now + 0.30f * hr;
         float finger_hw = 0.07f * hr;
-        robot_box(&f, u_arm_end, thumb_end,  thumb_v - finger_hw,  thumb_v + finger_hw,  dark, line);
-        robot_box(&f, u_arm_end, index_end,  index_v - finger_hw,  index_v + finger_hw,  dark, line);
-        robot_box(&f, u_arm_end, middle_end, middle_v - finger_hw, middle_v + finger_hw, dark, line);
+        robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, hand_u1, thumb_end,  thumb_v - finger_hw,  thumb_v + finger_hw,  dark, line);
+        robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, hand_u1, index_end,  index_v - finger_hw,  index_v + finger_hw,  dark, line);
+        robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, hand_u1, middle_end, middle_v - finger_hw, middle_v + finger_hw, dark, line);
     }
     /* shoulders */
     robot_box(&f, sh0, sh1, -1.45f * hr, 1.45f * hr, light, line);
