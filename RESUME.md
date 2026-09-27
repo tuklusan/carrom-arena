@@ -80,7 +80,6 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
 
 ## Open items (regenerated 2026-09-26)
 Decisions for the operator:
-- Outer-ring colour pattern of the ICF layout (W,W,B,B pairs vs alternating): undecided, cosmetic.
 - The active robot's antenna ball is still gold (only the outline and the arms were changed): keep or make it like the others?
 - Confirm on real hardware that the Release exe (`-release`, first optimised build ever shipped) plays like the old Debug ones; then decide whether Release is the only exe to hand out.
 - `capture_test` is skipped on Windows and macOS CI (no window system on those runners); accept, or provide a virtual display/headless path there. Related bug: `--mode=capture` writes blank frames.
@@ -110,5 +109,6 @@ The Laws (PDF in `reference/`) are implemented rule by rule; code comments and t
   improper strokes (72b, 76, 77, 98b-101b: every stroke is proper), coins jumping the board (65, 66, 116), 51, 91 and the conduct rules 121-143.
   Assumptions: a tie after eight boards plays an extra board with the normal rotation (no toss); the opponent places a due coin farthest from
   the pockets; the striker's additional point (87b) is always demanded; a few both-last-coins cases the Laws leave open are marked in the code.
+- Break layout (ICF Rule 41(a), fixed 2026-09-26): queen in the centre circle; the first row (6 coins) alternates black and white; the second row (12 places) holds the Y (three white coins lined up behind the three white first-row coins) and alternates all the way round, so every TIP is white and every NOTCH is black (9 white + 9 black). Positions are unchanged, only colours moved (`board_setup_initial_formation`); `tests/test_icf_layout.c` checks the rule itself (first row alternates, second row alternates, the Y).
 - Returned coins (the queen, dues) slide from the pocket they fell into to their spot (`effects_trigger_return`); the queen back on the board has
   her own sound (`queen_back_1.ogg`) and so has a foul (`foul_1.ogg`, Kenney interface error_006).

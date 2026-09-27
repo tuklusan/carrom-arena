@@ -17,6 +17,7 @@ This file is read by every directive. Items here are confirmed acceptable by the
    - Pocket centers (`POCKET_CENTERS`)
    - Baselines (`BASELINE_Y_NORTH`, `BASELINE_Y_SOUTH`, `BASELINE_X_EAST`, `BASELINE_X_WEST`)
    - ICF formation geometry
+     (positions are unchanged; the COLOUR assignment of the second row was changed on 2026-09-26 by explicit operator order to match ICF Rule 41(a): tips white, notches black; see RESUME.md)
 
 
 ## Adding to this list

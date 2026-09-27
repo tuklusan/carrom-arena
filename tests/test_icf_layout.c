@@ -9,21 +9,6 @@
 void setUp(void) {}
 void tearDown(void) {}
 
-typedef struct {
-    int id;
-    float angle;
-    float dist;
-    PieceColor color;
-} PieceInfo;
-
-int compare_piece_info(const void* a, const void* b) {
-    const PieceInfo* p1 = (const PieceInfo*)a;
-    const PieceInfo* p2 = (const PieceInfo*)b;
-    if (p1->angle < p2->angle) return -1;
-    if (p1->angle > p2->angle) return 1;
-    return 0;
-}
-
 void test_ICF_Layout_Counts_And_IDs(void) {
     BoardState board;
     board_state_init(&board);
@@ -104,40 +89,76 @@ void test_ICF_Layout_Geometric_And_Symmetry(void) {
     }
 }
 
-void test_ICF_Layout_Color_Alternation(void) {
+/* ICF Rule 41(a): queen in the centre circle; the coins around her in the first row alternate black and white; in the second
+ * row three white coins form a "Y" with the three white coins of the first row, and the remaining space is filled up by
+ * placing black and white coins alternately. */
+typedef struct { float angle; PieceColor color; } RingSlot;
+
+static int compare_slot(const void* a, const void* b) {
+    float d = ((const RingSlot*)a)->angle - ((const RingSlot*)b)->angle;
+    return (d > 0.0f) - (d < 0.0f);
+}
+
+void test_ICF_Layout_Rule41a_First_Row_Alternates(void) {
     BoardState board;
     board_state_init(&board);
     board_setup_initial_formation(&board, NULL);
-
     float r = PIECE_RADIUS_NORM;
-    PieceInfo inner[6], tips[6], notches[6];
-    int ic = 0, tc = 0, nc = 0;
 
+    RingSlot inner[6];
+    int n = 0;
     for (int i = 0; i < 18; i++) {
-        float dist = sqrtf(board.pieces[i].position.x * board.pieces[i].position.x + 
-                           board.pieces[i].position.y * board.pieces[i].position.y);
-        float angle = atan2f(board.pieces[i].position.y, board.pieces[i].position.x);
-        PieceColor color = board.pieces[i].color;
-
-        if (dist < 2.1f * r) {
-            inner[ic++] = (PieceInfo){i, angle, dist, color};
-        } else if (dist > 3.9f * r) {
-            tips[tc++] = (PieceInfo){i, angle, dist, color};
-        } else {
-            notches[nc++] = (PieceInfo){i, angle, dist, color};
-        }
+        Vec2 p = board.pieces[i].position;
+        if (sqrtf(p.x * p.x + p.y * p.y) < 2.1f * r) inner[n++] = (RingSlot){ atan2f(p.y, p.x), board.pieces[i].color };
     }
-
-    qsort(inner, 6, sizeof(PieceInfo), compare_piece_info);
-    qsort(tips, 6, sizeof(PieceInfo), compare_piece_info);
-    qsort(notches, 6, sizeof(PieceInfo), compare_piece_info);
-
+    TEST_ASSERT_EQUAL_INT(6, n);
+    qsort(inner, 6, sizeof(RingSlot), compare_slot);
     for (int i = 0; i < 6; i++) {
-        // All rings should now start with PIECE_BLACK when sorted by angle
-        TEST_ASSERT_EQUAL_MESSAGE(i % 2 == 0 ? PIECE_BLACK : PIECE_WHITE, inner[i].color, "Inner ring alternation failed");
-        TEST_ASSERT_EQUAL_MESSAGE(i % 2 == 0 ? PIECE_BLACK : PIECE_WHITE, tips[i].color, "Tips ring alternation failed");
-        TEST_ASSERT_EQUAL_MESSAGE(i % 2 == 0 ? PIECE_BLACK : PIECE_WHITE, notches[i].color, "Notches ring alternation failed");
+        TEST_ASSERT_TRUE_MESSAGE(inner[i].color != inner[(i + 1) % 6].color, "Rule 41(a): the first row must alternate black and white");
     }
+}
+
+void test_ICF_Layout_Rule41a_Second_Row_Y_And_Alternation(void) {
+    BoardState board;
+    board_state_init(&board);
+    board_setup_initial_formation(&board, NULL);
+    float r = PIECE_RADIUS_NORM;
+
+    RingSlot second[12];
+    int n = 0;
+    for (int i = 0; i < 18; i++) {
+        Vec2 p = board.pieces[i].position;
+        if (sqrtf(p.x * p.x + p.y * p.y) > 2.1f * r) second[n++] = (RingSlot){ atan2f(p.y, p.x), board.pieces[i].color };
+    }
+    TEST_ASSERT_EQUAL_INT(12, n);
+    /* the second row alternates black and white all the way round its 12 places */
+    qsort(second, 12, sizeof(RingSlot), compare_slot);
+    for (int i = 0; i < 12; i++) {
+        TEST_ASSERT_TRUE_MESSAGE(second[i].color != second[(i + 1) % 12].color, "Rule 41(a): the second row must alternate black and white");
+    }
+
+    /* the three second-row coins lined up with the three white first-row coins are white: the arms of the "Y" */
+    int y_arms = 0;
+    for (int i = 0; i < 18; i++) {
+        Vec2 p = board.pieces[i].position;
+        float dist = sqrtf(p.x * p.x + p.y * p.y);
+        if (dist >= 2.1f * r || dist < 1.9f * r || board.pieces[i].color != PIECE_WHITE) continue;
+        float ang = atan2f(p.y, p.x);
+        bool found = false;
+        for (int j = 0; j < 18; j++) {
+            Vec2 q = board.pieces[j].position;
+            if (sqrtf(q.x * q.x + q.y * q.y) > 3.9f * r) {
+                float da = atan2f(q.y, q.x) - ang;
+                if (fabsf(da) < 1e-3f || fabsf(fabsf(da) - 2.0f * (float)M_PI) < 1e-3f) {
+                    TEST_ASSERT_EQUAL_MESSAGE(PIECE_WHITE, board.pieces[j].color, "Rule 41(a): the coin behind a white first-row coin must be white (the Y)");
+                    found = true;
+                }
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(found, "no second-row coin behind a white first-row coin");
+        y_arms++;
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(3, y_arms, "the Y has three arms");
 }
 
 void test_ICF_Layout_No_Overlaps(void) {
@@ -162,7 +183,8 @@ int main(void) {
     RUN_TEST(test_ICF_Layout_Counts_And_IDs);
     RUN_TEST(test_ICF_Layout_Queen_Position);
     RUN_TEST(test_ICF_Layout_Geometric_And_Symmetry);
-    RUN_TEST(test_ICF_Layout_Color_Alternation);
+    RUN_TEST(test_ICF_Layout_Rule41a_First_Row_Alternates);
+    RUN_TEST(test_ICF_Layout_Rule41a_Second_Row_Y_And_Alternation);
     RUN_TEST(test_ICF_Layout_No_Overlaps);
     return UNITY_END();
 }

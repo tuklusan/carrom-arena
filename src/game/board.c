@@ -108,23 +108,25 @@ void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
         positions[pos_idx-1].y *= scale;
     }
 
-    // 4. Assign IDs by color: 0-8 White, 9-17 Black
-    // To meet ICF spec, colors must alternate within rings.
-    
+    // 4. Assign IDs by color: 0-8 White, 9-17 Black.
+    // ICF Rule 41(a): the queen is in the centre circle; the first row (inner ring) alternates black and white; in the second
+    // row three white coins form a "Y" with the three white coins of the first row (the tips lined up with the inner white
+    // coins), and the remaining space is filled up alternately black and white. Around the 12 places of the second row that
+    // alternation makes every tip white and every notch black (9 white and 9 black in all).
     int white_count = 0;
     int black_count = 0;
     
     for (int i = 0; i < 18; i++) {
         PieceColor color;
         if (i < 6) {
-            // Inner ring: alternate W, B, W, B, W, B
+            // Inner ring: alternate W, B, W, B, W, B (the whites at 0, 120 and 240 degrees)
             color = (i % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
         } else if (i < 12) {
-            // Outer ring tips: alternate W, B, W, B, W, B
-            color = ((i - 6) % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
+            // Outer ring tips (same angles as the inner coins): all white; those behind the inner whites form the Y
+            color = PIECE_WHITE;
         } else {
-            // Outer ring notches: alternate W, B, W, B, W, B
-            color = ((i - 12) % 2 == 0) ? PIECE_WHITE : PIECE_BLACK;
+            // Outer ring notches (between the tips): all black
+            color = PIECE_BLACK;
         }
 
         int piece_id;
