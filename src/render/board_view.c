@@ -105,7 +105,7 @@ static float idle_wave(int seat, int k, float t) {
  * argument keeps the old name: TEAM_WHITE draws red, TEAM_BLACK blue.) */
 /* A robot player, seen from above: antenna and head at the seat, arms, shoulders and a chest panel reaching toward the board.
  * `angle` is the direction pointing away from the board (as the old figures used it), so the body extends the other way. */
-static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float alpha, int seat, float t, float reach, Vec2 striker_world, int strike_side, float arm_spin, float final_angle) {
+static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float alpha, int seat, float t, float reach, Vec2 striker_world, int strike_side, float arm_spin) {
     Vec2 screen = math_world_to_screen(vp, world_pos);
     float fref = (float)L->board_size * FIG_SCALE;
     float hr = fref / 25.0f;                       /* head half-size */
@@ -139,17 +139,18 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     else { flap_r = lerp_angle_shortest(arm_spin, 0.0f, reach); flap_l = 10.5f * t + 2.0f; }   /* the robot whose turn it is spins both arms (about 2 and 1.7 turns a second), out of step with each other; the right arm eases smoothly from its current spin to a straight rest as it starts telescoping */
     float pu = sh0 + 0.1f * hr;
 
-    /* Where the striker sits, in (u,v) terms, ONCE the body has finished turning to face the shot line (`final_angle`) -
-     * not the body's currently-still-turning orientation. Using the live, still-rotating frame here would make the arm's
-     * stretch target swing around as the body turns, which - for a shot needing a big turn - visibly tore the arm away
-     * from the shoulder. Computed against the fixed final orientation instead, the arm's target never moves; only its
-     * shape interpolates towards it, rendered through the (separately) rotating frame `f`, so it always stays attached. */
-    Vec2 final_away = { cosf(final_angle), sinf(final_angle) };
-    RobotFrame final_f = { screen, { -final_away.x, -final_away.y }, { final_away.y, -final_away.x } };
+    /* Where the striker sits in THIS robot's own (u,v) terms, recomputed fresh every frame from the CURRENT, live body
+     * frame `f` - the same frame everything else about the arm is drawn in. This has to be the live frame and not some
+     * fixed target frame: any mismatch between the frame used here and the frame used by `robot_rbox` below is a
+     * coordinate-system error, not just a cosmetic one - the resulting (u,v) numbers point in the wrong direction for as
+     * long as the two frames disagree, which for a shot needing a real turn is the whole rotation, so the arm reads as
+     * torn loose from the shoulder for the entire approach, not just a transient wobble. Recomputing against the live
+     * frame every frame instead means the target always matches the frame it is drawn in, so the arm continuously
+     * re-aims at the striker's true position as the body turns, and can never appear detached. */
     Vec2 s_screen = math_world_to_screen(vp, striker_world);
     float sdx = s_screen.x - screen.x, sdy = s_screen.y - screen.y;
-    float u_to_striker = sdx * final_f.back.x + sdy * final_f.back.y;
-    float v_to_striker = sdx * final_f.right.x + sdy * final_f.right.y;
+    float u_to_striker = sdx * f.back.x + sdy * f.back.y;
+    float v_to_striker = sdx * f.right.x + sdy * f.right.y;
     float striker_r = math_world_to_screen_dist(vp, STRIKER_RADIUS_NORM);
     float u_near = u_to_striker - striker_r * 1.05f;   /* just short of the striker's NEAR side: where the arm ends and the fingers begin */
     float u_far = u_to_striker + striker_r * 1.05f;    /* the striker's FAR side: where the flicking fingers reach to */
@@ -707,10 +708,10 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     float west_angle   = lerp_angle_shortest((float)M_PI,         g_vis.aim_pose_angle[SEAT_WEST],  g_vis.reach[SEAT_WEST]);
 
     // Draw human figures for all four seats
-    draw_human_figure(vp, L, north_world, north_angle, TEAM_WHITE, current_turn_seat == SEAT_NORTH, figure_alpha, SEAT_NORTH, current_time, g_vis.reach[SEAT_NORTH], g_vis.striker, g_vis.aim_pose_side[SEAT_NORTH], g_vis.arm_spin[SEAT_NORTH], g_vis.aim_pose_angle[SEAT_NORTH]);
-    draw_human_figure(vp, L, south_world, south_angle, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, figure_alpha, SEAT_SOUTH, current_time, g_vis.reach[SEAT_SOUTH], g_vis.striker, g_vis.aim_pose_side[SEAT_SOUTH], g_vis.arm_spin[SEAT_SOUTH], g_vis.aim_pose_angle[SEAT_SOUTH]);
-    draw_human_figure(vp, L, east_world, east_angle, TEAM_BLACK, current_turn_seat == SEAT_EAST, figure_alpha, SEAT_EAST, current_time, g_vis.reach[SEAT_EAST], g_vis.striker, g_vis.aim_pose_side[SEAT_EAST], g_vis.arm_spin[SEAT_EAST], g_vis.aim_pose_angle[SEAT_EAST]);
-    draw_human_figure(vp, L, west_world, west_angle, TEAM_BLACK, current_turn_seat == SEAT_WEST, figure_alpha, SEAT_WEST, current_time, g_vis.reach[SEAT_WEST], g_vis.striker, g_vis.aim_pose_side[SEAT_WEST], g_vis.arm_spin[SEAT_WEST], g_vis.aim_pose_angle[SEAT_WEST]);
+    draw_human_figure(vp, L, north_world, north_angle, TEAM_WHITE, current_turn_seat == SEAT_NORTH, figure_alpha, SEAT_NORTH, current_time, g_vis.reach[SEAT_NORTH], g_vis.striker, g_vis.aim_pose_side[SEAT_NORTH], g_vis.arm_spin[SEAT_NORTH]);
+    draw_human_figure(vp, L, south_world, south_angle, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, figure_alpha, SEAT_SOUTH, current_time, g_vis.reach[SEAT_SOUTH], g_vis.striker, g_vis.aim_pose_side[SEAT_SOUTH], g_vis.arm_spin[SEAT_SOUTH]);
+    draw_human_figure(vp, L, east_world, east_angle, TEAM_BLACK, current_turn_seat == SEAT_EAST, figure_alpha, SEAT_EAST, current_time, g_vis.reach[SEAT_EAST], g_vis.striker, g_vis.aim_pose_side[SEAT_EAST], g_vis.arm_spin[SEAT_EAST]);
+    draw_human_figure(vp, L, west_world, west_angle, TEAM_BLACK, current_turn_seat == SEAT_WEST, figure_alpha, SEAT_WEST, current_time, g_vis.reach[SEAT_WEST], g_vis.striker, g_vis.aim_pose_side[SEAT_WEST], g_vis.arm_spin[SEAT_WEST]);
     
     // Pockets
     float pocket_r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM);
