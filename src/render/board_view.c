@@ -128,25 +128,36 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     float torso_end = sh0 + fref / 12.0f;          /* same reach as the old figure */
 
     /* arms hang from the shoulders, with square hands; a waiting robot flaps each arm on its own, swinging about the shoulder.
-     * The right arm of the robot at the striker (`reach`, 0..1) is the SAME shape throughout - it never disconnects from
-     * the shoulder: the spin (`flap_r`) eases to a straight rest, and as it does the arm itself also straightens (its own
-     * width collapses onto the shot line) and stretches out (its far edge grows toward the striker), still rotating about
-     * the one fixed shoulder pivot the whole time. Telescoping fingers (below) continue on from wherever that stretched
-     * arm ends. */
+     *
+     * ROOT-CAUSE FIX (2026-09-27, third pass): a deep per-frame trace (shoulder pivot vs. the arm's own rendered near
+     * corner, logged for every frame of every reach) showed the gap between them growing CONTINUOUSLY with `reach` -
+     * not a transient during rotation, but on every single strike, up to 300px at full extension, on all four seats.
+     * Root cause: the reaching arm was an axis-aligned box in body (u,v) space whose v0/v1 (BOTH corners at the near,
+     * shoulder-side edge AND the far, hand-side edge share the same v-range) were interpolated together toward the
+     * striker's v-offset. That SLIDES the whole box sideways as reach grows - including the near edge, which is
+     * supposed to stay AT the shoulder - so the near edge drifts away from the true pivot in direct proportion to
+     * reach. Rotating that same box by `flap_r` (which eases to 0) does not fix this: at flap_r = 0 the "rotation" is
+     * the identity, so the drifted box is drawn exactly where the drifted numbers put it, with nothing anchoring it
+     * back to the shoulder.
+     *
+     * Correct model: the arm is a RIGID shape - fixed length and width in its own local axes - that only ROTATES about
+     * the true, fixed shoulder pivot (never moves sideways) and TELESCOPES (extends) along its own local axis as reach
+     * grows. Its near (shoulder) corner sits at zero offset from the pivot in u and a small, CONSTANT offset in v, so
+     * after any rotation it stays within that same small, bounded distance of the pivot - it can never drift off
+     * arbitrarily far the way a laterally-shifting box could. The one rotation angle carries both jobs the old
+     * `flap_r` had (easing the spin to a stop) and the new aiming job (turning to point at the striker), blended
+     * together as `reach` goes 0 to 1, so the arm visibly swings from its spin into pointing at the striker as it
+     * extends - one continuous, physically coherent motion. */
     float arm_v = 1.3f * hr;
     float flap_r = 0.0f, flap_l = 0.0f;
     if (!is_current_turn) { flap_r = 0.9f * idle_wave(seat, 0, t * 1.8f); flap_l = 0.9f * idle_wave(seat, 1, t * 1.8f); }
-    else { flap_r = lerp_angle_shortest(arm_spin, 0.0f, reach); flap_l = 10.5f * t + 2.0f; }   /* the robot whose turn it is spins both arms (about 2 and 1.7 turns a second), out of step with each other; the right arm eases smoothly from its current spin to a straight rest as it starts telescoping */
+    else { flap_l = 10.5f * t + 2.0f; }   /* the left arm keeps flapping (about 1.7 turns a second) throughout - only the reaching right arm changes behaviour */
     float pu = sh0 + 0.1f * hr;
+    float pivot_v = arm_v + 0.2f * hr;   /* the TRUE shoulder pivot for the reaching right arm: (pu, pivot_v), fixed regardless of reach */
 
     /* Where the striker sits in THIS robot's own (u,v) terms, recomputed fresh every frame from the CURRENT, live body
-     * frame `f` - the same frame everything else about the arm is drawn in. This has to be the live frame and not some
-     * fixed target frame: any mismatch between the frame used here and the frame used by `robot_rbox` below is a
-     * coordinate-system error, not just a cosmetic one - the resulting (u,v) numbers point in the wrong direction for as
-     * long as the two frames disagree, which for a shot needing a real turn is the whole rotation, so the arm reads as
-     * torn loose from the shoulder for the entire approach, not just a transient wobble. Recomputing against the live
-     * frame every frame instead means the target always matches the frame it is drawn in, so the arm continuously
-     * re-aims at the striker's true position as the body turns, and can never appear detached. */
+     * frame `f` - the same frame everything else about the arm is drawn in, so the target can never fall out of step
+     * with the frame used to draw it (an earlier fix's mistake). */
     Vec2 s_screen = math_world_to_screen(vp, striker_world);
     float sdx = s_screen.x - screen.x, sdy = s_screen.y - screen.y;
     float u_to_striker = sdx * f.back.x + sdy * f.back.y;
@@ -155,13 +166,29 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     float u_near = u_to_striker - striker_r * 1.05f;   /* just short of the striker's NEAR side: where the arm ends and the fingers begin */
     float u_far = u_to_striker + striker_r * 1.05f;    /* the striker's FAR side: where the flicking fingers reach to */
 
-    float fore_u1  = torso_end - 0.2f * hr  + (u_near - 0.35f * hr - (torso_end - 0.2f * hr))  * reach;
-    float hand_u0  = torso_end - 0.55f * hr + (u_near - 0.5f  * hr - (torso_end - 0.55f * hr))  * reach;
-    float hand_u1  = torso_end + 0.15f * hr + (u_near                - (torso_end + 0.15f * hr))  * reach;
-    float v_lo = (arm_v - 0.05f * hr)       + ((v_to_striker - 0.16f * hr) - (arm_v - 0.05f * hr)) * reach;
-    float v_hi = (arm_v + 0.45f * hr)       + ((v_to_striker + 0.16f * hr) - (arm_v + 0.45f * hr)) * reach;
-    robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, sh0 + 0.1f * hr, fore_u1, v_lo + 0.05f * hr, v_hi - 0.05f * hr, steel, line);
-    robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, hand_u0, hand_u1, v_lo, v_hi, dark, line);
+    /* Target direction and reach-length, measured from the PIVOT (not from the body origin): this is what the arm
+     * rotates to face and how far it telescopes, so both are inherently pivot-relative and cannot drift. */
+    float theta_target = atan2f(v_to_striker - pivot_v, u_to_striker - pu);
+    float r_near = sqrtf((u_near - pu) * (u_near - pu) + (v_to_striker - pivot_v) * (v_to_striker - pivot_v));
+    float r_far  = sqrtf((u_far  - pu) * (u_far  - pu) + (v_to_striker - pivot_v) * (v_to_striker - pivot_v));
+
+    float ang = (is_current_turn) ? lerp_angle_shortest(arm_spin, theta_target, reach) : flap_r;   /* the one rotation: spin easing into aiming */
+    if (is_current_turn) flap_r = ang;   /* fingers below reuse flap_r as the shared rotation */
+
+    /* Resting (reach = 0) lengths along the pivot's own local +u axis - identical to the old resting arm's distances
+     * from this same pivot, so at reach = 0 the shape is unchanged from before. */
+    float fore_rest_len  = (torso_end - 0.2f  * hr) - pu;
+    float hand_near_rest = (torso_end - 0.55f * hr) - pu;
+    float hand_far_rest  = (torso_end + 0.15f * hr) - pu;
+
+    float len_fore_far  = fore_rest_len  + ((r_near - 0.35f * hr) - fore_rest_len)  * reach;
+    float len_hand_near = hand_near_rest + ((r_near - 0.5f  * hr) - hand_near_rest) * reach;
+    float len_hand_far  = hand_far_rest  + (r_near                - hand_far_rest)  * reach;
+    float hw_fore = 0.20f * hr + (0.16f * hr - 0.20f * hr) * reach;   /* half-widths taper slightly as it extends, but stay CENTRED on pivot_v - never shift sideways */
+    float hw_hand = 0.25f * hr + (0.16f * hr - 0.25f * hr) * reach;
+
+    robot_rbox(&f, pu, pivot_v, ang, pu, pu + len_fore_far, pivot_v - hw_fore, pivot_v + hw_fore, steel, line);
+    robot_rbox(&f, pu, pivot_v, ang, pu + len_hand_near, pu + len_hand_far, pivot_v - hw_hand, pivot_v + hw_hand, dark, line);
     robot_rbox(&f, pu, -arm_v - 0.2f * hr, flap_l, sh0 + 0.1f * hr, torso_end - 0.2f * hr, -arm_v - 0.4f * hr, -arm_v, steel, line);
     robot_rbox(&f, pu, -arm_v - 0.2f * hr, flap_l, torso_end - 0.55f * hr, torso_end + 0.15f * hr, -arm_v - 0.45f * hr, -arm_v + 0.05f * hr, dark, line);
     /* torso with a chest panel and three lights */
@@ -172,21 +199,21 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
         DrawCircleV(p, hr * 0.15f, eye);
     }
     /* The hand of three telescoping fingers (thumb, index, middle), continuing on exactly from the stretched right hand's
-     * own tip (`hand_u1`, still on the SAME rotated frame, so there is no gap): two of the three extend on to the
-     * striker's FAR side to flick it, chosen by `strike_side` (0 forward: thumb+middle; 1 left: thumb+index; 2 right:
-     * index+middle); the third stays short of the striker so it never touches it. */
+     * own tip (`len_hand_far`, still rotated by the SAME `ang` about the SAME pivot, so there is no gap): two of the
+     * three extend on to the striker's FAR side to flick it, chosen by `strike_side` (0 forward: thumb+middle; 1 left:
+     * thumb+index; 2 right: index+middle); the third stays short of the striker so it never touches it. Their v-fan is
+     * a constant offset either side of the arm's own axis (0), not the drifting centre the old code used. */
     if (reach > 0.002f) {
-        float v_now = 0.5f * (v_lo + v_hi);
-        float finger_active_end = hand_u1 + (u_far - hand_u1) * reach;
-        float finger_idle_end   = hand_u1 + (u_near - hand_u1) * reach * 0.4f;
-        float thumb_end  = (strike_side == 0 || strike_side == 1) ? finger_active_end : finger_idle_end;
-        float index_end  = (strike_side == 1 || strike_side == 2) ? finger_active_end : finger_idle_end;
-        float middle_end = (strike_side == 0 || strike_side == 2) ? finger_active_end : finger_idle_end;
-        float thumb_v = v_now - 0.30f * hr, index_v = v_now, middle_v = v_now + 0.30f * hr;
+        float finger_active_len = len_hand_far + (r_far  - len_hand_far) * reach;
+        float finger_idle_len   = len_hand_far + (r_near - len_hand_far) * reach * 0.4f;
+        float thumb_len  = (strike_side == 0 || strike_side == 1) ? finger_active_len : finger_idle_len;
+        float index_len  = (strike_side == 1 || strike_side == 2) ? finger_active_len : finger_idle_len;
+        float middle_len = (strike_side == 0 || strike_side == 2) ? finger_active_len : finger_idle_len;
+        float thumb_v = pivot_v - 0.30f * hr, index_v = pivot_v, middle_v = pivot_v + 0.30f * hr;
         float finger_hw = 0.07f * hr;
-        robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, hand_u1, thumb_end,  thumb_v - finger_hw,  thumb_v + finger_hw,  dark, line);
-        robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, hand_u1, index_end,  index_v - finger_hw,  index_v + finger_hw,  dark, line);
-        robot_rbox(&f, pu, arm_v + 0.2f * hr, flap_r, hand_u1, middle_end, middle_v - finger_hw, middle_v + finger_hw, dark, line);
+        robot_rbox(&f, pu, pivot_v, ang, pu + len_hand_far, pu + thumb_len,  thumb_v - finger_hw,  thumb_v + finger_hw,  dark, line);
+        robot_rbox(&f, pu, pivot_v, ang, pu + len_hand_far, pu + index_len,  index_v - finger_hw,  index_v + finger_hw,  dark, line);
+        robot_rbox(&f, pu, pivot_v, ang, pu + len_hand_far, pu + middle_len, middle_v - finger_hw, middle_v + finger_hw, dark, line);
     }
     /* shoulders */
     robot_box(&f, sh0, sh1, -1.45f * hr, 1.45f * hr, light, line);
