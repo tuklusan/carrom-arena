@@ -196,6 +196,34 @@ target_include_directories(test_icf_layout PRIVATE
 )
 add_test(NAME icf_layout_test COMMAND test_icf_layout)
 
+# Test executable for the striker's route back to the next player
+add_executable(test_striker_path
+    test_striker_path.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_striker_path)
+target_link_libraries(test_striker_path carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_striker_path PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME striker_path_test COMMAND test_striker_path)
+set_tests_properties(striker_path_test PROPERTIES LABELS "unit")
+
+# Test executable for the live scoreboard points
+add_executable(test_live_score
+    test_live_score.c
+    ${unity_SOURCE_DIR}/src/unity.c
+)
+apply_test_warnings(test_live_score)
+target_link_libraries(test_live_score carrom_core ${PLATFORM_LIBS})
+target_include_directories(test_live_score PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${unity_SOURCE_DIR}/src
+)
+add_test(NAME live_score_test COMMAND test_live_score)
+set_tests_properties(live_score_test PROPERTIES LABELS "unit")
+
 # Test executable for snapshot rotation
 add_executable(test_snapshot_rotation
     test_snapshot_rotation.c

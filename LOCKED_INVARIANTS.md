@@ -5,6 +5,7 @@ This file is read by every directive. Items here are confirmed acceptable by the
 1. **Board visual style** — brown wood texture, pocket rendering, piece colors/shapes. (Locked since R8.)
 2. **Striker placement animation** — the pulsing-halo hold + "Striker placed at (x,y) — striking in Ns" countdown banner. (Locked since R8.)
 3. **Aim-preview line** — origin at striker position, direction, boundary clamping, arrowhead, 5-second wall-clock hold, then clears. (Locked since R8.)
+   (Changed on 2026-09-27 by explicit operator order: the line is thinner and grows from the striker's centre to its strike-force length over a 3-second preview; the arrowhead no longer has the fork at its tip.)
 4. **Window/canvas sizing and board placement within the window** — confirmed acceptable by the operator on live Windows 11 hardware as of `beta-0.0.5` (commit `3ff07ff`). This includes: default window size when no `--width`/`--height` given, the board's size relative to the window, and its centering. (Locked since R9/beta-0.0.5, 2026-09-15.)
 5. **THINKING-phase full-baseline oscillation range** — the striker/figure sliding the full edge-to-edge span of the seat's baseline. (Locked since R9/beta-0.0.5.)
 6. **Figure settle-alignment outside the board** — the human figure tracking the striker and settling aligned with it while staying outside the board boundary. (Locked since R9/beta-0.0.5.)

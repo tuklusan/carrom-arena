@@ -1,5 +1,6 @@
 #include <math.h>
 #include "app.h"
+#include "game/striker_path.h"
 #include "common/types.h"
 #include "common/rng.h"
 #include "common/strategy_profiles.h"
@@ -7,6 +8,7 @@
 #include "audio/radio.h"
 #include "game/match.h"
 #include "game/board.h"
+#include "game/scoring.h"
 #include "game/rules.h"
 #include "physics/physics.h"
 #include "ai/controller.h"
@@ -32,7 +34,7 @@
     GameState game;
     PhysicsWorld* physics;
     TraceWriter* trace;
-    int total_points[2];   // red (white team) and blue (black team) points, kept across boards and games
+    int score_base[2];     // red (N/S) and blue (E/W) points of the finished boards; the live board's coins are added on top
     int total_games[2];    // games won
     struct { double at; float speed; } bounce[4];   // striker floor bounces still to be heard
     int bounce_count;
@@ -73,6 +75,7 @@
     bool aim_preview_active;         // Whether we're in the aim preview phase
     double aim_preview_start_wall;   // Wall time when aim preview started (for figure animation)
     double thinking_min_wall;        // Minimum wall time for THINKING phase visualization
+    int striker_fall_pocket;         // the pocket the striker fell into (where it slides back from)
     bool striker_fall_registered;    // striker pocket animation already started for this shot
     int pockets_registered;          // Pockets of the running shot already registered in game state
     float next_progress_time;        // Sim time of the next SHOT_PROGRESS trace record
@@ -178,7 +181,7 @@ static void app_setup_renderer(AppContext* ctx) {
  * --------------------------------------------------------------------------- */
 // Use physics.h definitions: PHYSICS_HZ, PHYSICS_DT, MAX_SUBSTEPS
 
-#define AIM_PREVIEW_SECONDS 2.0   /* the launch line + arrow are shown for 2 s before the shot */
+#define AIM_PREVIEW_SECONDS 3.0   /* the launch line + arrow are shown for 3 s before the shot; they grow over the first 85% of it */
 
 /* The configured game speed (default 1x) applies only from striker LAUNCH until the board
  * SETTLES. Thinking, placement and aim preview always run at full (1x) speed. */
@@ -435,6 +438,7 @@ static void app_shot_progress(AppContext* ctx) {
         int spocket;
         if (physics_get_striker_pocket_info(ctx->physics, &sp, &sv, &spocket)) {
             ctx->striker_fall_registered = true;
+            ctx->striker_fall_pocket = spocket;
             FLIGHT_EVENT(ctx, FLIGHT_EV_STRIKER_POCKET, spocket, sqrtf(sv.x * sv.x + sv.y * sv.y), 0, 0);
             effects_trigger_pocket_fall(EFFECTS_STRIKER_ID, PIECE_STRIKER, sp, sv, spocket);
             if (ctx->config.verbose) { platform_diag_logf("[POCKET] striker pocket=%d\n", spocket); }
@@ -445,6 +449,15 @@ static void app_shot_progress(AppContext* ctx) {
         app_snapshot_trace(ctx, false);
         ctx->next_progress_time = t + 2.0f;
     }
+}
+
+/* The scoreboard shows scoring_live_board_points (the coins pocketed on the current board, the queen once covered) on top of the
+ * finished boards (score_base): it moves the moment a coin drops or comes back. Past 999 it starts again from 0. */
+static int app_live_points(AppContext* ctx, int pair) {
+    int live = scoring_live_board_points(&ctx->game.board, pair);
+    if (ctx->score_base[pair] + live > 999) ctx->score_base[pair] = -live;               /* past 999: start again from 0 */
+    if (ctx->score_base[pair] + live < 0) ctx->score_base[pair] = -live;
+    return ctx->score_base[pair] + live;
 }
 
 /* -----------------------------------------------------------------------------
@@ -531,10 +544,9 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     RulesOutcome outcome = rules_resolve(&ctx->match, &ctx->game, &facts);
     
     // The scoreboard keeps a running tally across boards and games
-    ctx->total_points[0] += outcome.score_delta.white;
-    ctx->total_points[1] += outcome.score_delta.black;
     ctx->total_games[0] += (int)outcome.next_match_state.games_won_white - (int)ctx->match.games_won_white;
     ctx->total_games[1] += (int)outcome.next_match_state.games_won_black - (int)ctx->match.games_won_black;
+    for (int i = 0; i < 2; i++) if (ctx->total_games[i] > 99) ctx->total_games[i] = 0;   /* the board shows 00-99 games */
 
     // Apply outcome to match and game states
     ctx->game = outcome.next_game_state;
@@ -589,6 +601,39 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
             physics_sync_from_board(ctx->physics, &ctx->game.board, ctx->game.turn_seat);
             break;
         }
+    }
+
+    /* Nothing else happens until the coins the rules paid back (the queen included) have slid in, and then until a pocketed striker
+     * has slid back to the player whose turn it is, around the coins; meanwhile no coin moves. (Rendered mode only.) */
+    if (ctx->renderer) {
+        float wait = 0.0f;
+        if (outcome.returned_count > 0) wait = EFFECTS_RETURN_SLIDE_TIME + 0.15f;
+        if (result->striker_pocketed && decision != TURN_BOARD_OVER) {
+            Vec2 coins[MAX_PIECES];
+            int nc = 0;
+            for (int i = 0; i < MAX_PIECES; i++) if (ctx->game.board.pieces[i].on_board) coins[nc++] = ctx->game.board.pieces[i].position;
+            Vec2 from = POCKET_CENTERS[(ctx->striker_fall_pocket >= 0 && ctx->striker_fall_pocket <= 3) ? ctx->striker_fall_pocket : 0];
+            Vec2 to = ctx->game.board.striker.position;
+            /* a coin sitting right on the spot: the nearest free place along the baseline instead */
+            bool horizontal = (ctx->game.turn_seat == SEAT_NORTH || ctx->game.turn_seat == SEAT_SOUTH);
+            for (int k = 0; k <= 24; k++) {
+                int sign = (k & 1) ? -1 : 1;
+                float off = (float)((k + 1) / 2) * 0.03f * (float)sign;
+                Vec2 cand = horizontal ? (Vec2){ to.x + off, to.y } : (Vec2){ to.x, to.y + off };
+                bool free_spot = true;
+                for (int c = 0; c < nc && free_spot; c++) {
+                    float dx = cand.x - coins[c].x, dy = cand.y - coins[c].y;
+                    if (sqrtf(dx * dx + dy * dy) < STRIKER_PATH_CLEAR) free_spot = false;
+                }
+                if (free_spot) { to = cand; break; }
+            }
+            Vec2 path[40];
+            int np = striker_path_plan(from, to, coins, nc, path, 40);
+            float delay = wait + 0.25f;
+            float dur = effects_trigger_striker_slide(path, np, delay, 0.9f);
+            wait = delay + dur + 0.2f;
+        }
+        if ((double)wait > ctx->arrange_wait) ctx->arrange_wait = (double)wait;
     }
 
     // Set phase for next turn based on turn decision
@@ -647,6 +692,7 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
         if (!match_is_over(&ctx->match)) {
             Vec2 prev_positions[MAX_PIECES];
             app_capture_positions(&ctx->game.board, prev_positions);
+            for (int pr = 0; pr < 2; pr++) ctx->score_base[pr] = app_live_points(ctx, pr);   /* the board's coins are banked */
             float pause = (outcome.turn_decision == TURN_MATCH_OVER) ? ARRANGE_PAUSE_MATCH
                         : (outcome.turn_decision == TURN_GAME_OVER) ? ARRANGE_PAUSE_GAME : ARRANGE_PAUSE_BOARD;
             match_start_board(&ctx->match, &ctx->game, &ctx->rng);
@@ -906,6 +952,9 @@ int app_run_simulation(AppContext* ctx) {
                         // Based on inverse of timer: timer starts at 5.0, ends at 0.0
                         //’s progress = (5.0 - timer) / 0.3
                         double elapsed_scaled = AIM_PREVIEW_SECONDS - ctx->aim_preview_timer;
+                        ctx->game.aim_line_progress = (float)(elapsed_scaled / AIM_PREVIEW_SECONDS);
+                        if (ctx->game.aim_line_progress > 1.0f) ctx->game.aim_line_progress = 1.0f;
+                        if (ctx->game.aim_line_progress < 0.0f) ctx->game.aim_line_progress = 0.0f;
                         ctx->game.aim_preview_progress = (float)(elapsed_scaled / 0.3);
                         if (ctx->game.aim_preview_progress > 1.0f) ctx->game.aim_preview_progress = 1.0f;
                         if (ctx->game.aim_preview_progress < 0.0f) ctx->game.aim_preview_progress = 0.0f;
@@ -921,6 +970,7 @@ int app_run_simulation(AppContext* ctx) {
                             // FIRST: Invalidate computed shot so aim line clears BEFORE striker gains velocity
                             ctx->game.computed_shot_valid = false;
                             ctx->game.aim_preview_progress = 0.0f;
+                            ctx->game.aim_line_progress = 0.0f;
                             
                             // THEN: Execute the pre-computed shot plan
                             Seat seat = ctx->game.turn_seat;
@@ -978,7 +1028,7 @@ int app_run_simulation(AppContext* ctx) {
         if (ctx->renderer) {
             if (renderer_radio_clicked(ctx->renderer)) radio_toggle();
             renderer_set_radio(ctx->renderer, !ctx->config.no_radio, radio_is_playing());   /* the button is shown even without an audio device (then it does nothing) */
-            renderer_set_scoreboard(ctx->renderer, ctx->total_points[0], ctx->total_points[1], ctx->total_games[0], ctx->total_games[1]);
+            renderer_set_scoreboard(ctx->renderer, app_live_points(ctx, 0), app_live_points(ctx, 1), ctx->total_games[0], ctx->total_games[1]);
             renderer_set_turn_team(ctx->renderer, ctx->game.active_player.team);
             renderer_begin(ctx->renderer);
             renderer_begin_board(ctx->renderer);

@@ -185,6 +185,7 @@ typedef struct {
     uint32_t shots_played;        // strokes played so far this match (varies the AI imperfection from shot to shot)
     ShotPlan computed_shot_plan;  // Shot plan computed during THINKING, used in AIM_PREVIEW
     bool computed_shot_valid;     // Whether computed_shot_plan is valid
+    float aim_line_progress;      // 0.0 to 1.0 over the whole AIM_PREVIEW: the aim line and arrowhead grow from the striker
     float aim_preview_progress;   // 0.0 to 1.0 progress of figure slide animation during AIM_PREVIEW
 } GameState;
 

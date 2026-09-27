@@ -7,6 +7,7 @@ add_library(carrom_core
     game/board.c
     game/scoring.c
     game/events.c
+    game/striker_path.c
     physics/physics.c
     physics/physics_snapshot.c
     ai/controller.c

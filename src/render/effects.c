@@ -32,7 +32,7 @@ typedef struct {
 
 static FallEffect falls[MAX_PIECES + 1];
 
-#define RETURN_SLIDE_TIME 0.9f   /* seconds a returned coin takes to slide from the pocket to its place */
+#define RETURN_SLIDE_TIME EFFECTS_RETURN_SLIDE_TIME   /* seconds a returned coin takes to slide from the pocket to its place */
 typedef struct { bool active; PieceColor color; Vec2 from, to; float t, dur, bend; bool grow; } ReturnEffect;   /* t < 0: still waiting at `from` */
 static ReturnEffect returns[MAX_PIECES];
 
@@ -44,6 +44,43 @@ void effects_trigger_return(int id, PieceColor color, int from_pocket, Vec2 to) 
 void effects_trigger_slide(int id, PieceColor color, Vec2 from, Vec2 to, float delay, float duration, float bend) {
     if (id < 0 || id >= MAX_PIECES) return;
     returns[id] = (ReturnEffect){ true, color, from, to, -delay, duration, bend, false };
+}
+
+#define STRIKER_SLIDE_MAX_POINTS 40
+typedef struct {
+    bool active, done;
+    Vec2 pts[STRIKER_SLIDE_MAX_POINTS];
+    int n;
+    float total, t, dur;
+} StrikerSlide;
+static StrikerSlide striker_slide;
+
+float effects_trigger_striker_slide(const Vec2* pts, int n, float delay, float speed) {
+    if (n < 2) return 0.0f;
+    if (n > STRIKER_SLIDE_MAX_POINTS) n = STRIKER_SLIDE_MAX_POINTS;
+    StrikerSlide* ss = &striker_slide;
+    ss->active = true;
+    ss->done = false;
+    ss->n = n;
+    ss->total = 0.0f;
+    for (int i = 0; i < n; i++) {
+        ss->pts[i] = pts[i];
+        if (i > 0) { float dx = pts[i].x - pts[i - 1].x, dy = pts[i].y - pts[i - 1].y; ss->total += sqrtf(dx * dx + dy * dy); }
+    }
+    ss->dur = ss->total / (speed > 0.05f ? speed : 0.05f);
+    if (ss->dur < 0.5f) ss->dur = 0.5f;
+    if (ss->dur > 2.5f) ss->dur = 2.5f;
+    ss->t = -delay;
+    return ss->dur;
+}
+
+bool effects_striker_recovering(void) { return striker_slide.active; }
+
+bool effects_take_striker_slide_done(Vec2* end_pos) {
+    if (!striker_slide.done) return false;
+    striker_slide.done = false;
+    if (end_pos) *end_pos = striker_slide.pts[striker_slide.n - 1];
+    return true;
 }
 
 bool effects_piece_returning(int id) { return id >= 0 && id < MAX_PIECES && returns[id].active; }
@@ -62,6 +99,10 @@ void effects_trigger_pocket_fall(int id, PieceColor color, Vec2 from, Vec2 vel, 
 }
 
 void effects_update(float sim_dt) {
+    if (striker_slide.active) {
+        striker_slide.t += sim_dt;
+        if (striker_slide.t >= striker_slide.dur) { striker_slide.active = false; striker_slide.done = true; }
+    }
     for (int i = 0; i < MAX_PIECES; i++) {
         if (!returns[i].active) continue;
         returns[i].t += sim_dt;
@@ -85,6 +126,8 @@ unsigned int effects_falling_mask(void) {
 }
 
 void effects_reset(void) {
+    striker_slide.active = false;
+    striker_slide.done = false;
     for (int i = 0; i < MAX_PIECES; i++) returns[i].active = false;
     for (int i = 0; i <= MAX_PIECES; i++) falls[i].active = false;
 }
@@ -152,6 +195,30 @@ void effects_draw(Viewport vp, const GameState* game, double placement_timer, co
         col.a = (unsigned char)(255.0f * alpha);
         DrawCircle((int)sp.x, (int)sp.y, r, col);
         DrawCircleLines((int)sp.x, (int)sp.y, r, (f->color == PIECE_BLACK) ? (Color){ 200, 205, 215, col.a } : (Color){ 20, 20, 20, col.a });
+    }
+
+    // The pocketed striker sliding back to the next player, around the coins (ease in and out along its route)
+    if (striker_slide.active && striker_slide.t >= 0.0f) {
+        const StrikerSlide* ss = &striker_slide;
+        float u = ss->t / ss->dur;
+        if (u > 1.0f) u = 1.0f;
+        float d = u * u * (3.0f - 2.0f * u) * ss->total;          /* distance travelled along the route */
+        Vec2 pos = ss->pts[ss->n - 1];
+        for (int i = 1; i < ss->n; i++) {
+            float dx = ss->pts[i].x - ss->pts[i - 1].x, dy = ss->pts[i].y - ss->pts[i - 1].y;
+            float seg = sqrtf(dx * dx + dy * dy);
+            if (d <= seg || i == ss->n - 1) {
+                float k = seg > 1e-6f ? (d > seg ? 1.0f : d / seg) : 1.0f;
+                pos = (Vec2){ ss->pts[i - 1].x + dx * k, ss->pts[i - 1].y + dy * k };
+                break;
+            }
+            d -= seg;
+        }
+        float fade = ss->t / 0.25f;                                /* it climbs out of the pocket */
+        if (fade > 1.0f) fade = 1.0f;
+        Vec2 sp = math_world_to_screen(vp, pos);
+        DrawCircle((int)sp.x, (int)sp.y, L->striker_r_px, (Color){ 255, 215, 0, (unsigned char)(255.0f * fade) });
+        DrawCircleLines((int)sp.x, (int)sp.y, L->striker_r_px, (Color){ 255, 255, 255, (unsigned char)(100.0f * fade) });
     }
 
     // Coins sliding back onto the board

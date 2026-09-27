@@ -251,59 +251,52 @@ static void draw_aim_preview_line(Viewport vp, const GameState* game, const Layo
 
     float aim_angle = game->computed_shot_plan.aim_angle;
     float power = game->computed_shot_plan.power;
-
-    /* Length is strictly proportional to the strike force: full power = AIM_LINE_FULL_POWER_LEN board widths */
-    float clamped_len = aim_line_length(power);
     (void)L;
 
-    // Convert to screen coordinates
+    /* The line grows from the middle of the striker to its final length, which is strictly proportional to the strike force
+     * (full power = AIM_LINE_FULL_POWER_LEN board widths). It takes the first 85% of the aim preview (at most 3 s in all). */
+    float grow = game->aim_line_progress / 0.85f;
+    if (grow < 0.0f) grow = 0.0f;
+    if (grow > 1.0f) grow = 1.0f;
+    grow = 1.0f - (1.0f - grow) * (1.0f - grow);                 /* quick at first, settling into place */
+    float clamped_len = aim_line_length(power) * grow;
+
     Vec2 start_screen = math_world_to_screen(vp, striker_pos);
     Vec2 end_world = { striker_pos.x + cosf(aim_angle) * clamped_len, striker_pos.y + sinf(aim_angle) * clamped_len };
     Vec2 end_screen = math_world_to_screen(vp, end_world);
     g_dbg.aim_drawn = true;
     g_dbg.aim_start = striker_pos;
     g_dbg.aim_end = end_world;
-    
-    // Line thickness in screen pixels (at least 3px)
-    float thickness = my_fmaxf(3.0f, math_world_to_screen_dist(vp, 0.01f));
-    
-    // Draw line with dark outline (draw outline first, then line on top)
-    // Outline: slightly thicker, black
-    DrawLineEx((Vector2){start_screen.x, start_screen.y}, (Vector2){end_screen.x, end_screen.y}, thickness + 2.0f, COLOR_AIM_PREVIEW_OUTLINE);
-    // Main line: yellow
-    DrawLineEx((Vector2){start_screen.x, start_screen.y}, (Vector2){end_screen.x, end_screen.y}, thickness, COLOR_AIM_PREVIEW_LINE);
-    
-    // Draw arrowhead at far end
-    // Arrowhead: triangle pointing along line direction
-    float arrow_size = my_fmaxf(14.0f, thickness * 4.5f);
+
     /* Direction in SCREEN space (world y is flipped on screen), so the head points along the drawn line */
     float sdx = end_screen.x - start_screen.x, sdy = end_screen.y - start_screen.y;
     float slen = sqrtf(sdx * sdx + sdy * sdy);
-    Vec2 dir = (slen > 1e-3f) ? (Vec2){ sdx / slen, sdy / slen } : (Vec2){ 1.0f, 0.0f };
+    if (slen < 1.0f) return;
+    Vec2 dir = { sdx / slen, sdy / slen };
     Vec2 perp = { -dir.y, dir.x };
-    
-    Vec2 arrow_tip = end_screen;
-    Vec2 arrow_base_left = { end_screen.x - dir.x * arrow_size + perp.x * (arrow_size * 0.5f), end_screen.y - dir.y * arrow_size + perp.y * (arrow_size * 0.5f) };
-    Vec2 arrow_base_right = { end_screen.x - dir.x * arrow_size - perp.x * (arrow_size * 0.5f), end_screen.y - dir.y * arrow_size - perp.y * (arrow_size * 0.5f) };
-    
-    // Arrowhead outline
-    draw_tri_any_winding(
-        (Vector2){ arrow_tip.x, arrow_tip.y },
-        (Vector2){ arrow_base_left.x, arrow_base_left.y },
-        (Vector2){ arrow_base_right.x, arrow_base_right.y },
-        COLOR_AIM_PREVIEW_OUTLINE
-    );
-    // Arrowhead fill (slightly smaller for outline effect)
-    float inset = 1.0f;
-    Vec2 arrow_tip_inset = { end_screen.x - dir.x * inset, end_screen.y - dir.y * inset };
-    Vec2 arrow_base_left_inset = { arrow_tip_inset.x - dir.x * (arrow_size - inset) + perp.x * ((arrow_size - inset) * 0.5f), arrow_tip_inset.y - dir.y * (arrow_size - inset) + perp.y * ((arrow_size - inset) * 0.5f) };
-    Vec2 arrow_base_right_inset = { arrow_tip_inset.x - dir.x * (arrow_size - inset) - perp.x * ((arrow_size - inset) * 0.5f), arrow_tip_inset.y - dir.y * (arrow_size - inset) - perp.y * ((arrow_size - inset) * 0.5f) };
-    draw_tri_any_winding(
-        (Vector2){ arrow_tip_inset.x, arrow_tip_inset.y },
-        (Vector2){ arrow_base_left_inset.x, arrow_base_left_inset.y },
-        (Vector2){ arrow_base_right_inset.x, arrow_base_right_inset.y },
-        COLOR_AIM_PREVIEW_ARROW
-    );
+
+    float thickness = my_fmaxf(1.5f, math_world_to_screen_dist(vp, 0.004f));      /* a thin line */
+    float arrow_size = my_fmaxf(11.0f, thickness * 6.0f);
+    if (arrow_size > slen) arrow_size = slen;                                      /* never longer than the line itself */
+
+    /* The line stops inside the arrowhead: a line running on to the tip would poke out of the point as a little fork */
+    Vec2 line_end = { end_screen.x - dir.x * arrow_size * 0.6f, end_screen.y - dir.y * arrow_size * 0.6f };
+    DrawLineEx((Vector2){ start_screen.x, start_screen.y }, (Vector2){ line_end.x, line_end.y }, thickness + 2.0f, COLOR_AIM_PREVIEW_OUTLINE);
+    DrawLineEx((Vector2){ start_screen.x, start_screen.y }, (Vector2){ line_end.x, line_end.y }, thickness, COLOR_AIM_PREVIEW_LINE);
+
+    Vec2 tip = end_screen;
+    Vec2 left = { tip.x - dir.x * arrow_size + perp.x * (arrow_size * 0.5f), tip.y - dir.y * arrow_size + perp.y * (arrow_size * 0.5f) };
+    Vec2 right = { tip.x - dir.x * arrow_size - perp.x * (arrow_size * 0.5f), tip.y - dir.y * arrow_size - perp.y * (arrow_size * 0.5f) };
+    draw_tri_any_winding((Vector2){ tip.x, tip.y }, (Vector2){ left.x, left.y }, (Vector2){ right.x, right.y }, COLOR_AIM_PREVIEW_OUTLINE);
+
+    /* the yellow fill, one pixel inside the black outline all round */
+    float in = 1.0f, fs = arrow_size - 2.0f * in;
+    if (fs > 1.0f) {
+        Vec2 ft = { tip.x - dir.x * (in * 2.2f), tip.y - dir.y * (in * 2.2f) };
+        Vec2 fl = { ft.x - dir.x * fs + perp.x * (fs * 0.5f * 0.85f), ft.y - dir.y * fs + perp.y * (fs * 0.5f * 0.85f) };
+        Vec2 fr = { ft.x - dir.x * fs - perp.x * (fs * 0.5f * 0.85f), ft.y - dir.y * fs - perp.y * (fs * 0.5f * 0.85f) };
+        draw_tri_any_winding((Vector2){ ft.x, ft.y }, (Vector2){ fl.x, fl.y }, (Vector2){ fr.x, fr.y }, COLOR_AIM_PREVIEW_ARROW);
+    }
 }
 
 void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* physics, float alpha, const Layout* L, int game_phase, const GameState* game, double placement_timer) {
@@ -557,12 +550,22 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
 
         if (game && is_thinking) {
             Vec2 target = thinking_striker_world(game->turn_seat, wall_time);
-            if (g_vis.was_gone) { g_vis.striker = target; g_vis.appear = 0.0f; g_vis.was_gone = false; g_vis.striker_valid = true; }
+            if (g_vis.was_gone && !effects_striker_recovering()) {
+                Vec2 slid_to;
+                if (effects_take_striker_slide_done(&slid_to)) { g_vis.striker = slid_to; g_vis.appear = 1.0f; }   /* it has just slid back to the player */
+                else { g_vis.striker = target; g_vis.appear = 0.0f; }
+                g_vis.was_gone = false; g_vis.striker_valid = true;
+            }
             g_vis.striker = g_vis.striker_valid ? approach_v(g_vis.striker, target, step) : target;
             g_vis.striker_valid = true;
         } else if (game && (is_placement || is_aim_preview)) {
             Vec2 target = board->striker.position;
-            if (g_vis.was_gone) { g_vis.striker = target; g_vis.appear = 0.0f; g_vis.was_gone = false; g_vis.striker_valid = true; }
+            if (g_vis.was_gone && !effects_striker_recovering()) {
+                Vec2 slid_to;
+                if (effects_take_striker_slide_done(&slid_to)) { g_vis.striker = slid_to; g_vis.appear = 1.0f; }   /* it has just slid back to the player */
+                else { g_vis.striker = target; g_vis.appear = 0.0f; }
+                g_vis.was_gone = false; g_vis.striker_valid = true;
+            }
             g_vis.striker = g_vis.striker_valid ? approach_v(g_vis.striker, target, step) : target;
             g_vis.striker_valid = true;
         } else if (use_physics && !striker_gone && !board->striker.pocketed) {
@@ -641,7 +644,7 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     }
     
     // Striker: drawn at its tracked visual position (glides between turns, follows physics during a shot)
-    if (board->striker.on_baseline && !board->striker.pocketed && g_vis.striker_valid &&
+    if (board->striker.on_baseline && !board->striker.pocketed && g_vis.striker_valid && !effects_striker_recovering() &&
         !(physics && physics_is_striker_pocketed(physics) && !(is_thinking || is_placement || is_aim_preview))) {
         Vec2 screen = math_world_to_screen(vp, g_vis.striker);
         float striker_r = math_world_to_screen_dist(vp, STRIKER_RADIUS_NORM);

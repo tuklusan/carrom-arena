@@ -84,12 +84,28 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
 - Arranging (rendered mode only; headless play is untouched): at every new board the coins glide from where they were (on the board or in their stash slot) into the new formation, queen first, then inner ring, then outer ring, each on its own curve (`app_begin_arrange`, `effects_trigger_slide`, staggered 0.08 s, 1.0 s per coin). The game waits (`arrange_wait`, the phase counts as idle) and that is the pause: 0.8 s after a board, 2.5 s after a game, 3.5 s after a match. The very first scene starts with the coins scattered at random (visual-only xorshift seeded from the master seed, never the game's streams) and arranges them after 0.7 s.
 - Queue tickets (`build/build.py admit/release`): per runner kind two tickets, git refs `refs/ci-lock/<kind>/<n>` created atomically, so simultaneous requests cannot both take the last one (the old counting gate could be raced). `admit` takes one per kind or rejects the kind; the last step of the build job (`if: always()`) releases it; finished-run tickets are taken over. The concurrency group `carrom-<runner>` still makes the holders run one at a time.
 
+## Turn flow, striker recovery, scoreboard, aim line (2026-09-27)
+- Nothing overlaps the next turn: the coins the rules put back (the queen included) slide in first (`EFFECTS_RETURN_SLIDE_TIME`, 0.9 s); then a pocketed
+  striker slides from its pocket to the player whose turn it is; `app_resolve_shot` holds the game (`arrange_wait`, the phase counts as idle) until both
+  are done. No coin moves during the striker's slide. The route is `striker_path_plan` (`game/striker_path.c`): a visibility graph over points around the
+  coins (clearance `STRIKER_PATH_CLEAR`), the other three pockets and the board edge, searched with Dijkstra; the slide is drawn by `effects.c`
+  (ease in and out, 0.5-2.5 s) and `board_view.c` hands the striker over on arrival (`effects_take_striker_slide_done`). If a coin sits on the spot on the
+  baseline the goal moves along the baseline to the nearest free place. Rendered mode only. (Verified by frames of a forced case; a real striker pocket is
+  rare with the expert AI.)
+- Scoreboard: fixed 12 px font, every character in the same cell width, `RED  000 pts  00G` (points 000-999, games 00-99; out of range shows/resets to 0).
+  The points are LIVE: `scoring_live_board_points` = coins of the pair's colour in a pocket on the current board (a coin put back stops counting at once)
+  plus 3 for a covered queen, on top of the finished boards' points (`score_base`, banked at each new board). This is a coin tally, not the rules' game
+  score (`GameState.scores`, the ICF board points that decide the 25-point game); the two are different numbers.
+- Aim line: thin (1.5 px), grows from the middle of the striker to its final length (proportional to the strike force) over the first 85% of the aim preview,
+  which is now 3 s (`AIM_PREVIEW_SECONDS`). The line stops inside the arrowhead (it used to run to the tip and poke out as a tiny fork).
+
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
 - Confirm on real hardware that the Release exe (`-release`, the first optimised build ever shipped) plays like the old Debug ones; then decide whether Release is the only exe to hand out.
 - `capture_test` is skipped on Windows and macOS CI (no window system on those runners); accept, or provide a virtual display/headless path there. Related bug: `--mode=capture` writes blank frames.
 Known gaps (nothing decided needed):
-- Aim preview holds 2 s per turn (confirm this is wanted).
+- Aim preview holds 3 s per turn (the aim line grows over 85% of it).
+- The scoreboard shows the live coin tally, not the ICF game score that ends a game at 25 points: confirm that is what is wanted.
 - Dues: a due with no own coin on the stash to return stays counted only (never enforced later).
 - `-Wno-unused-function` hides dead statics (for example `distance_to_board_boundary` in `board_view.c`); `Layout.figure_halo_base_r` is now unused (the halo is gone).
 - Windows on ARM and macOS are verified only by CI builds and tests, not on real hardware.

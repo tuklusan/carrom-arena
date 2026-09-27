@@ -158,22 +158,34 @@ static Rectangle radio_rect(int sw, int sh) {
     return (Rectangle){ (float)sw - 8.0f * s - 50.0f * s, (float)rule_y - 4.0f * s - 28.0f * s, 50.0f * s, 28.0f * s };
 }
 
-#define SCOREBOARD_FONT 11
+#define SCOREBOARD_FONT 12                   /* fixed size (a tad larger than before), whatever the window does */
+#define SCOREBOARD_CHARS 17                  /* "RED  000 pts  00G" */
+/* Every character gets the same cell width, so the numbers never shift the layout as the digits change */
+static int scoreboard_cell(void) { return MeasureText("W", SCOREBOARD_FONT) + 1; }
+
 static int scoreboard_width(const Renderer* r, int sw, int sh) {
-    (void)r;
-    return (int)((float)(12 + MeasureText("BLUE 9999 pts  99G", SCOREBOARD_FONT)) * ui_scale(sw, sh)) + 8;
+    (void)r; (void)sw; (void)sh;
+    return 8 + 12 + SCOREBOARD_CHARS * scoreboard_cell() + 8;
 }
 
+static void draw_fixed_text(const char* text, int x, int y, Color col) {
+    int cell = scoreboard_cell();
+    for (int i = 0; text[i]; i++) {
+        char one[2] = { text[i], 0 };
+        int w = MeasureText(one, SCOREBOARD_FONT);
+        DrawText(one, x + i * cell + (cell - w) / 2, y, SCOREBOARD_FONT, col);
+    }
+}
+
+/* Points 000-999 and games 00-99; a value out of range is shown as 0 */
+static int sb_clamp(int v, int max) { return (v < 0 || v > max) ? 0 : v; }
+
 static void draw_scoreboard(const Renderer* r, int sw, int sh) {
-    float s = ui_scale(sw, sh);
-    rlPushMatrix();
-    rlTranslatef(8.0f * s, 13.0f * s, 0.0f);
-    rlScalef(s, s, 1.0f);
-    DrawRectangle(0, 1, 8, 8, THEME_RED);
-    DrawText(TextFormat("RED  %d pts  %dG", r->score_pts[0], r->score_games[0]), 12, 0, SCOREBOARD_FONT, WHITE);
-    DrawRectangle(0, 15, 8, 8, THEME_BLUE);
-    DrawText(TextFormat("BLUE %d pts  %dG", r->score_pts[1], r->score_games[1]), 12, 13, SCOREBOARD_FONT, WHITE);
-    rlPopMatrix();
+    (void)sw; (void)sh;
+    DrawRectangle(8, 14, 9, 9, THEME_RED);
+    draw_fixed_text(TextFormat("RED  %03d pts  %02dG", sb_clamp(r->score_pts[0], 999), sb_clamp(r->score_games[0], 99)), 20, 13, WHITE);
+    DrawRectangle(8, 29, 9, 9, THEME_BLUE);
+    draw_fixed_text(TextFormat("BLUE %03d pts  %02dG", sb_clamp(r->score_pts[1], 999), sb_clamp(r->score_games[1], 99)), 20, 28, WHITE);
 }
 
 static void draw_radio_button(const Renderer* r, int sw, int sh) {
