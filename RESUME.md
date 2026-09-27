@@ -213,6 +213,23 @@ coordinate system, and the arm continuously re-aims at the striker's true positi
 parameter and the separate `final_f` frame were removed entirely. Verified with a seed=7 screenshot sequence covering the
 east seat's first turn (frames 049-052, the reach/rotation ramp through full reach): one continuous arm, no gap, at every
 sampled frame.
+The operator was still right (2026-09-27, same day, third pass): the arm kept detaching. This time, instead of guessing
+from screenshots, a deep per-frame trace was added - logging the TRUE shoulder pivot against the arm's own rendered near
+corner for every single frame the arm was reaching, across an entire board (seed=42, all four seats, 23 shots, 3191
+sampled frames). The trace showed the real root cause at last: the gap between them grew CONTINUOUSLY with `reach` - not
+a rotation transient, but on every single strike, up to 190-310px at full extension, on all four seats. Cause: the
+reaching forearm/hand was an axis-aligned box in body (u,v) space whose v0/v1 - shared by BOTH the near (shoulder) edge
+and the far (hand) edge, since a plain rectangle has one v-range for its whole length - were interpolated together
+toward the striker's v-offset as reach grew. That slides the WHOLE box sideways, including the near edge, which is
+supposed to stay at the shoulder; rotating that box by `flap_r` (eased to 0) never fixed this, because at flap_r=0 the
+rotation is the identity and the box renders exactly where its drifted numbers put it. Rebuilt as it always should have
+been: a RIGID shape - fixed length and width in its own local axes - that only ROTATES about the true, fixed shoulder
+pivot and TELESCOPES along its own axis as reach grows; its near corner sits at zero u-offset and a small constant
+v-offset from the pivot, so it stays within that same small, bounded distance after any rotation and can no longer drift.
+One rotation angle now carries both the old jobs (easing the spin to a stop, then aiming) as a single continuous blend
+from the live spin angle to the target bearing. Verified by re-running the IDENTICAL trace on the fixed build: max gap
+dropped from 190-310px to 1.9px, bounded by the fixed pivot offset, not growing with reach at all, across every seat and
+every sampled frame. Also confirmed visually on the east seat. The diagnostic trace logging was removed before shipping.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
