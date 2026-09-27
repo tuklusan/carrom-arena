@@ -21,5 +21,7 @@ python build/build.py fetch                  # only pre-fetch the pinned depende
 every hosted architecture: Linux x64 and arm64, Windows x64 and arm64, macOS arm64 and Intel.
 
 Queue rule: per runner kind at most one job runs (a GitHub concurrency group `carrom-<runner>`) and at most one waits. The `admit` job
-(`build.py admit`) rejects a run that would become the second waiting job for a kind, and that run fails. The built game is uploaded by CI as the
+(`build.py admit`) takes one of two tickets per kind (git refs `refs/ci-lock/<kind>/<n>`, created atomically, so simultaneous runs cannot both get
+the last one); a run that finds no free ticket is rejected and fails. The last step of the build job (`build.py release`) gives the ticket back,
+and a ticket whose run has already finished is taken over. The built game is uploaded by CI as the
 artifact `carrom-arena-<runner>` (the Windows exe comes from `windows-2022`).

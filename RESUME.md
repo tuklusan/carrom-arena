@@ -70,7 +70,7 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
 ## Waiting robots and the active robot (2026-09-25 night, 2026-09-26)
 - The robots no longer fade (the flash alpha on the figures during thinking/aim preview is removed; the striker still flashes). A robot that is
   NOT on turn animates in `draw_human_figure` (`board_view.c`): pupils circle inside the eyes and each arm flaps about the shoulder
-  (`robot_rbox` draws a box rotated about a pivot). `idle_wave(seat, k, t)` gives each seat its own irregular rhythm. The robot ON turn has no gold outline (dark outlines like everyone else; its pulsing halo marks the turn) and spins BOTH arms fast, at different speeds and phases so they are out of step (`flap_r = 14 t`, `flap_l = 10.5 t + 2`); its eyes are not animated.
+  (`robot_rbox` draws a box rotated about a pivot). `idle_wave(seat, k, t)` gives each seat its own irregular rhythm. The robot ON turn has no gold outline and NO halo any more (2026-09-26; the gold antenna ball stays, it shows the robot's brain is on) and spins BOTH arms fast, at different speeds and phases so they are out of step (`flap_r = 14 t`, `flap_l = 10.5 t + 2`); its eyes are not animated.
 
 ## Build system (2026-09-26)
 - `build/` is tracked: `build.py`, `pins.txt` (raylib/Box2D/Unity commit shas), `tools.txt` (pip-installed cmake 3.31.6, ninja 1.13.0). Output goes to `out/` (ignored).
@@ -78,18 +78,23 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
 - The requested build type is honoured (Debug only when none is given). CI builds and tests Debug and Release on all six runners (`--build-type Debug,Release`); artifacts are `...-debug` and `...-release`. Box2D's hardcoded -Werror is neutralised (COMPILE_WARNING_AS_ERROR OFF, -Wno-error=maybe-uninitialized) and the Box2D header patch now recognises its own edit (it used to re-apply on every configure).
 - The dependency/ccache caching from the first attempt was dropped when the workflow became a call to `build.py` (actions/cache steps do not fit a one-line workflow); deps are fetched depth-1 each run (seconds).
 
-## Open items (regenerated 2026-09-26)
+## Starting position, arranging, break variety, queue tickets (2026-09-26)
+- ICF Rule 41 does not fix the orientation of the Y, so `board_setup_initial_formation` turns the whole formation by a random angle taken from `rng->global` (no rng = no turn, which the layout tests use). Rule 41(a) holds at every angle (`test_ICF_Layout_Random_Rotation_Keeps_Rule41a`).
+- The break stroke varies: while `board.break_made` is false, `arena_decide` picks at random among the 5 best simulated candidates (`BREAK_CHOICES`) and multiplies the aim error by 8 and the power error by 5 (`BREAK_AIM_SCALE`, `BREAK_POWER_SCALE`); it draws from a copy of the seat stream, so the planning-does-not-consume-the-stream contract holds (`test_ai_break_stroke_varies_with_seed`).
+- Arranging (rendered mode only; headless play is untouched): at every new board the coins glide from where they were (on the board or in their stash slot) into the new formation, queen first, then inner ring, then outer ring, each on its own curve (`app_begin_arrange`, `effects_trigger_slide`, staggered 0.08 s, 1.0 s per coin). The game waits (`arrange_wait`, the phase counts as idle) and that is the pause: 0.8 s after a board, 2.5 s after a game, 3.5 s after a match. The very first scene starts with the coins scattered at random (visual-only xorshift seeded from the master seed, never the game's streams) and arranges them after 0.7 s.
+- Queue tickets (`build/build.py admit/release`): per runner kind two tickets, git refs `refs/ci-lock/<kind>/<n>` created atomically, so simultaneous requests cannot both take the last one (the old counting gate could be raced). `admit` takes one per kind or rejects the kind; the last step of the build job (`if: always()`) releases it; finished-run tickets are taken over. The concurrency group `carrom-<runner>` still makes the holders run one at a time.
+
+## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
-- The active robot's antenna ball is still gold (only the outline and the arms were changed): keep or make it like the others?
-- Confirm on real hardware that the Release exe (`-release`, first optimised build ever shipped) plays like the old Debug ones; then decide whether Release is the only exe to hand out.
+- Confirm on real hardware that the Release exe (`-release`, the first optimised build ever shipped) plays like the old Debug ones; then decide whether Release is the only exe to hand out.
 - `capture_test` is skipped on Windows and macOS CI (no window system on those runners); accept, or provide a virtual display/headless path there. Related bug: `--mode=capture` writes blank frames.
-- The `admit` gate can be raced (two runs arriving in the same instant both pass; GitHub then cancels the older waiting job instead of failing the newcomer): accept, or add a stricter lock.
 Known gaps (nothing decided needed):
 - Aim preview holds 2 s per turn (confirm this is wanted).
 - Dues: a due with no own coin on the stash to return stays counted only (never enforced later).
-- `-Wno-unused-function` hides dead statics (for example `distance_to_board_boundary` in `board_view.c`).
+- `-Wno-unused-function` hides dead statics (for example `distance_to_board_boundary` in `board_view.c`); `Layout.figure_halo_base_r` is now unused (the halo is gone).
 - Windows on ARM and macOS are verified only by CI builds and tests, not on real hardware.
 - CI notices: Node 20 actions run on Node 24, and the `ubuntu-latest` and `windows-11-arm` labels change later in 2026 (`admit` and `verdict` use ubuntu-latest).
+- The queue tickets are git refs under `refs/ci-lock/`; a job killed without releasing leaves one until the next request finds its run finished and takes it over.
 - The operator said earlier there are "many issues": collect more from hands-on testing of the latest exe.
 
 ## Locked

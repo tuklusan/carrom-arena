@@ -22,6 +22,9 @@ bool effects_piece_falling(int id);
  * Timed in wall seconds; the coin is not drawn on the board by board_view while it slides. */
 void effects_trigger_return(int id, PieceColor color, int from_pocket, Vec2 to);
 bool effects_piece_returning(int id);
+/* Slide a coin from `from` to `to` along a curve (bend: sideways swing as a fraction of the distance), after `delay` seconds,
+ * taking `duration` seconds. Used to arrange a new board. Until it has arrived the coin is drawn by effects.c, not board_view. */
+void effects_trigger_slide(int id, PieceColor color, Vec2 from, Vec2 to, float delay, float duration, float bend);
 void effects_reset(void);
 unsigned int effects_falling_mask(void);   /* bit i set while piece i (bit MAX_PIECES = striker) is falling in */
 

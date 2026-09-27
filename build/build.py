@@ -6,7 +6,8 @@
     python build/build.py --build-type Debug,Release      (both, into out/Debug and out/Release)
     python build/build.py --out /tmp/carrom-out --no-tools    (use the system cmake and ninja)
     python build/build.py fetch              only pre-fetch the pinned dependencies into deps/
-    python build/build.py admit              CI only: the per-runner queue gate (see below)
+    python build/build.py admit              CI only: take a queue ticket per runner kind (see below)
+    python build/build.py release --kind K   CI only: give the ticket for runner kind K back
 
 What it does, in order:
   1. tools    : CMake and Ninja at the versions in build/tools.txt, installed with pip into <out>/.tools
@@ -17,8 +18,9 @@ What it does, in order:
   5. test     : ctest (under xvfb-run on a Linux machine without a display).
   6. dist     : the game executable copied to <out>/dist/ with the build id and build type in its name.
 
-Queue gate (`admit`, used by .github/workflows/ci.yml): at most one job per runner kind may run and at most one may wait;
-a request that would be the second waiting one is rejected, and the run fails. RUNNERS is the single list of runner kinds:
+Queue gate (`admit`/`release`, used by .github/workflows/ci.yml): at most one job per runner kind may run and at most one may wait;
+a request that would be the second waiting one is rejected, and the run fails. The tickets are git refs created atomically, so
+simultaneous requests cannot both get the last one. RUNNERS is the single list of runner kinds:
 the smallest set that covers every hosted architecture (Linux x64/arm64, Windows x64/arm64, macOS arm64/Intel).
 """
 import argparse
@@ -29,6 +31,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -204,52 +207,129 @@ def do_build(args):
 
 
 # ---------------------------------------------------------------- queue gate
-def gh_api(path):
-    req = urllib.request.Request("https://api.github.com/" + path, headers={
-        "Authorization": "Bearer " + os.environ["GH_TOKEN"],
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.load(r)
+# Per runner kind there are exactly 1 + MAX_WAITING tickets (git refs refs/ci-lock/<kind>/<n>). A run takes a ticket by CREATING
+# its ref, which GitHub does atomically: only one creator can win, so two runs arriving in the same instant can never both get the
+# last ticket. No ticket means the queue for that kind is full and the run is rejected. GitHub's concurrency group (ci.yml) makes the
+# ticket holders run one at a time; the ticket is given back at the end of the build job. A ticket whose run has already finished
+# (a killed job never released it) is stale and is taken over by the next request.
+LOCK_NS = "ci-lock"
+
+
+def gh_call(method, path, body=None):
+    """(status, json) for a GitHub REST call; HTTP errors come back as their status, not as exceptions."""
+    req = urllib.request.Request(
+        "https://api.github.com/" + path, method=method,
+        data=None if body is None else json.dumps(body).encode(),
+        headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"], "Accept": "application/vnd.github+json",
+                 "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            raw = r.read()
+            return r.status, (json.loads(raw) if raw else None)
+    except urllib.error.HTTPError as e:
+        raw = e.read()
+        try:
+            return e.code, json.loads(raw) if raw else None
+        except ValueError:
+            return e.code, None
+
+
+def ticket_ref(kind, slot):
+    return f"{LOCK_NS}/{kind}/{slot}"
+
+
+def ticket_holder(repo, kind, slot):
+    """Run id holding the ticket, or None when the ticket is free."""
+    st, ref = gh_call("GET", f"repos/{repo}/git/ref/{ticket_ref(kind, slot)}")
+    if st != 200:
+        return None
+    st, commit = gh_call("GET", f"repos/{repo}/git/commits/{ref['object']['sha']}")
+    m = re.match(r"run=(\d+)", (commit or {}).get("message", "")) if st == 200 else None
+    return int(m.group(1)) if m else 0            # 0: a ticket nobody can identify counts as stale
+
+
+def run_finished(repo, run_id):
+    st, run = gh_call("GET", f"repos/{repo}/actions/runs/{run_id}")
+    return st == 404 or (st == 200 and run.get("status") == "completed")
+
+
+def make_ticket_commit(repo):
+    """The object every ticket ref points at; its message names this run."""
+    sha = os.environ["GITHUB_SHA"]
+    st, c = gh_call("GET", f"repos/{repo}/git/commits/{sha}")
+    if st != 200:                                  # a pull-request merge commit may not be readable: use the default branch
+        st, c = gh_call("GET", f"repos/{repo}/commits/HEAD")
+        c = (c or {}).get("commit")
+    st, made = gh_call("POST", f"repos/{repo}/git/commits", {
+        "message": f"run={os.environ['GITHUB_RUN_ID']} attempt={os.environ.get('GITHUB_RUN_ATTEMPT', '1')}",
+        "tree": c["tree"]["sha"], "parents": []})
+    if st != 201:
+        sys.exit(f"cannot create the ticket object: HTTP {st} {made}")
+    return made["sha"]
+
+
+def take_ticket(repo, kind, sha):
+    """Slot number of the ticket taken, or None when every ticket of this kind is held by a live run."""
+    for attempt in (1, 2):
+        for slot in range(1, MAX_WAITING + 2):
+            st, _ = gh_call("POST", f"repos/{repo}/git/refs", {"ref": "refs/" + ticket_ref(kind, slot), "sha": sha})
+            if st == 201:
+                return slot
+            if st not in (422, 409):
+                sys.exit(f"ticket request for {kind} failed: HTTP {st}")
+        if attempt == 2:
+            break
+        freed = False                              # everything taken: free the tickets whose run is over, then try once more
+        for slot in range(1, MAX_WAITING + 2):
+            holder = ticket_holder(repo, kind, slot)
+            if holder is not None and (holder == 0 or run_finished(repo, holder)):
+                log(f"{kind}: ticket {slot} belonged to finished run {holder}, taking it over")
+                gh_call("DELETE", f"repos/{repo}/git/refs/{ticket_ref(kind, slot)}")
+                freed = True
+        if not freed:
+            break
+    return None
 
 
 def do_admit(_args):
-    """Decide which runner kinds this run may queue for. Writes `runners` (JSON list) and `rejected` to $GITHUB_OUTPUT."""
-    repo, me = os.environ["GITHUB_REPOSITORY"], int(os.environ["GITHUB_RUN_ID"])
-    wf = gh_api(f"repos/{repo}/actions/runs/{me}")["workflow_id"]
-    busy = {k: 0 for k in RUNNERS}                      # unfinished jobs per kind in OTHER runs
-    seen = set()
-    for status in ("in_progress", "queued", "waiting", "pending", "requested"):
-        for r in gh_api(f"repos/{repo}/actions/workflows/{wf}/runs?status={status}&per_page=100")["workflow_runs"]:
-            if r["id"] == me or r["id"] in seen:
-                continue
-            seen.add(r["id"])
-            for j in gh_api(f"repos/{repo}/actions/runs/{r['id']}/jobs?per_page=100")["jobs"]:
-                m = re.fullmatch(r"build \((.+)\)", j["name"])
-                if m and m.group(1) in busy and j["status"] != "completed":
-                    busy[m.group(1)] += 1
-    admitted = [k for k in RUNNERS if busy[k] < 1 + MAX_WAITING]
-    rejected = [k for k in RUNNERS if k not in admitted]
-    for k in RUNNERS:
-        log(f"{k}: {busy[k]} unfinished job(s) ahead -> " + ("admitted" if k in admitted else "REJECTED, queue full"))
+    """Take a ticket for every runner kind; write `runners` (the kinds admitted, JSON) and `rejected` to $GITHUB_OUTPUT."""
+    repo = os.environ["GITHUB_REPOSITORY"]
+    sha = make_ticket_commit(repo)
+    admitted, rejected = [], []
+    for kind in RUNNERS:
+        slot = take_ticket(repo, kind, sha)
+        (admitted if slot else rejected).append(kind)
+        log(f"{kind}: " + (f"admitted (ticket {slot})" if slot else "REJECTED, the queue is full (one running, one waiting)"))
     with open(os.environ.get("GITHUB_OUTPUT", os.devnull), "a") as f:
         f.write(f"runners={json.dumps(admitted)}\nrejected={' '.join(rejected)}\n")
+
+
+def do_release(args):
+    """Give back this run's ticket for --kind (the last step of the build job, whatever the outcome)."""
+    repo, me = os.environ["GITHUB_REPOSITORY"], int(os.environ["GITHUB_RUN_ID"])
+    for slot in range(1, MAX_WAITING + 2):
+        if ticket_holder(repo, args.kind, slot) == me:
+            st, _ = gh_call("DELETE", f"repos/{repo}/git/refs/{ticket_ref(args.kind, slot)}")
+            log(f"{args.kind}: ticket {slot} released (HTTP {st})")
 
 
 # ---------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", nargs="?", default="all", choices=["all", "fetch", "admit"])
+    ap.add_argument("command", nargs="?", default="all", choices=["all", "fetch", "admit", "release"])
     ap.add_argument("--build-type", default="Debug", help="Debug (default), Release, RelWithDebInfo, or a comma list such as Debug,Release (each goes to <out>/<type>)")
     ap.add_argument("--out", default=str(ROOT / "out"), help="build directory (default: out/)")
     ap.add_argument("--no-test", action="store_true", help="skip ctest")
     ap.add_argument("--no-tools", action="store_true", help="use the cmake and ninja already on PATH")
     ap.add_argument("--cc", help="C compiler to pass to CMake (default: platform default, gcc/clang on Windows)")
+    ap.add_argument("--kind", help="release: the runner kind whose ticket to give back")
     args = ap.parse_args()
     if args.command == "fetch":
         fetch_deps(ROOT / "deps")
     elif args.command == "admit":
         do_admit(args)
+    elif args.command == "release":
+        do_release(args)
     else:
         do_build(args)
 

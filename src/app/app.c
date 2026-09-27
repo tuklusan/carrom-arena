@@ -58,6 +58,7 @@
     bool speed_paused;     // Temporary pause from space key (speed = 0)
     double placement_timer;  // Timer for striker placement phase (seconds)
     bool placement_phase_active;  // Whether we're in the placement hold phase
+    double arrange_wait;          // Wall seconds left while the coins slide into their starting places (nothing else plays)
     
     /* THINKING phase (R6) */
     bool thinking_phase_active;
@@ -446,6 +447,77 @@ static void app_shot_progress(AppContext* ctx) {
     }
 }
 
+/* -----------------------------------------------------------------------------
+ * Arranging the coins: at the start of every board (and of the very first one, from a random scatter) the coins glide into the
+ * starting formation, the queen first, then the inner ring, then the outer ring, each along its own curve. The game waits
+ * for it, which is also the pause between boards and games.
+ * --------------------------------------------------------------------------- */
+#define ARRANGE_STAGGER 0.08f     /* seconds between one coin setting off and the next */
+#define ARRANGE_SLIDE 1.0f        /* seconds one coin takes */
+#define ARRANGE_PAUSE_BOARD 0.8f  /* the final position stays visible this long after a board */
+#define ARRANGE_PAUSE_GAME 2.5f   /* ... after a game */
+#define ARRANGE_PAUSE_MATCH 3.5f  /* ... after a match */
+#define ARRANGE_PAUSE_FIRST 0.7f  /* the scatter at the very start */
+
+/* Where every coin is now: on the board, or in its slot beside the pocket it fell into */
+static void app_capture_positions(const BoardState* b, Vec2 out[MAX_PIECES]) {
+    for (int i = 0; i < MAX_PIECES; i++) {
+        out[i] = b->pieces[i].position;
+        if (b->pieces[i].on_board) continue;
+        for (int k = 0; k < MAX_PIECES; k++) {
+            if (b->pocketed_pieces[k].pocketed && b->pocketed_pieces[k].id == i) { out[i] = b->pocketed_pieces[k].pocketed_position; break; }
+        }
+    }
+}
+
+/* Visual-only randomness (never the game's streams: a rendered game must play exactly like a headless one of the same seed) */
+static uint64_t app_visual_rand(uint64_t* s) {
+    *s ^= *s << 13; *s ^= *s >> 7; *s ^= *s << 17;
+    return *s;
+}
+
+static void app_scatter_positions(uint64_t seed, Vec2 out[MAX_PIECES]) {
+    uint64_t s = seed * 0x9E3779B97F4A7C15ULL + 0x5DEECE66DULL;
+    if (s == 0) s = 1;
+    const float area = 0.36f, min_d = 2.2f * PIECE_RADIUS_NORM;
+    for (int i = 0; i < MAX_PIECES; i++) {
+        Vec2 p = { 0.0f, 0.0f };
+        for (int tries = 0; tries < 200; tries++) {
+            p.x = ((float)(app_visual_rand(&s) >> 40) / 16777216.0f * 2.0f - 1.0f) * area;
+            p.y = ((float)(app_visual_rand(&s) >> 40) / 16777216.0f * 2.0f - 1.0f) * area;
+            bool clear = true;
+            for (int j = 0; j < i && clear; j++) {
+                float dx = p.x - out[j].x, dy = p.y - out[j].y;
+                if (dx * dx + dy * dy < min_d * min_d) clear = false;
+            }
+            if (clear) break;
+        }
+        out[i] = p;
+    }
+}
+
+static void app_begin_arrange(AppContext* ctx, const Vec2 from[MAX_PIECES], float pause) {
+    if (!ctx->renderer) return;
+    int order[MAX_PIECES];
+    float dist[MAX_PIECES];
+    for (int i = 0; i < MAX_PIECES; i++) {
+        order[i] = i;
+        Vec2 to = ctx->game.board.pieces[i].position;
+        dist[i] = to.x * to.x + to.y * to.y;
+    }
+    for (int i = 1; i < MAX_PIECES; i++) {          /* insertion sort: the coins nearest the centre first */
+        int id = order[i], j = i - 1;
+        while (j >= 0 && dist[order[j]] > dist[id]) { order[j + 1] = order[j]; j--; }
+        order[j + 1] = id;
+    }
+    for (int k = 0; k < MAX_PIECES; k++) {
+        int id = order[k];
+        effects_trigger_slide(id, ctx->game.board.pieces[id].color, from[id], ctx->game.board.pieces[id].position,
+                              pause + (float)k * ARRANGE_STAGGER, ARRANGE_SLIDE, (k & 1) ? 0.22f : -0.22f);
+    }
+    ctx->arrange_wait = (double)(pause + (float)(MAX_PIECES - 1) * ARRANGE_STAGGER + ARRANGE_SLIDE + 0.3f);
+}
+
 static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Extract facts for rules engine
     ShotFacts facts;
@@ -573,8 +645,13 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Start next board if needed
     if (decision == TURN_BOARD_OVER) {
         if (!match_is_over(&ctx->match)) {
+            Vec2 prev_positions[MAX_PIECES];
+            app_capture_positions(&ctx->game.board, prev_positions);
+            float pause = (outcome.turn_decision == TURN_MATCH_OVER) ? ARRANGE_PAUSE_MATCH
+                        : (outcome.turn_decision == TURN_GAME_OVER) ? ARRANGE_PAUSE_GAME : ARRANGE_PAUSE_BOARD;
             match_start_board(&ctx->match, &ctx->game, &ctx->rng);
             physics_sync_from_board(ctx->physics, &ctx->game.board, ctx->game.turn_seat);
+            app_begin_arrange(ctx, prev_positions, pause);
             // match_start_board leaves the phase at PLACEMENT and the old plan in place: without this the new board skipped
             // THINKING and its first player aimed with the previous board's last plan (a line pointing off the board).
             physics_reset_turn_timer(ctx->physics);
@@ -618,6 +695,12 @@ int app_run_simulation(AppContext* ctx) {
     // Initialize first board - start with THINKING for first turn
     match_start_board(&ctx->match, &ctx->game, &ctx->rng);
     physics_sync_from_board(ctx->physics, &ctx->game.board, ctx->game.turn_seat);
+    ctx->arrange_wait = 0.0;
+    if (ctx->renderer && ctx->config.mode == APP_MODE_RENDERED) {      /* the very first scene: coins strewn about, then arranged */
+        Vec2 scattered[MAX_PIECES];
+        app_scatter_positions(ctx->rng.master_seed, scattered);
+        app_begin_arrange(ctx, scattered, ARRANGE_PAUSE_FIRST);
+    }
     ctx->game.phase = PHASE_THINKING;
     ctx->thinking_phase_active = true;
     ctx->thinking_timer = 0.0;
@@ -694,7 +777,8 @@ int app_run_simulation(AppContext* ctx) {
             assert(!(ctx->game.phase == PHASE_PLACEMENT && !ctx->game.board.striker.on_baseline));
             assert(!(ctx->game.phase == PHASE_THINKING && ctx->pending_shot_valid && ctx->aim_preview_active));
             
-            switch (ctx->game.phase) {
+            /* while the coins are being arranged nothing else happens (the phase counts as idle) */
+            switch (ctx->arrange_wait > 0.0 ? (ctx->arrange_wait -= dt, PHASE_IDLE) : ctx->game.phase) {
                 case PHASE_IDLE:
                     break;
                     

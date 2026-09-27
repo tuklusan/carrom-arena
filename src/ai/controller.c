@@ -173,6 +173,11 @@ struct ArenaController {
     int candidate_count;
 };
 
+/* The break stroke: pick among the best BREAK_CHOICES candidates and multiply the aim and power errors */
+#define BREAK_CHOICES 5
+#define BREAK_AIM_SCALE 8.0f      /* 8 x 0.008 rad = about +/-3.7 degrees */
+#define BREAK_POWER_SCALE 5.0f    /* 5 x 0.02 = +/-0.10 of full power */
+
 static ShotPlan arena_decide(Controller* self, const DecisionSnapshot* snap, PCG32* rng) {
     struct ArenaController* impl = (struct ArenaController*)self->impl_state;
     
@@ -239,8 +244,29 @@ static ShotPlan arena_decide(Controller* self, const DecisionSnapshot* snap, PCG
     PCG32 noise_rng = *rng;
     noise_rng.state ^= ((uint64_t)snap->game->shots_played + 1u) * 0x9E3779B97F4A7C15ULL;
     (void)pcg32_random(&noise_rng);
-    float aim_noise = self->profile.aim_noise_std * (pcg32_random_float(&noise_rng) * 2.0f - 1.0f);
-    float power_noise = self->profile.power_noise_std * (pcg32_random_float(&noise_rng) * 2.0f - 1.0f);
+    float aim_scale = 1.0f, power_scale = 1.0f;
+    if (!snap->game->board.break_made) {
+        /* The break: games must not open with the same stroke. Choose at random among the few best candidates (a different
+         * placement, aim and power each time) and shoot with a wider error than the expert accuracy of the rest of the game. */
+        int top[BREAK_CHOICES];
+        int n = 0;
+        for (int k = 0; k < BREAK_CHOICES; k++) {
+            int pick = -1;
+            for (int i = 0; i < impl->candidate_count; i++) {
+                bool taken = false;
+                for (int m = 0; m < n; m++) if (top[m] == i) taken = true;
+                if (taken || !impl->candidates[i].sim_valid) continue;
+                if (pick < 0 || impl->candidates[i].score > impl->candidates[pick].score) pick = i;
+            }
+            if (pick < 0) break;
+            top[n++] = pick;
+        }
+        if (n > 0) best_plan = impl->candidates[top[pcg32_random_bounded(&noise_rng, (uint32_t)n)]].plan;
+        aim_scale = BREAK_AIM_SCALE;
+        power_scale = BREAK_POWER_SCALE;
+    }
+    float aim_noise = aim_scale * self->profile.aim_noise_std * (pcg32_random_float(&noise_rng) * 2.0f - 1.0f);
+    float power_noise = power_scale * self->profile.power_noise_std * (pcg32_random_float(&noise_rng) * 2.0f - 1.0f);
     best_plan.aim_angle = math_wrap_angle(best_plan.aim_angle + aim_noise);
     best_plan.power = math_clamp(best_plan.power + power_noise, 0.0f, 1.0f);
     best_plan.rng_draw = pcg32_random(&noise_rng);

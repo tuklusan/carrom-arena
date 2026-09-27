@@ -1,8 +1,9 @@
 name: CI
 
 # All logic lives in build/build.py (run it by hand for a manual build). This file only picks runners and calls it.
-# admit: the queue gate. At most one job per runner kind runs (concurrency group below) and at most one waits; a run that
-# would be the second waiting job for a kind is rejected and this run fails.
+# admit: the queue gate. It takes one of two tickets per runner kind (atomic git-ref creation, see build/build.py); no ticket
+# means the queue for that kind is full (one running, one waiting) and the run is rejected. At most one job per runner kind runs
+# (concurrency group below); the ticket is given back by the last step of the build job.
 on:
   push:
     branches: [main]
@@ -17,6 +18,9 @@ permissions:
 jobs:
   admit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
     outputs:
       runners: ${{ steps.gate.outputs.runners }}
       rejected: ${{ steps.gate.outputs.rejected }}
@@ -33,6 +37,9 @@ jobs:
     if: ${{ always() && needs.admit.outputs.runners != '' && needs.admit.outputs.runners != '[]' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: read
     concurrency:
       group: carrom-${{ matrix.runner }}
       cancel-in-progress: false
@@ -52,6 +59,11 @@ jobs:
           path: out/dist/*
           if-no-files-found: warn
           retention-days: 30
+      - if: always()
+        run: $(command -v python3 || command -v python) build/build.py release --kind ${{ matrix.runner }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   verdict:
     needs: [admit, build]

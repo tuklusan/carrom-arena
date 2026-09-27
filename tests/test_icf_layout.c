@@ -5,6 +5,7 @@
 #include "common/vecmath.h"
 #include "common/types.h"
 #include "game/board.h"
+#include "common/rng.h"
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -99,10 +100,8 @@ static int compare_slot(const void* a, const void* b) {
     return (d > 0.0f) - (d < 0.0f);
 }
 
-void test_ICF_Layout_Rule41a_First_Row_Alternates(void) {
-    BoardState board;
-    board_state_init(&board);
-    board_setup_initial_formation(&board, NULL);
+static void check_first_row(const BoardState* bp) {
+    BoardState board = *bp;
     float r = PIECE_RADIUS_NORM;
 
     RingSlot inner[6];
@@ -118,10 +117,8 @@ void test_ICF_Layout_Rule41a_First_Row_Alternates(void) {
     }
 }
 
-void test_ICF_Layout_Rule41a_Second_Row_Y_And_Alternation(void) {
-    BoardState board;
-    board_state_init(&board);
-    board_setup_initial_formation(&board, NULL);
+static void check_second_row_and_y(const BoardState* bp) {
+    BoardState board = *bp;
     float r = PIECE_RADIUS_NORM;
 
     RingSlot second[12];
@@ -161,6 +158,41 @@ void test_ICF_Layout_Rule41a_Second_Row_Y_And_Alternation(void) {
     TEST_ASSERT_EQUAL_INT_MESSAGE(3, y_arms, "the Y has three arms");
 }
 
+void test_ICF_Layout_Rule41a_First_Row_Alternates(void) {
+    BoardState board;
+    board_state_init(&board);
+    board_setup_initial_formation(&board, NULL);
+    check_first_row(&board);
+}
+
+void test_ICF_Layout_Rule41a_Second_Row_Y_And_Alternation(void) {
+    BoardState board;
+    board_state_init(&board);
+    board_setup_initial_formation(&board, NULL);
+    check_second_row_and_y(&board);
+}
+
+/* The Laws do not say which way the Y points: with a random stream the whole formation is turned by a random angle. Rule 41(a)
+ * must hold at every angle, and different seeds must give different orientations. */
+void test_ICF_Layout_Random_Rotation_Keeps_Rule41a(void) {
+    float first_angle[8];
+    for (int k = 0; k < 8; k++) {
+        RNGContext rng;
+        rng_context_init(&rng, 1000 + (uint64_t)k);
+        BoardState board;
+        board_state_init(&board);
+        board_setup_initial_formation(&board, &rng);
+        check_first_row(&board);
+        check_second_row_and_y(&board);
+        TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.0f, board.pieces[QUEEN_ID].position.x);
+        TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.0f, board.pieces[QUEEN_ID].position.y);
+        first_angle[k] = atan2f(board.pieces[0].position.y, board.pieces[0].position.x);
+    }
+    int distinct = 0;
+    for (int k = 1; k < 8; k++) if (fabsf(first_angle[k] - first_angle[0]) > 1e-3f) distinct++;
+    TEST_ASSERT_TRUE_MESSAGE(distinct >= 6, "different seeds must turn the starting formation differently");
+}
+
 void test_ICF_Layout_No_Overlaps(void) {
     BoardState board;
     board_state_init(&board);
@@ -185,6 +217,7 @@ int main(void) {
     RUN_TEST(test_ICF_Layout_Geometric_And_Symmetry);
     RUN_TEST(test_ICF_Layout_Rule41a_First_Row_Alternates);
     RUN_TEST(test_ICF_Layout_Rule41a_Second_Row_Y_And_Alternation);
+    RUN_TEST(test_ICF_Layout_Random_Rotation_Keeps_Rule41a);
     RUN_TEST(test_ICF_Layout_No_Overlaps);
     return UNITY_END();
 }

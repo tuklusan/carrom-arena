@@ -103,7 +103,7 @@ static float idle_wave(int seat, int k, float t) {
  * argument keeps the old name: TEAM_WHITE draws red, TEAM_BLACK blue.) */
 /* A robot player, seen from above: antenna and head at the seat, arms, shoulders and a chest panel reaching toward the board.
  * `angle` is the direction pointing away from the board (as the old figures used it), so the body extends the other way. */
-static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float halo_pulse, float alpha, int seat, float t) {
+static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float alpha, int seat, float t) {
     Vec2 screen = math_world_to_screen(vp, world_pos);
     float fref = (float)L->board_size * FIG_SCALE;
     float hr = fref / 25.0f;                       /* head half-size */
@@ -165,13 +165,6 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     DrawLineEx(a0, a1, 2.0f, line);
     DrawCircleV(a1, hr * 0.3f, is_current_turn ? COLOR_TURN_HIGHLIGHT : base);
     DrawCircleLines((int)a1.x, (int)a1.y, hr * 0.3f, line);
-
-    /* if it is this robot's turn, a pulsing gold halo ring around the head */
-    if (is_current_turn) {
-        float halo_r_inner = L->figure_halo_base_r + halo_pulse * 5.0f * L->figure_scale;
-        float halo_r_outer = halo_r_inner + 2.0f * L->figure_scale;
-        DrawRing((Vector2){ screen.x, screen.y }, halo_r_inner, halo_r_outer, 0, 360, 32, COLOR_TURN_HIGHLIGHT);
-    }
 }
 
 /* -----------------------------------------------------------------------------
@@ -437,7 +430,7 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     bool is_thinking_or_preview = (game_phase == PHASE_THINKING || game_phase == PHASE_AIM_PREVIEW);
     (void)is_thinking_or_preview;   /* the figures no longer fade; waiting robots animate instead */
     
-    // Current time for halo pulse animation
+    // Current time for the robots' animations
     float current_time = (float)wall_time;
     
     // Per-seat figure world positions
@@ -467,10 +460,6 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     
     // NORTH seat (top) - WHITE team, faces down (angle = -PI/2) toward board center
     // Figure extends DOWNWARD from head. Head center at CUSHION_INNER_Y_NORTH + margin + body_length.
-    float halo_pulse_n = 0.0f;
-    if (current_turn_seat == SEAT_NORTH) {
-        halo_pulse_n = (sinf(current_time * 2.0f) * 0.5f + 0.5f); // 0-1 pulse
-    }
     
     // Fixed perpendicular coordinate (y) for NORTH: head at BOARD_BOUNDARY_Y_NORTH + figure_fixed_offset_world
     // figure_fixed_offset_world already includes margin + body_length
@@ -495,10 +484,6 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     
     // SOUTH seat (bottom) - WHITE team, faces up (angle = PI/2) toward board center
     // Figure extends UPWARD from head. Head center at BOARD_BOUNDARY_Y_SOUTH - margin - body_length.
-    float halo_pulse_s = 0.0f;
-    if (current_turn_seat == SEAT_SOUTH) {
-        halo_pulse_s = (sinf(current_time * 2.0f) * 0.5f + 0.5f);
-    }
     
     // Fixed perpendicular coordinate (y) for SOUTH: head at BOARD_BOUNDARY_Y_SOUTH - figure_fixed_offset_world
     // figure_fixed_offset_world already includes margin + body_length
@@ -519,10 +504,6 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     
     // EAST seat (right) - BLACK team, faces left (angle = PI) toward board center
     // Figure extends LEFTWARD from head. Head center should be RIGHT of board boundary by margin + body_length.
-    float halo_pulse_e = 0.0f;
-    if (current_turn_seat == SEAT_EAST) {
-        halo_pulse_e = (sinf(current_time * 2.0f) * 0.5f + 0.5f);
-    }
     
     // Fixed perpendicular coordinate (x) for EAST: head at BOARD_BOUNDARY_X_EAST + figure_fixed_offset_world
     // figure_fixed_offset_world already includes margin + body_length
@@ -543,10 +524,6 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     
     // WEST seat (left) - BLACK team, faces right (angle = 0) toward board center
     // Figure extends RIGHTWARD from head. Head center should be LEFT of board boundary by margin + body_length.
-    float halo_pulse_w = 0.0f;
-    if (current_turn_seat == SEAT_WEST) {
-        halo_pulse_w = (sinf(current_time * 2.0f) * 0.5f + 0.5f);
-    }
     
     // Fixed perpendicular coordinate (x) for WEST: head at BOARD_BOUNDARY_X_WEST - figure_fixed_offset_world
     // figure_fixed_offset_world already includes margin + body_length
@@ -608,10 +585,10 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
     }
 
     // Draw human figures for all four seats
-    draw_human_figure(vp, L, north_world, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH, halo_pulse_n, figure_alpha, SEAT_NORTH, current_time);
-    draw_human_figure(vp, L, south_world, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, halo_pulse_s, figure_alpha, SEAT_SOUTH, current_time);
-    draw_human_figure(vp, L, east_world, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_EAST, halo_pulse_e, figure_alpha, SEAT_EAST, current_time);
-    draw_human_figure(vp, L, west_world, M_PI, TEAM_BLACK, current_turn_seat == SEAT_WEST, halo_pulse_w, figure_alpha, SEAT_WEST, current_time);
+    draw_human_figure(vp, L, north_world, -M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_NORTH, figure_alpha, SEAT_NORTH, current_time);
+    draw_human_figure(vp, L, south_world, M_PI / 2.0f, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, figure_alpha, SEAT_SOUTH, current_time);
+    draw_human_figure(vp, L, east_world, 0.0f, TEAM_BLACK, current_turn_seat == SEAT_EAST, figure_alpha, SEAT_EAST, current_time);
+    draw_human_figure(vp, L, west_world, M_PI, TEAM_BLACK, current_turn_seat == SEAT_WEST, figure_alpha, SEAT_WEST, current_time);
     
     // Pockets
     float pocket_r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM);

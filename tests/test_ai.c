@@ -164,6 +164,35 @@ void test_ai_rng_isolation(void) {
     physics_destroy(pw);
 }
 
+/* The break must not be the same stroke every game: with the same formation, different seeds give different opening strokes */
+void test_ai_break_stroke_varies_with_seed(void) {
+    float aims[8];
+    for (int k = 0; k < 8; k++) {
+        RNGContext rng;
+        rng_context_init(&rng, 500 + (uint64_t)k);
+        Controller* ctrl = arena_controller_create(SEAT_NORTH, &STRATEGY_PROFILES[STRATEGY_AGGRESSIVE], &rng.streams[SEAT_NORTH]);
+        MatchState match;
+        match_state_init(&match);
+        GameState game;
+        game_state_init(&game, 12345);
+        game.turn_seat = SEAT_NORTH;
+        board_state_init(&game.board);
+        board_setup_initial_formation(&game.board, NULL);   /* the same formation for every seed */
+        TEST_ASSERT_FALSE(game.board.break_made);
+        PhysicsWorld* pw = physics_create();
+        PhysicsSnapshot* snap = physics_snapshot_create(pw);
+        DecisionSnapshot dsnap = { .match = &match, .game = &game, .board = &game.board, .physics = snap, .active_seat = SEAT_NORTH };
+        ShotPlan plan = ctrl->decide(ctrl, &dsnap, &rng.streams[SEAT_NORTH]);
+        aims[k] = plan.aim_angle;
+        controller_destroy(ctrl);
+        physics_snapshot_destroy(snap);
+        physics_destroy(pw);
+    }
+    int distinct = 0;
+    for (int k = 1; k < 8; k++) if (fabsf(aims[k] - aims[0]) > 1e-3f) distinct++;
+    TEST_ASSERT_TRUE_MESSAGE(distinct >= 5, "the break stroke must differ from seed to seed");
+}
+
 void test_shot_evaluator_scoring(void) {
     ShotCandidate candidate;
     shot_result_init(&candidate.sim_result);
@@ -223,6 +252,7 @@ int main(void) {
     
     RUN_TEST(test_baseline_controller_creates);
     RUN_TEST(test_arena_controller_creates);
+    RUN_TEST(test_ai_break_stroke_varies_with_seed);
     RUN_TEST(test_shot_candidates_placements);
     RUN_TEST(test_shot_candidates_generate);
     RUN_TEST(test_controller_fallback_shot);

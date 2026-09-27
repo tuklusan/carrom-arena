@@ -2,6 +2,7 @@
 #include "board.h"
 #include "types.h"
 #include "common/vecmath.h"
+#include "common/rng.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -60,7 +61,6 @@ void striker_state_init(StrikerState* striker, Seat seat) {
 #define OUTER_RING_RADIUS 0.08f
 
 void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
-    (void)rng;
 
     // 1. Reset all pieces to off-board first
     for (int i = 0; i < MAX_PIECES; i++) {
@@ -106,6 +106,18 @@ void board_setup_initial_formation(BoardState* board, RNGContext* rng) {
         float scale = 2.0f * math_sqrtf(3.0f) * r;
         positions[pos_idx-1].x *= scale;
         positions[pos_idx-1].y *= scale;
+    }
+
+    // The Laws (Rule 41) do not fix which way the Y points, so the whole formation is turned by a random angle: boards do not
+    // start alike. The turn keeps every coin's distance from the queen, so all of Rule 41(a) still holds. (No RNG: no turn.)
+    if (rng != NULL) {
+        float turn = pcg32_random_float(&rng->global) * 2.0f * (float)M_PI;
+        float c = cosf(turn), sn = sinf(turn);
+        for (int i = 0; i < 18; i++) {
+            float x = positions[i].x, y = positions[i].y;
+            positions[i].x = x * c - y * sn;
+            positions[i].y = x * sn + y * c;
+        }
     }
 
     // 4. Assign IDs by color: 0-8 White, 9-17 Black.
