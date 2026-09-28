@@ -1,6 +1,6 @@
 # Carrom Arena: RESUME playbook
 
-**Updated:** 2026-09-28 (UTC). Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
+**Updated:** 2026-09-28 (UTC), after the arm-side default fix. Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
 
 ## Repo state
 - `main` head: see `git log`; tag `beta-0.0.12` = the spinning-arms release; identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. The next tag is `beta-0.0.13` (only when the operator asks; never move existing tags).
@@ -381,6 +381,26 @@ having been checked against "parallel to the correct side of the robot." Cut to 
 robot still reads as alive without ever looking untucked. Verified visually: captured frames across a played session
 show all four seats, including east and west specifically, holding arms tucked parallel to the body while idle, and
 the actively-reaching seat still extends correctly toward the striker mid-shot.
+
+A seventh correction the same week (2026-09-28), and the one that finally matched what the operator actually asked for:
+"the left arm should always start and end at the left of the robot; the right arm should always start and end at the
+right side...the only exception is the transient frames where either arm is under use for a strike." The sixth fix's
+amplitude cut made idle sway small enough to stop looking splayed, but did not touch the real bug underneath, which a
+fresh screenshot of west and east robots exposed as a shapeless merged blob at the shoulder - both arms bunched at the
+body's own centreline, not on either side at all. Two distinct causes, found by direct code reading and confirmed with
+a diagnostic trace, not another screenshot: (1) the resting arm's rotation PIVOT has always correctly mirrored with
+`side_sign` (which arm reaches this shot), but the resting arm's own BOX COORDINATES were a hardcoded literal that
+never depended on `side_sign` at all - a leftover from before either arm could reach, when the resting arm was always
+the fixed left one; whenever `side_sign` flipped, the pivot moved to the new side but the drawn shape stayed on the
+old one. Fixed by mirroring the box's own coordinates with `side_sign` exactly the way the pivot already does. (2)
+`g_vis.arm_side[seat]` (`side_sign`) is zero-initialized like every float in the struct, but 0.0f is not neutral here:
+both arms' geometry is directly proportional to it, so at exactly 0 - true for any seat before its own first shot of
+the whole game - both arms collapse to the centreline together. A trace confirmed it immediately: `side_sign=0,
+idle_side=-0, pivot_v=0.000`, the idle arm's two corners landing on the exact same point, for every seat sampled
+before its first shot. Fixed with a sane non-zero default, overwritten the instant a real shot decides the real side.
+Verified visually across a full played session (100 sampled frames): west and east both show two arms correctly split
+to opposite sides of the body from the very first frame - before either has taken a shot - and stay correctly split
+through many turns afterward.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
