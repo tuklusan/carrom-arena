@@ -163,14 +163,22 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     float u_to_striker = sdx * f.back.x + sdy * f.back.y;
     float v_to_striker = sdx * f.right.x + sdy * f.right.y;
     float striker_r = math_world_to_screen_dist(vp, STRIKER_RADIUS_NORM);
-    float u_near = u_to_striker - striker_r * 1.05f;   /* just short of the striker's NEAR side: where the arm ends and the fingers begin */
-    float u_far = u_to_striker + striker_r * 1.05f;    /* the striker's FAR side: where the flicking fingers reach to */
 
     /* Target direction and reach-length, measured from the PIVOT (not from the body origin): this is what the arm
-     * rotates to face and how far it telescopes, so both are inherently pivot-relative and cannot drift. */
+     * rotates to face and how far it telescopes, so both are inherently pivot-relative and cannot drift.
+     * `r_near`/`r_far` used to be built by shifting only the U-component of the striker's position by the striker's
+     * radius, reusing the SAME v_to_striker for both - which only lands ON the striker's circle when the pivot-to-
+     * striker line happens to run parallel to the body's u-axis. For any other angle that point drifts off the circle,
+     * so the fingers reached partway INTO the striker rather than to its true near/far edge - looking like they closed
+     * on the centre instead of the rim (the operator: "the arm...seems to reach the center of the striker"). Fixed by
+     * measuring the true straight-line (radial) distance from the pivot to the striker's centre and stepping the
+     * striker's own radius off ALONG THAT SAME LINE: `r_near` lands exactly on the striker's near rim and `r_far`
+     * exactly on its far rim - diametrically opposite, through the centre, along the real approach direction - however
+     * that line happens to be angled. */
+    float dist_to_striker_center = sqrtf((u_to_striker - pu) * (u_to_striker - pu) + (v_to_striker - pivot_v) * (v_to_striker - pivot_v));
     float theta_target = atan2f(v_to_striker - pivot_v, u_to_striker - pu);
-    float r_near = sqrtf((u_near - pu) * (u_near - pu) + (v_to_striker - pivot_v) * (v_to_striker - pivot_v));
-    float r_far  = sqrtf((u_far  - pu) * (u_far  - pu) + (v_to_striker - pivot_v) * (v_to_striker - pivot_v));
+    float r_near = dist_to_striker_center - striker_r * 1.05f;
+    float r_far  = dist_to_striker_center + striker_r * 1.05f;
 
     float ang = (is_current_turn) ? lerp_angle_shortest(arm_spin, theta_target, reach) : flap_r;   /* the one rotation: spin easing into aiming */
     if (is_current_turn) flap_r = ang;   /* fingers below reuse flap_r as the shared rotation */
