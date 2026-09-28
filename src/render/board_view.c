@@ -199,9 +199,7 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
      * instead of swinging with the body's own approach (the operator, an earlier report: "the telescoping arms...are
      * extending too much...crossing beyond the required exact distance"). Measured from the FINAL pose, using the
      * SAME fixed-contact-point geometry above (never the old pivot-relative one), this distance is a true constant
-     * for the whole reach. `r_far` is not a second independently-aimed point at all (the arm cannot point at two
-     * different spots at once) - it is simply the first point PLUS the striker's own diameter, continuing straight on
-     * along the same, now-correct, ray the fingers are already reaching along. */
+     * for the whole reach. */
     float final_u_to_striker = ffdx * final_f.back.x + ffdy * final_f.back.y;
     float final_near_u = final_u_to_striker - striker_r * 1.05f, final_near_v = final_v_to_striker;
     float r_near = sqrtf((final_near_u - pu) * (final_near_u - pu) + (final_near_v - pivot_v) * (final_near_v - pivot_v));
@@ -212,11 +210,11 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
      * those two pivots are in different places, so a length correct for the final pivot can still carry the rendered
      * tip past the striker's true edge as measured from where the arm is actually being drawn right now. Fixed with a
      * hard geometric clamp: the LIVE distance to the same fixed contact point is computed fresh every frame and used
-     * only as a ceiling (never as the smooth target, so it cannot reintroduce jitter) - the arm can never be drawn
-     * past the striker's true edge, in either direction, at any point in the motion. */
+     * only as a ceiling (never as the smooth target, so it cannot reintroduce jitter) - the arm (the hand's own tip;
+     * see below on the fingers) can never be drawn past the striker's true edge, in either direction, at any point in
+     * the motion. */
     float r_near_live_limit = sqrtf((near_u - pu) * (near_u - pu) + (near_v - pivot_v) * (near_v - pivot_v));
     r_near = fminf(r_near, r_near_live_limit);
-    float r_far = r_near + 2.0f * striker_r * 1.05f;
 
     /* Resting (reach = 0) lengths along the pivot's own local +u axis - identical to the old resting arm's distances
      * from this same pivot, so at reach = 0 the shape is unchanged from before. */
@@ -246,23 +244,11 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
         Vector2 p = robot_pt(&f, sh0 + 1.35f * hr, (float)k * 0.42f * hr);
         DrawCircleV(p, hr * 0.15f, eye);
     }
-    /* The hand of three telescoping fingers (thumb, index, middle), continuing on exactly from the stretched right hand's
-     * own tip (`len_hand_far`, still rotated by the SAME `ang` about the SAME pivot, so there is no gap): two of the
-     * three extend on to the striker's FAR side to flick it, chosen by `strike_side` (0 forward: thumb+middle; 1 left:
-     * thumb+index; 2 right: index+middle); the third stays short of the striker so it never touches it. Their v-fan is
-     * a constant offset either side of the arm's own axis (0), not the drifting centre the old code used. */
-    if (reach > 0.002f) {
-        float finger_active_len = len_hand_far + (r_far  - len_hand_far) * reach;
-        float finger_idle_len   = len_hand_far + (r_near - len_hand_far) * reach * 0.4f;
-        float thumb_len  = (strike_side == 0 || strike_side == 1) ? finger_active_len : finger_idle_len;
-        float index_len  = (strike_side == 1 || strike_side == 2) ? finger_active_len : finger_idle_len;
-        float middle_len = (strike_side == 0 || strike_side == 2) ? finger_active_len : finger_idle_len;
-        float thumb_v = pivot_v - 0.30f * hr, index_v = pivot_v, middle_v = pivot_v + 0.30f * hr;
-        float finger_hw = 0.07f * hr;
-        robot_rbox(&f, pu, pivot_v, reach_ang, pu + len_hand_far, pu + thumb_len,  thumb_v - finger_hw,  thumb_v + finger_hw,  dark, line);
-        robot_rbox(&f, pu, pivot_v, reach_ang, pu + len_hand_far, pu + index_len,  index_v - finger_hw,  index_v + finger_hw,  dark, line);
-        robot_rbox(&f, pu, pivot_v, reach_ang, pu + len_hand_far, pu + middle_len, middle_v - finger_hw, middle_v + finger_hw, dark, line);
-    }
+    /* Telescoping FINGERS (thumb, index, middle) used to continue on past the hand's own tip, all the way through to
+     * the striker's FAR side, to visually "flick" it - removed for now (2026-09-28), the operator: "take the fingers
+     * out; that logic is another whole software evolution, we will push it to a future enhancement." The hand alone
+     * (above) already reaches exactly to the striker's near rim, correctly and without overshoot; `strike_side` is
+     * still computed and passed in for whenever the finger mechanism is rebuilt, just unused for now. */
     /* shoulders */
     robot_box(&f, sh0, sh1, -1.45f * hr, 1.45f * hr, light, line);
     /* neck */
