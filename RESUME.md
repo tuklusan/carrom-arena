@@ -1,6 +1,6 @@
 # Carrom Arena: RESUME playbook
 
-**Updated:** 2026-09-28 (UTC), after the one-trace-file redesign. Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
+**Updated:** 2026-09-28 (UTC), after removing the reaching-arm feature entirely (robots now just wave). Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
 
 ## Repo state
 - `main` head: see `git log`; tag `beta-0.0.12` = the spinning-arms release; identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. The next tag is `beta-0.0.13` (only when the operator asks; never move existing tags).
@@ -485,6 +485,42 @@ them. Then downloaded and ran the actual Windows CI exe: it too produced exactly
 (87 valid records, correct `RUN_START` first), confirming the design works identically cross-platform. Full test
 suite: 24/24 (`flight_recorder_test` is gone with the subsystem it tested; the former log-file-size test in
 `test_trace_circular.c` is replaced with one that verifies the diag-sink integration itself).
+
+## The reaching-arm feature is GONE (2026-09-28) - robots now just wave
+The operator, after a full day of this session chasing one arm-position bug report after another: "the whole idea of
+the robots rotating and extending arms to strikers is becoming too complex and too hard to get right... let us keep
+it simple. Idle robots wave their hands slowly, each robot in a different way. The active robot, when actually making
+a strike, spins his hand rapidly during striker placement to striker launch, then goes back to lazy waving hands."
+
+Rather than fix it a tenth time, it was deleted. Gone entirely: the robot sliding along its own outside-the-board
+line and turning to face the shot as the aim line grew (`closest_standing_point()` and the whole per-seat
+`aim_pose_pos`/`aim_pose_angle` latch); the telescoping arm reaching across the cushion to the striker (`theta_target`,
+the live-distance clamp, the length/width lerp-to-target math); the "which arm reaches" side selection
+(`arm_side`/`side_sign`) and the now-doubly-unused finger-flick classification that fed it
+(`classify_strike_side` - the fingers themselves were removed even earlier); the three-state withdrawal machine that
+eased both arms back to neutral after a reach; the "excited flapping" of the non-reaching arm and its later "parked"
+fix. Every one of these had its own bug, its own fix, its own trace-verified confirmation, across nine separate
+rounds this same day - the whole mechanism was simply too complex to keep getting right.
+
+A robot now always stands at its one fixed seat position and its one fixed default facing angle, for the entire
+game - no sliding, no rotating, ever. Both arms are always at the same resting length; only their rotation angle
+changes, and only one of two ways: `idle_wave()` (unchanged - every seat's own irregular frequency/phase, so no two
+robots ever move in lockstep), or, for whichever single seat is between striker placement and launch
+(`is_placement || is_aim_preview` for the current-turn seat), a fast, matched spin on both arms at once (reusing the
+old "excited" spin formula, now applied symmetrically instead of to whichever arm wasn't reaching). The moment the
+shot fires or the turn moves on, that seat drops straight back to idle-waving - there is no transition left to ease,
+because there is no longer a target angle to ease from.
+
+`VisualState` shrank from thirteen per-seat animation fields to none beyond what pre-dated this whole feature
+(`striker`/`fig`/`was_gone`/`appear` - unrelated position/fade-in tracking); `draw_human_figure()`'s signature
+dropped six parameters (reach, striker_world, strike_side, arm_spin, final_pos, final_angle_param) for one
+(`hands_spin_fast`). Net: `board_view.c` dropped from 1080 to 716 lines. Verified: clean build, 24/24 tests untouched
+(none exercised the removed machinery directly); captured a played session and confirmed visually - all four robots
+stay planted at their fixed corners/edges the whole time, and the currently-placing/aiming seat's arms visibly
+rotate between consecutive 0.3s-apart frames (a second arm swings into view between two samples that would
+otherwise look identical), confirming the fast spin is real motion, not a stuck frame, while every other seat shows
+the slower per-seat idle sway throughout. This also closes out the still-unreproduced arm-position report from
+just before it: there is no longer any position or rotation logic left for that report to have been about.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
