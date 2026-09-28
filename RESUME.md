@@ -1,6 +1,6 @@
 # Carrom Arena: RESUME playbook
 
-**Updated:** 2026-09-26 (UTC). Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
+**Updated:** 2026-09-28 (UTC). Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
 
 ## Repo state
 - `main` head: see `git log`; tag `beta-0.0.12` = the spinning-arms release; identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. The next tag is `beta-0.0.13` (only when the operator asks; never move existing tags).
@@ -366,6 +366,21 @@ hold right before a shot fires is never mistaken for withdrawal already starting
 both arms' current angles are captured once and eased from there back to exactly 0 purely as a function of `reach`
 itself falling to 0. Verified with a per-frame trace across six boards: at every one of 89 sampled withdrawal-tail
 windows, both angles converge to under one degree of true neutral.
+
+A sixth correction the same week (2026-09-28): the fifth fix's state machine held up under trace, but the operator sent
+another screenshot - an east robot with both arms in an asymmetric, outward-splayed "V", well after its turn and after
+two more turns had passed. Rather than re-suspect the withdrawal transition (already trace-verified 89/89), this time
+the idle-waving that takes over once a seat is fully at rest was checked, and it had never been examined against the
+canonical rule at all: `idle_wave()` (range roughly -1..1) was scaled by `0.9f` for each resting arm independently -
+about 51 degrees of swing per arm. The state machine genuinely does land both arms at exact neutral the instant `reach`
+hits 0; idle-waving then immediately took over and was free to swing either arm up to 51 degrees off the body, and at
+an unlucky phase (both arms swung outward at once) that is indistinguishable, in a screenshot, from "arms not in their
+normal positions" - even though nothing was stuck or broken in the transition logic itself. This is a different bug
+from any of the previous five: not a transition/state-machine defect but the resting animation's own amplitude never
+having been checked against "parallel to the correct side of the robot." Cut to `0.15f` (about 8 degrees) so a waiting
+robot still reads as alive without ever looking untucked. Verified visually: captured frames across a played session
+show all four seats, including east and west specifically, holding arms tucked parallel to the body while idle, and
+the actively-reaching seat still extends correctly toward the striker mid-shot.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
