@@ -75,58 +75,19 @@ typedef struct {
     bool fig_valid;
     bool was_gone;      /* the striker fell into a pocket during the last shot */
     float appear;       /* 0..1 fade-in of a fresh striker handed to the next player */
-    float reach[4];           /* 0..1 per seat: how far into the "moved to the shot line and reaching" pose */
-    Vec2 aim_pose_pos[4];     /* where that seat stands at reach=1: on ITS OWN fixed outside-the-board line, never on the board */
-    float aim_pose_angle[4];  /* which way it faces at reach=1 */
-    int aim_pose_side[4];     /* 0 forward, 1 left, 2 right: which pair of fingers flicks the strike, see draw_human_figure */
-    Vec2 aim_pose_striker[4]; /* the striker's own RESTING position while this seat is planning/taking its shot - frozen the
-                               * moment reach starts, so the reaching arm's length keeps targeting where the striker WAS,
-                               * never where it flies to after being struck (see draw_human_figure) */
-    float arm_spin[4];        /* the right arm's spin angle, held here the instant it starts telescoping so it can ease to 0 smoothly */
-    float arm_side[4];         /* +1/-1: which arm reaches, LATCHED the same moment as aim_pose_* below and for the same
-                                * reason - recomputing it fresh every frame let it flip mid-reach for a near-dead-straight
-                                * shot (the operator: "both arms are ending up on the same side or the striking arm is
-                                * suddenly swapping...in a jerky weird flipping"); see draw_human_figure. 0 = undecided. */
-    bool aim_preview_active[4]; /* was this seat's aim preview running LAST frame - the true "a new shot just started"
-                                 * signal the aim_pose_* latch now uses instead of `reach < 0.002f` (2026-09-28, the
-                                 * operator, on a west robot mid-reach: "the...extended arm does not match the striker's
-                                 * vector", and an east robot that "never recovered its right arm"). An extra turn (a
-                                 * pocketed coin) can hand the SAME seat two shots back to back faster than the ~0.4s
-                                 * withdrawal takes to finish, so `reach` may never dip back under that threshold
-                                 * between them - the old latch then never re-fired, and the robot kept reaching for a
-                                 * target frozen from the shot before last for the ENTIRE new shot. This flag catches
-                                 * the actual moment a new aim preview begins for a seat, regardless of what `reach`
-                                 * still happens to be. */
-    float reach_peak_seen[4];   /* the running maximum of `reach` since this seat last returned fully to rest - how
-                                 * draw_human_figure tells "still extending, or holding at full reach" apart from
-                                 * "now genuinely withdrawing", instead of a fragile frame-to-frame reach comparison
-                                 * that would misfire during the flat hold right before a shot fires (2026-09-28, the
-                                 * operator's canonical rule: both arms must fully collapse to their normal position
-                                 * before idle-waving resumes). Reset to 0 once the seat is fully back at rest. */
-    bool was_shrinking[4];      /* was `reach` genuinely below its own peak LAST frame - the edge this is latched on */
-    float withdrawal_reach_ang[4]; /* the reaching arm's own angle, captured the instant real withdrawal begins */
-    float withdrawal_idle_ang[4];  /* the OTHER (flapping) arm's angle, captured at that same instant */
-    float withdrawal_peak_reach[4]; /* `reach` at that same instant, so the blend back to neutral is correctly
-                                     * normalised even if the peak wasn't exactly 1.0 */
 } VisualState;
 
-/* DEFAULT ARM SIDE (2026-09-28, found by direct trace after the operator's screenshot showed west and east
- * robots with both arms merged into a shapeless blob on the body's own centreline, not off to either side at
- * all): `arm_side` starts, like every other float in this struct, implicitly zeroed - but 0.0f is not a
- * neutral default here the way it is for the others. It is read as `side_sign`, and both the reaching arm's
- * pivot (`side_sign * ...`) and, since the last fix, the idle arm's own box coordinates (`idle_side * ...`,
- * where `idle_side = -side_sign`) are directly proportional to it - so at exactly 0 BOTH arms collapse to
- * v = 0, the body's own centreline, for any seat that has not yet taken its first shot of the whole game.
- * That is exactly the merged-blob shape in the screenshot, and it explains why it was seen on east and west
- * specifically: seats later in turn order that simply had not had a shot yet when the screenshot was taken,
- * not a left/right mix-up at all. `arm_side` is latched to a real +1/-1 the instant a seat's first shot
- * begins, so this only ever matters before that - but a robot standing with both arms invisibly bunched at
- * its centre, for however brief a time, is still a real violation of "joined to the shoulder, parallel to
- * the correct side of the robot". Given each of the two arms, by construction, is always on the OPPOSITE
- * side from the other (`idle_side = -side_sign`), any consistent non-zero default is correct here; +1 is as
- * good as any and gets overwritten the moment a real shot decides the real side. */
-static VisualState g_vis = { .appear = 1.0f, .arm_side = { 1.0f, 1.0f, 1.0f, 1.0f } };
-static float lerp_angle_shortest(float a, float b, float t);   /* used by draw_human_figure, defined later */
+/* SIMPLIFIED ARMS (2026-09-28, the operator: "the whole idea of the robots rotating and extending arms to
+ * strikers is becoming too complex and too hard to get right... let us keep it simple"). Removed entirely:
+ * the robot sliding along its own line and turning to face the shot, the telescoping reach toward the
+ * striker, and the "which arm reaches" side selection - the source of most of this feature's whole bug
+ * history (a wrong angle convention, a standing-position exclusion-guard bug, arms merging at the centreline,
+ * arms frozen mid-reach, an "excited" spin reaching thousands of degrees...). A robot now always stands at
+ * its one fixed seat position, facing its one fixed default direction, for the whole game. Both arms just
+ * wave - slowly and idly most of the time, each robot's own irregular pattern (`idle_wave` below, unchanged);
+ * rapidly, in lock-step with each other, for whichever seat is between striker placement and launch. See
+ * draw_human_figure() and the per-seat `hands_spin_fast` computation in board_view_draw(). */
+static VisualState g_vis = { .appear = 1.0f };
 
 /* A rectangle in the robot's own frame: u runs from the head toward the board, v to the robot's right. */
 typedef struct { Vec2 o, back, right; } RobotFrame;
@@ -171,7 +132,15 @@ static float idle_wave(int seat, int k, float t) {
  * argument keeps the old name: TEAM_WHITE draws red, TEAM_BLACK blue.) */
 /* A robot player, seen from above: antenna and head at the seat, arms, shoulders and a chest panel reaching toward the board.
  * `angle` is the direction pointing away from the board (as the old figures used it), so the body extends the other way. */
-static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float alpha, int seat, float t, float reach, Vec2 striker_world, int strike_side, float arm_spin, Vec2 final_pos, float final_angle_param) {
+/* The robots belong to the PAIRS, not to a coin colour: north/south are always red, east/west always blue. (The `team`
+ * argument keeps the old name: TEAM_WHITE draws red, TEAM_BLACK blue.) */
+/* A robot player, seen from above: antenna and head at the seat, arms, shoulders and a chest panel reaching toward the board.
+ * `angle` is the direction pointing away from the board (as the old figures used it), so the body extends the other way.
+ * `hands_spin_fast` is the whole of the "is this robot doing something" logic now (2026-09-28, see the VisualState
+ * comment above): true for exactly the seat between striker placement and launch, false otherwise - both arms just
+ * spin briskly in that one case, and idle-wave, each robot its own way, in every other. No reach, no rotation to face
+ * the shot, no which-arm-reaches decision: the body stands at `world_pos`/`angle` exactly as given, always. */
+static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, float angle, Team team, bool is_current_turn, float alpha, int seat, float t, bool hands_spin_fast) {
     Vec2 screen = math_world_to_screen(vp, world_pos);
     float fref = (float)L->board_size * FIG_SCALE;
     float hr = fref / 25.0f;                       /* head half-size */
@@ -193,211 +162,32 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     float sh1 = sh0 + 0.75f * hr;
     float torso_end = sh0 + fref / 12.0f;          /* same reach as the old figure */
 
-    /* arms hang from the shoulders, with square hands; a waiting robot flaps each arm on its own, swinging about the shoulder.
-     *
-     * ROOT-CAUSE FIX (2026-09-27, third pass): a deep per-frame trace (shoulder pivot vs. the arm's own rendered near
-     * corner, logged for every frame of every reach) showed the gap between them growing CONTINUOUSLY with `reach` -
-     * not a transient during rotation, but on every single strike, up to 300px at full extension, on all four seats.
-     * Root cause: the reaching arm was an axis-aligned box in body (u,v) space whose v0/v1 (BOTH corners at the near,
-     * shoulder-side edge AND the far, hand-side edge share the same v-range) were interpolated together toward the
-     * striker's v-offset. That SLIDES the whole box sideways as reach grows - including the near edge, which is
-     * supposed to stay AT the shoulder - so the near edge drifts away from the true pivot in direct proportion to
-     * reach. Rotating that same box by `flap_r` (which eases to 0) does not fix this: at flap_r = 0 the "rotation" is
-     * the identity, so the drifted box is drawn exactly where the drifted numbers put it, with nothing anchoring it
-     * back to the shoulder.
-     *
-     * Correct model: the arm is a RIGID shape - fixed length and width in its own local axes - that only ROTATES about
-     * the true, fixed shoulder pivot (never moves sideways) and TELESCOPES (extends) along its own local axis as reach
-     * grows. Its near (shoulder) corner sits at zero offset from the pivot in u and a small, CONSTANT offset in v, so
-     * after any rotation it stays within that same small, bounded distance of the pivot - it can never drift off
-     * arbitrarily far the way a laterally-shifting box could. The one rotation angle carries both jobs the old
-     * `flap_r` had (easing the spin to a stop) and the new aiming job (turning to point at the striker), blended
-     * together as `reach` goes 0 to 1, so the arm visibly swings from its spin into pointing at the striker as it
-     * extends - one continuous, physically coherent motion. */
+    /* Both arms hang from the shoulders at fixed length, with square hands - the same resting geometry the old
+     * reaching arm eased back to at reach=0, now simply the ONLY geometry, since nothing ever extends any more. */
     float arm_v = 1.3f * hr;
     float pu = sh0 + 0.1f * hr;
+    float len_fore      = (torso_end - 0.2f  * hr) - pu;
+    float len_hand_near = (torso_end - 0.55f * hr) - pu;
+    float len_hand_far  = (torso_end + 0.15f * hr) - pu;
+    float hw_fore = 0.20f * hr;
+    float hw_hand = 0.25f * hr;
 
-    /* Where the striker sits in THIS robot's own (u,v) terms, recomputed fresh every frame from the CURRENT, live body
-     * frame `f` - the same frame everything else about the arm is drawn in, so the target can never fall out of step
-     * with the frame used to draw it (an earlier fix's mistake). */
-    Vec2 s_screen = math_world_to_screen(vp, striker_world);
-    float sdx = s_screen.x - screen.x, sdy = s_screen.y - screen.y;
-    float u_to_striker = sdx * f.back.x + sdy * f.back.y;
-    float v_to_striker = sdx * f.right.x + sdy * f.right.y;
-    float striker_r = math_world_to_screen_dist(vp, STRIKER_RADIUS_NORM);
-
-    /* Which arm reaches: whichever SIDE the striker is actually on, so the arm never has to cross in front of the body
-     * (the operator: "have the robots use...the left arm if...easier to get to the striker"). Decided from the body's
-     * FINAL settled pose (`final_pos`/`final_angle_param`, already computed once per shot and held fixed) rather than
-     * the live, still-moving one, so the choice cannot flicker mid-turn as the body is still sliding into place. */
-    Vec2 final_screen = math_world_to_screen(vp, final_pos);
-    Vec2 final_away = { cosf(final_angle_param), sinf(final_angle_param) };
-    RobotFrame final_f = { final_screen, { -final_away.x, -final_away.y }, { final_away.y, -final_away.x } };
-    float ffdx = s_screen.x - final_screen.x, ffdy = s_screen.y - final_screen.y;
-    float final_v_to_striker = ffdx * final_f.right.x + ffdy * final_f.right.y;
-    /* Which arm reaches is decided once, in the outer per-seat update loop, the moment this shot's aim preview actually
-     * begins (not merely whenever `reach` happens to dip near 0 - an extra turn can start a new shot before that ever
-     * happens; see the loop for the full story). Just read the decision here. */
-    float side_sign = g_vis.arm_side[seat];   /* +1 = right arm reaches, -1 = left arm reaches */
-
-    /* `reaching_active` stays true for as long as `reach` itself is still meaningfully above 0, regardless of whose
-     * turn the game now says it is (2026-09-28: the game hands the turn to the NEXT seat as soon as a shot resolves,
-     * well before this seat's own visual withdrawal has actually finished, since that easing is purely cosmetic and
-     * the game logic has no reason to wait for it). The actual flap/reach angles are worked out further down, once
-     * `theta_target` is available - see there for the full withdrawal story. */
-    bool reaching_active = is_current_turn || reach > 0.002f;
-    float pivot_v = side_sign * (arm_v + 0.2f * hr);   /* the TRUE shoulder pivot for the reaching arm, on whichever side: (pu, pivot_v), fixed regardless of reach */
-
-    /* THE CONTACT POINT (2026-09-28, found from the operator's own screenshot: the hand was reaching to the side of the
-     * striker instead of the side diametrically opposite the shot's own arrowhead direction - "no realistic physical
-     * way that hand can launch the striker in the direction of the arrowhead"). Root cause: the target the arm aimed
-     * at was "whichever point on the striker's circle is closest to the ARM'S PIVOT" (found via atan2 from the pivot
-     * to the striker's CENTRE) - not the point fixed by the shot itself. Those are different points whenever the
-     * pivot sits off the aim line, which it always does a little (the arm attaches to the SIDE of the body, not its
-     * centre) and can do a lot for a close-in shot - exactly the case in the screenshot. The correct contact point is
-     * NOT "nearest the pivot": it is the FIXED point on the striker's rim, diametrically opposite the direction the
-     * striker is meant to travel, however near or far the pivot happens to be from it. Since this robot's body
-     * already faces along that exact direction (`f.back`/`final_f.back`, by construction, always equal the shot's own
-     * aim direction), that point is simply the striker's centre offset by the striker's radius along the frame's own
-     * +u axis - a pure `u` shift, `v` untouched - true for every seat and every angle, with no per-shot geometry
-     * needed at all. The PIVOT no longer decides WHERE that point is; it only decides the rotation and length needed
-     * to reach it. */
-    float near_u = u_to_striker - striker_r * 1.05f, near_v = v_to_striker;   /* the live, correct contact point: aims the ROTATION */
-    float theta_target = atan2f(near_v - pivot_v, near_u - pu);
-
-    /* `r_near` is a LENGTH, not a (u,v) point, so - unlike a direction or a coordinate - it can safely be measured
-     * against the body's FINAL settled position instead of its live, still-moving one, to keep it growing smoothly
-     * instead of swinging with the body's own approach (the operator, an earlier report: "the telescoping arms...are
-     * extending too much...crossing beyond the required exact distance"). Measured from the FINAL pose, using the
-     * SAME fixed-contact-point geometry above (never the old pivot-relative one), this distance is a true constant
-     * for the whole reach. */
-    float final_u_to_striker = ffdx * final_f.back.x + ffdy * final_f.back.y;
-    float final_near_u = final_u_to_striker - striker_r * 1.05f, final_near_v = final_v_to_striker;
-    float r_near = sqrtf((final_near_u - pu) * (final_near_u - pu) + (final_near_v - pivot_v) * (final_near_v - pivot_v));
-
-    /* SECOND overshoot source (2026-09-28, an earlier report): even though the LENGTH target above is a stable
-     * constant, it is measured against the body's FINAL position while the arm is actually DRAWN from the body's
-     * LIVE, still-moving one (needed so its rotation and shape stay attached). While the body has not yet arrived,
-     * those two pivots are in different places, so a length correct for the final pivot can still carry the rendered
-     * tip past the striker's true edge as measured from where the arm is actually being drawn right now. Fixed with a
-     * hard geometric clamp: the LIVE distance to the same fixed contact point is computed fresh every frame and used
-     * only as a ceiling (never as the smooth target, so it cannot reintroduce jitter) - the arm (the hand's own tip;
-     * see below on the fingers) can never be drawn past the striker's true edge, in either direction, at any point in
-     * the motion. */
-    float r_near_live_limit = sqrtf((near_u - pu) * (near_u - pu) + (near_v - pivot_v) * (near_v - pivot_v));
-    r_near = fminf(r_near, r_near_live_limit);
-
-    /* Resting (reach = 0) lengths along the pivot's own local +u axis - identical to the old resting arm's distances
-     * from this same pivot, so at reach = 0 the shape is unchanged from before. */
-    float fore_rest_len  = (torso_end - 0.2f  * hr) - pu;
-    float hand_near_rest = (torso_end - 0.55f * hr) - pu;
-    float hand_far_rest  = (torso_end + 0.15f * hr) - pu;
-
-    float len_fore_far  = fore_rest_len  + ((r_near - 0.35f * hr) - fore_rest_len)  * reach;
-    float len_hand_near = hand_near_rest + ((r_near - 0.5f  * hr) - hand_near_rest) * reach;
-    float len_hand_far  = hand_far_rest  + (r_near                - hand_far_rest)  * reach;
-    float hw_fore = 0.20f * hr + (0.16f * hr - 0.20f * hr) * reach;   /* half-widths taper slightly as it extends, but stay CENTRED on pivot_v - never shift sideways */
-    float hw_hand = 0.25f * hr + (0.16f * hr - 0.25f * hr) * reach;
-
-    /* BOTH ARMS MUST RETURN TO NEUTRAL BEFORE IDLE-WAVING RESUMES (2026-09-28, the operator's canonical rule: "At the
-     * end of a turn, a robot MUST collapse and return BOTH arms to their normal extents (lengths) and positions
-     * (joined to the shoulder, parallel to the correct side of the robot)...Only after returning arms to normal
-     * positions, the idle-robot hand animation will resume."). LENGTH already did this correctly - `len_hand_far` and
-     * friends are all `lerp(rest_value, target, reach)`, so they land exactly on the resting length the instant
-     * `reach` reaches 0, by construction. ANGLE did not: the reaching arm eased, during withdrawal, back toward
-     * `arm_spin` - the essentially RANDOM angle it happened to be spinning at when reaching began, not the straight,
-     * parallel-to-body neutral pose - and the OTHER arm's "excited flapping" (an ever-increasing angle, never reset)
-     * simply stopped and jumped straight into idle-waving the moment `reaching_active` went false, with no guarantee
-     * the two even agreed. Neither one was actually returning to a canonical rest position; both just stopped
-     * wherever they happened to be and handed off to a completely unrelated function.
-     *
-     * Fixed with a proper three-state machine, using `reach_peak_seen` (the running maximum of `reach` since this
-     * seat last rested) rather than a frame-to-frame comparison, so the flat HOLD right before a shot fires - reach
-     * sitting still at its cap, not yet declining - is never mistaken for withdrawal already starting:
-     *   - RESTING (`!reaching_active`): plain idle-waving, as always; `reach_peak_seen` resets to 0 so the next shot
-     *     starts its own tracking fresh.
-     *   - GROWING or HOLDING (`reach` at or above its own peak so far): the reaching arm eases from its live spin
-     *     toward the target, the other arm flaps excitedly - unchanged from before.
-     *   - WITHDRAWING (`reach` measurably below its own peak): the INSTANT this begins, both arms' current angles are
-     *     captured once as the withdrawal's own starting point; from then on both ease from THAT captured angle back
-     *     to exactly 0 (straight, parallel to the body) purely as a function of `reach` falling back to 0 - so by the
-     *     time `reach` reaches 0, both arms are provably back at their canonical rest position, and idle-waving can
-     *     only ever pick up from there. */
-    if (reach > g_vis.reach_peak_seen[seat]) g_vis.reach_peak_seen[seat] = reach;
-    bool shrinking_now = reaching_active && (reach < g_vis.reach_peak_seen[seat] - 0.0001f);
-    if (shrinking_now && !g_vis.was_shrinking[seat]) {
-        g_vis.withdrawal_reach_ang[seat] = lerp_angle_shortest(arm_spin, theta_target, reach);
-        /* PARKED, NOT SPINNING (2026-09-28, see the fuller note below at the actual `excited` flap): this
-         * captured the OTHER arm's wildly spinning "excited" angle as withdrawal's own starting point, so a
-         * withdrawal that began while that arm happened to be caught mid-spin would carry the same problem
-         * into the easing-back-to-neutral phase too. Since the other arm no longer spins at all, its "current
-         * angle" at this instant is just its own small idle sway - capture that instead. */
-        g_vis.withdrawal_idle_ang[seat] = 0.15f * idle_wave(seat, (side_sign > 0.0f) ? 1 : 0, t * 1.8f);
-        g_vis.withdrawal_peak_reach[seat] = (g_vis.reach_peak_seen[seat] > 0.0001f) ? g_vis.reach_peak_seen[seat] : 1.0f;
-    }
-    g_vis.was_shrinking[seat] = shrinking_now;
-
-    float flap_r = 0.0f, flap_l = 0.0f;
-    float reach_ang;
-    if (!reaching_active) {
-        /* IDLE SWAY AMPLITUDE (2026-09-28): this used to scale idle_wave() (range -1..1) by 0.9f, i.e. up to about
-         * 51 degrees of swing per arm, independently per arm. The withdrawal state machine above provably lands both
-         * arms EXACTLY at neutral (0) the moment reach reaches 0 - but idle-waving then took over and was free to
-         * swing either arm up to 51 degrees off the body, which at an unlucky phase (both arms swung outward at
-         * once) looks exactly like the operator's "arms NOT in their normal positions" screenshots, even though the
-         * state machine itself was correct. This is a genuinely different bug from anything fixed earlier this
-         * session: it is not about the withdrawal transition at all, it is that the resting idle animation's own
-         * range was never checked against the canonical "parallel to the correct side of the robot" rule. Cut to a
-         * small twitch (about 8 degrees) so a waiting robot still reads as alive without ever looking un-tucked. */
-        flap_r = 0.15f * idle_wave(seat, 0, t * 1.8f);
-        flap_l = 0.15f * idle_wave(seat, 1, t * 1.8f);
-        reach_ang = (side_sign > 0.0f) ? flap_r : flap_l;
-        g_vis.reach_peak_seen[seat] = 0.0f;
-    } else if (!shrinking_now) {
-        reach_ang = lerp_angle_shortest(arm_spin, theta_target, reach);
-
-        /* THE OTHER ARM STAYS PARKED (2026-09-28, the operator's own words: "the only exception is the transient
-         * frames where either arm is under use for a strike" - EITHER arm, singular: the one striking. Everything
-         * else about that sentence says the other one is not exempt at all). This used to spin the non-reaching arm
-         * fast and without limit for as long as the other one was reaching (`10.5f * t + 2.0f`, fed straight into
-         * cosf/sinf as `t` runs unbounded for the whole session) - a deliberate "excited" flavour animation from
-         * before the canonical rule existed. A trace caught exactly what that produces: idle_ang reaching into the
-         * THOUSANDS of degrees during a real reach (6452.7, 7364.9, 8276.1 sampled live). Mathematically that is
-         * still a well-defined rotation - cosf/sinf of any float stays in [-1,1] - but at any instant a screenshot
-         * happens to land on, that arm could be caught rotated to face straight along the body's own axis instead of
-         * out to the side, tucking it edge-on into the torso's own silhouette where it reads as simply gone - exactly
-         * the "one arm visible, the other just isn't there" screenshots. Fixed by giving the other arm the same
-         * small idle sway a fully-resting arm gets, instead of spinning it at all: it now stays visibly, correctly
-         * parked on its own side for the whole time the other arm is out on its own strike, satisfying the rule as
-         * written rather than the flavour text some earlier pass invented for it. */
-        float parked = 0.15f * idle_wave(seat, (side_sign > 0.0f) ? 1 : 0, t * 1.8f);
-        if (side_sign > 0.0f) { flap_l = parked; } else { flap_r = parked; }
+    /* The only two states left: rapid, matched spin for the seat about to strike, or each robot's own slow,
+     * irregular wave (idle_wave, unchanged) otherwise - a different rate per arm so the two hands visibly drift
+     * apart rather than moving as one rigid piece, the same way the slow wave already differs per seat. */
+    float ang_r, ang_l;
+    if (hands_spin_fast) {
+        ang_r = 10.5f * t + 2.0f;
+        ang_l = 12.0f * t + 0.5f;
     } else {
-        float frac = reach / g_vis.withdrawal_peak_reach[seat];
-        if (frac > 1.0f) frac = 1.0f;
-        if (frac < 0.0f) frac = 0.0f;
-        reach_ang = lerp_angle_shortest(0.0f, g_vis.withdrawal_reach_ang[seat], frac);
-        float w_idle = lerp_angle_shortest(0.0f, g_vis.withdrawal_idle_ang[seat], frac);
-        if (side_sign > 0.0f) { flap_l = w_idle; } else { flap_r = w_idle; }
+        ang_r = 0.6f * idle_wave(seat, 0, t * 1.8f);
+        ang_l = 0.6f * idle_wave(seat, 1, t * 1.8f);
     }
-    float idle_ang = (side_sign > 0.0f) ? flap_l : flap_r;
 
-    /* IDLE ARM'S OWN SIDE (2026-09-28, found by direct re-reading after the operator's screenshot showed east and
-     * west robots with both arms merged into one blob at the shoulder instead of splayed to opposite sides): the
-     * ROTATION PIVOT below (`-pivot_v`) has always correctly mirrored with `side_sign` - whichever arm is reaching
-     * flips to the other side, and the pivot for the idle one flips right along with it. But the idle arm's own BOX
-     * COORDINATES, just below, were a hardcoded literal (`-arm_v - 0.4f * hr` .. `-arm_v`) that never depended on
-     * `side_sign` at all - a leftover from before either arm could reach, when the idle arm was always the fixed
-     * left one. So whenever `side_sign` flips (the other arm reaches this shot), the idle arm's rotation PIVOT moves
-     * to the new side but its actual drawn SHAPE stays put on the old one - rotating a box from a pivot far from its
-     * own geometry, which is exactly the "arms merged/crossed near the shoulder" shape in the screenshot, not two
-     * arms splayed to opposite sides. Fixed by mirroring the box's own coordinates with `idle_side` exactly the way
-     * the pivot already does, so the shape and its pivot always agree. */
-    float idle_side = -side_sign;
-    robot_rbox(&f, pu, pivot_v, reach_ang, pu, pu + len_fore_far, pivot_v - hw_fore, pivot_v + hw_fore, steel, line);
-    robot_rbox(&f, pu, pivot_v, reach_ang, pu + len_hand_near, pu + len_hand_far, pivot_v - hw_hand, pivot_v + hw_hand, dark, line);
-    robot_rbox(&f, pu, -pivot_v, idle_ang, sh0 + 0.1f * hr, torso_end - 0.2f * hr, idle_side * (arm_v + 0.4f * hr), idle_side * arm_v, steel, line);
-    robot_rbox(&f, pu, -pivot_v, idle_ang, torso_end - 0.55f * hr, torso_end + 0.15f * hr, idle_side * (arm_v + 0.45f * hr), idle_side * (arm_v - 0.05f * hr), dark, line);
+    robot_rbox(&f, pu,  arm_v, ang_r, pu, pu + len_fore,  arm_v - hw_fore,  arm_v + hw_fore, steel, line);
+    robot_rbox(&f, pu,  arm_v, ang_r, pu + len_hand_near, pu + len_hand_far,  arm_v - hw_hand,  arm_v + hw_hand, dark, line);
+    robot_rbox(&f, pu, -arm_v, ang_l, pu, pu + len_fore, -arm_v - hw_fore, -arm_v + hw_fore, steel, line);
+    robot_rbox(&f, pu, -arm_v, ang_l, pu + len_hand_near, pu + len_hand_far, -arm_v - hw_hand, -arm_v + hw_hand, dark, line);
     /* torso with a chest panel and three lights */
     robot_box(&f, sh0, torso_end, -1.1f * hr, 1.1f * hr, base, line);
     robot_box(&f, sh0 + 0.9f * hr, torso_end - 0.25f * hr, -0.8f * hr, 0.8f * hr, dark, line);
@@ -405,11 +195,6 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
         Vector2 p = robot_pt(&f, sh0 + 1.35f * hr, (float)k * 0.42f * hr);
         DrawCircleV(p, hr * 0.15f, eye);
     }
-    /* Telescoping FINGERS (thumb, index, middle) used to continue on past the hand's own tip, all the way through to
-     * the striker's FAR side, to visually "flick" it - removed for now (2026-09-28), the operator: "take the fingers
-     * out; that logic is another whole software evolution, we will push it to a future enhancement." The hand alone
-     * (above) already reaches exactly to the striker's near rim, correctly and without overshoot; `strike_side` is
-     * still computed and passed in for whenever the finger mechanism is rebuilt, just unused for now. */
     /* shoulders */
     robot_box(&f, sh0, sh1, -1.45f * hr, 1.45f * hr, light, line);
     /* neck */
@@ -449,70 +234,6 @@ static float approach_f(float cur, float target, float max_step) {
     if (d > max_step) return cur + max_step;
     if (d < -max_step) return cur - max_step;
     return target;
-}
-
-/* Shortest-path interpolation between two angles (radians), so a blend never spins the long way round. */
-static float lerp_angle_shortest(float a, float b, float t) {
-    float d = b - a;
-    while (d > (float)M_PI) d -= 2.0f * (float)M_PI;
-    while (d < -(float)M_PI) d += 2.0f * (float)M_PI;
-    return a + d * t;
-}
-
-/* OPTIMAL STANDING POSITION (2026-09-28, the operator: "find the optimal algorithm for placing the robot...that causes
- * the minimum mathematically possible rotation and arm extension"). The two goals turn out not to compete at all: the
- * body's ROTATION is fixed the instant the shot is chosen - it must point along the shot's own back_angle so the arm
- * approaches from the correct side, and that requirement does not depend in any way on WHERE along the boundary the
- * robot is standing. Rotation is therefore already at its one possible (so trivially minimal) value regardless of
- * position, and the only thing left to optimise is EXTENSION: how far the arm has to reach. That is minimised by
- * simply standing at the point on the boundary closest to `target` (the exact point the arm needs to reach) - a plain
- * nearest-point-on-a-rectangle's-edge computation, closed-form, no search needed. (This measures from the BODY'S
- * centre, not its arm's own shoulder pivot, which sits a small, fixed distance to the side of centre - a deliberate
- * simplification: that offset is only a few percent of a typical reach and does not change which side is closest.)
- * Only the seat's OWN side and its two ADJACENT sides are ever considered, never the OPPOSITE one - a seat's robot
- * should never stand on the far side of the board, however the maths might otherwise tempt it. The old approach
- * (ray-cast from the striker along back_angle until it exits the box) is gone: it did not minimise anything - it just
- * placed the robot wherever a straight line in the aim-reverse direction happened to land, which could be far short of
- * the closest point for a raking shot. The box is the four robots' own fixed outside-the-board lines, taken together
- * as one rectangle (`x_min`..`x_max`, `y_min`..`y_max`); the robot's body never enters the board because this box is
- * strictly outside it. */
-static Vec2 closest_standing_point(Seat seat, Vec2 target, float x_min, float x_max, float y_min, float y_max) {
-    float cx = target.x < x_min ? x_min : (target.x > x_max ? x_max : target.x);
-    float cy = target.y < y_min ? y_min : (target.y > y_max ? y_max : target.y);
-    float d_top = y_max - target.y, d_bottom = target.y - y_min;
-    float d_left = target.x - x_min, d_right = x_max - target.x;
-    Vec2 p_top = { cx, y_max }, p_bottom = { cx, y_min }, p_left = { x_min, cy }, p_right = { x_max, cy };
-    float best_d; Vec2 best;
-    switch (seat) {
-        case SEAT_NORTH: best_d = d_top;    best = p_top;    break;
-        case SEAT_SOUTH: best_d = d_bottom; best = p_bottom; break;
-        case SEAT_EAST:  best_d = d_right;  best = p_right;  break;
-        case SEAT_WEST:  best_d = d_left;   best = p_left;   break;
-        default:         best_d = d_top;    best = p_top;    break;
-    }
-    /* BUG FIX (2026-09-28, found from a per-frame trace showing the arm's target angle nowhere near the striker at
-     * full reach, up to +-180 degrees off, on seats whose shot happened to put the striker closer to the OPPOSITE
-     * edge than their own): these exclusion guards had the seat pairings backwards. `d_bottom` is SOUTH's own line
-     * and NORTH's opposite, so it must be excluded when seat == NORTH, not when seat == SOUTH (SOUTH excluding
-     * itself here was harmless - its own side is already the starting candidate from the switch above - but every
-     * OTHER seat, including NORTH, was then wrongly free to jump to the far side of the board whenever the maths
-     * said it was closer). Same mistake, mirrored, for the other three. */
-    if (seat != SEAT_NORTH && d_bottom < best_d) { best_d = d_bottom; best = p_bottom; }
-    if (seat != SEAT_SOUTH && d_top    < best_d) { best_d = d_top;    best = p_top;    }
-    if (seat != SEAT_WEST  && d_right  < best_d) { best_d = d_right;  best = p_right;  }
-    if (seat != SEAT_EAST  && d_left   < best_d) { best_d = d_left;   best = p_left;   }
-    return best;
-}
-
-/* Which pair of the three fingers (thumb/index/middle) flicks the strike, from how far the shot's own direction (back_angle,
- * pointing back through the striker) deviates from the seat's ordinary square-on facing (seat_default_angle): close to it is
- * a forward strike (thumb+middle pinch it from both sides); off to one side or the other is a parallel/low strike, flicked
- * with the two fingers on that side (thumb+index, or index+middle). Purely cosmetic: the shot itself is unchanged. */
-static int classify_strike_side(float back_angle, float seat_default_angle) {
-    float dev = math_wrap_angle(back_angle - seat_default_angle);
-    const float FORWARD_HALF_ANGLE = 0.45f;   /* about 26 degrees either side counts as "forward" */
-    if (fabsf(dev) < FORWARD_HALF_ANGLE) return 0;      /* forward: thumb + middle */
-    return (dev > 0.0f) ? 2 : 1;                        /* right: index + middle; left: thumb + index */
 }
 
 static Vec2 approach_v(Vec2 cur, Vec2 target, float max_step) {
@@ -896,112 +617,27 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         east_world.y  = g_vis.fig[SEAT_EAST];
         west_world.y  = g_vis.fig[SEAT_WEST];
 
-        /* Turning to the shot: as the aim line grows (AIM_PREVIEW), the shooting robot's body stays exactly on its own
-         * fixed outside-the-board line (never enters the board) but slides along it, in exact lock-step with the line's own
-         * growth, to where that line - extended BACKWARDS through the striker - crosses that same fixed line; it turns to
-         * face straight down the line, and its telescoping arm (see draw_human_figure) reaches across the cushion to the
-         * striker. Once the shot fires it all smoothly eases back over about 0.4 s (`REACH_WITHDRAW_SPEED`), not a snap. */
-        #define REACH_WITHDRAW_SPEED 2.5f
-        static const float SEAT_DEFAULT_ANGLE[4] = { -(float)M_PI / 2.0f, 0.0f, (float)M_PI / 2.0f, (float)M_PI };  /* N, E, S, W */
-        for (int s = 0; s < 4; s++) {
-            float target = 0.0f;
-            bool this_seat_aim_preview = (game && is_aim_preview && game->computed_shot_valid && game->turn_seat == (Seat)s);
-            if (this_seat_aim_preview) {
-                target = game->aim_line_progress;
-                /* LATCHED, not recomputed every frame (2026-09-28): the operator saw the standing position - and with
-                 * it, which arm reaches - occasionally jump mid-shot ("suddenly swapping...in a jerky weird flipping").
-                 * Recomputing this every frame from `g_vis.striker` meant that if the striker's own smoothing had not
-                 * quite finished settling exactly when the reach animation began, the target position (especially near
-                 * a corner, where two sides of the boundary are close to equally near) could shift again WHILE the arm
-                 * was already visibly reaching - a real, if brief, jump. Computed once instead, at the one frame THIS
-                 * SEAT's aim preview actually begins (`!g_vis.aim_preview_active[s]`, i.e. it was not already running
-                 * last frame) - not at "reach is back near 0", which an extra turn (a pocketed coin, handing the SAME
-                 * seat a second shot before its first one has finished withdrawing) can reach well before the new shot
-                 * starts, leaving the old, now-wrong target latched for the entire new shot (the operator: the west
-                 * robot's "extended arm does not match the striker's vector"; the east robot that "never recovered its
-                 * right arm" was the same bug persisting across MULTIPLE later turns, never getting a fresh latch). It
-                 * is a true constant for the rest of the shot: nothing touches it again until the NEXT one begins. */
-                if (!g_vis.aim_preview_active[s]) {
-                    /* TWO angles, not one, and this is the actual root cause behind everything from "the extended arm
-                     * does not match the striker's vector" to "never recovered its right arm" (2026-09-28, found by
-                     * tracing theta_target at full reach across a long multi-board run: it averaged 93 degrees off
-                     * zero, sometimes nearly 180, when a fully converged reach should always put it near zero).
-                     *
-                     * `game->computed_shot_plan.aim_angle` is a WORLD-space angle (Y increases away from the board,
-                     * matching the physics engine and the board boundary constants) - confirmed by the aim arrow
-                     * itself, which adds cosf/sinf(aim_angle) directly to a world-space point before converting the
-                     * RESULT to screen space. `math_world_to_screen` flips Y (screen.y = centre - world.y * scale), so
-                     * a world-space direction's screen-space equivalent negates its y-component - equivalently, the
-                     * angle a WORLD vector needs to be treated as, once everything downstream of it is done in screen
-                     * pixels, is its MIRROR: `PI - aim_angle`, not `aim_angle`.
-                     *
-                     * The robot's own body-orientation system (`away`/`f.back` inside draw_human_figure, and the
-                     * SEAT_DEFAULT_ANGLE constants they are blended from) is NOT converted through math_world_to_screen
-                     * at all - `angle` is used directly, via cosf/sinf, as a SCREEN vector. SEAT_DEFAULT_ANGLE was
-                     * chosen to already work correctly in that screen-native system (confirmed by every idle robot in
-                     * every screenshot this whole feature has ever produced facing the right way at rest) - but the
-                     * shot's own `back_angle` was being computed as `aim_angle + PI`, the WORLD-space "reverse
-                     * direction", and fed DIRECTLY into that same screen-native system with no conversion. For a shot
-                     * needing very little rotation the mismatch barely shows; for one needing a real turn, the arm
-                     * ends up pointing up to 180 degrees away from the striker.
-                     *
-                     * `back_angle_world` (world convention, unconverted) is still exactly right for anything computed
-                     * in WORLD units, like the contact point below - it must stay as `aim_angle + PI`, matching the
-                     * arrow's own convention. `back_angle_screen` (`PI - aim_angle`) is its screen-native mirror, and
-                     * is what the robot's OWN orientation - and everything measured relative to it - must use instead. */
-                    float back_angle_world = math_wrap_angle(game->computed_shot_plan.aim_angle + (float)M_PI);
-                    float back_angle_screen = math_wrap_angle((float)M_PI - game->computed_shot_plan.aim_angle);
-                    g_vis.aim_pose_angle[s] = back_angle_screen;
-                    g_vis.aim_pose_side[s] = classify_strike_side(back_angle_screen, SEAT_DEFAULT_ANGLE[s]);
-                    /* The exact point the arm needs to reach: the striker's near rim, diametrically opposite the shot's
-                     * own travel direction. Built the same way the (already screenshot-verified) aim arrow itself is -
-                     * cosf/sinf of the shot's own angle added directly to a world-space point - so there is no risk of
-                     * this world-space computation disagreeing with the world-to-screen convention used elsewhere. */
-                    Vec2 back_dir_world = { cosf(back_angle_world), sinf(back_angle_world) };
-                    Vec2 contact_point_world = { g_vis.striker.x + back_dir_world.x * (STRIKER_RADIUS_NORM * 1.05f),
-                                                  g_vis.striker.y + back_dir_world.y * (STRIKER_RADIUS_NORM * 1.05f) };
-                    g_vis.aim_pose_pos[s] = closest_standing_point((Seat)s, contact_point_world, west_fixed_x, east_fixed_x, south_fixed_y, north_fixed_y);
-                    g_vis.aim_pose_striker[s] = g_vis.striker;   /* frozen here; stops updating (and so stays put) once the strike ends the aim preview */
-                    /* Which arm reaches: whichever side the striker is actually on, computed once here (alongside
-                     * everything else this shot needs) instead of being separately, repeatedly re-derived inside
-                     * draw_human_figure - one latch point for a shot's whole geometry, not two. Screen-native, like
-                     * the body orientation itself - so it must use `back_angle_screen`, not the world one. */
-                    Vec2 side_final_screen = math_world_to_screen(vp, g_vis.aim_pose_pos[s]);
-                    Vec2 side_away = { cosf(back_angle_screen), sinf(back_angle_screen) };
-                    Vec2 side_right = { side_away.y, -side_away.x };
-                    Vec2 side_striker_screen = math_world_to_screen(vp, g_vis.striker);
-                    float side_dx = side_striker_screen.x - side_final_screen.x, side_dy = side_striker_screen.y - side_final_screen.y;
-                    float side_v = side_dx * side_right.x + side_dy * side_right.y;
-                    g_vis.arm_side[s] = (side_v >= 0.0f) ? 1.0f : -1.0f;
-                }
-            }
-            g_vis.aim_preview_active[s] = this_seat_aim_preview;
-            if (target > g_vis.reach[s]) g_vis.reach[s] = target;
-            else g_vis.reach[s] = approach_f(g_vis.reach[s], target, REACH_WITHDRAW_SPEED * frame_dt);
-
-            /* The right arm's spin: held here (and kept live-updated) while NOT telescoping, so that when it starts
-             * (`reach` rising) it eases from wherever it actually was to a straight rest, rather than a decaying-amplitude
-             * spin that still visibly whips around right up to the last moment. */
-            if (g_vis.reach[s] < 0.002f) {
-                float spin_now = 14.0f * current_time - 2.0f * (float)M_PI * floorf(14.0f * current_time / (2.0f * (float)M_PI));
-                g_vis.arm_spin[s] = spin_now;
-            }
         }
-    }
-    north_world = vec2_lerp(north_world, g_vis.aim_pose_pos[SEAT_NORTH], g_vis.reach[SEAT_NORTH]);
-    south_world = vec2_lerp(south_world, g_vis.aim_pose_pos[SEAT_SOUTH], g_vis.reach[SEAT_SOUTH]);
-    east_world  = vec2_lerp(east_world,  g_vis.aim_pose_pos[SEAT_EAST],  g_vis.reach[SEAT_EAST]);
-    west_world  = vec2_lerp(west_world,  g_vis.aim_pose_pos[SEAT_WEST],  g_vis.reach[SEAT_WEST]);
-    float north_angle = lerp_angle_shortest(-(float)M_PI / 2.0f, g_vis.aim_pose_angle[SEAT_NORTH], g_vis.reach[SEAT_NORTH]);
-    float south_angle  = lerp_angle_shortest((float)M_PI / 2.0f,  g_vis.aim_pose_angle[SEAT_SOUTH], g_vis.reach[SEAT_SOUTH]);
-    float east_angle   = lerp_angle_shortest(0.0f,                g_vis.aim_pose_angle[SEAT_EAST],  g_vis.reach[SEAT_EAST]);
-    float west_angle   = lerp_angle_shortest((float)M_PI,         g_vis.aim_pose_angle[SEAT_WEST],  g_vis.reach[SEAT_WEST]);
+
+    /* Whichever seat is between striker placement and launch spins both hands rapidly (2026-09-28, the operator:
+     * "The active robot, when actually making a strike, spins his hand rapidly during striker placement to
+     * striker launch, then goes back to lazy waving hands."); every other seat, including this one at every other
+     * time, just idle-waves. No standing-position change, no rotation to face the shot: every seat stays at its
+     * own fixed position and angle, always - see draw_human_figure(). */
+    bool north_spin_fast = current_turn_seat == SEAT_NORTH && (is_placement || is_aim_preview);
+    bool south_spin_fast = current_turn_seat == SEAT_SOUTH && (is_placement || is_aim_preview);
+    bool east_spin_fast  = current_turn_seat == SEAT_EAST  && (is_placement || is_aim_preview);
+    bool west_spin_fast  = current_turn_seat == SEAT_WEST  && (is_placement || is_aim_preview);
+    float north_angle = -(float)M_PI / 2.0f;
+    float south_angle =  (float)M_PI / 2.0f;
+    float east_angle  =  0.0f;
+    float west_angle  =  (float)M_PI;
 
     // Draw human figures for all four seats
-    draw_human_figure(vp, L, north_world, north_angle, TEAM_WHITE, current_turn_seat == SEAT_NORTH, figure_alpha, SEAT_NORTH, current_time, g_vis.reach[SEAT_NORTH], g_vis.aim_pose_striker[SEAT_NORTH], g_vis.aim_pose_side[SEAT_NORTH], g_vis.arm_spin[SEAT_NORTH], g_vis.aim_pose_pos[SEAT_NORTH], g_vis.aim_pose_angle[SEAT_NORTH]);
-    draw_human_figure(vp, L, south_world, south_angle, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, figure_alpha, SEAT_SOUTH, current_time, g_vis.reach[SEAT_SOUTH], g_vis.aim_pose_striker[SEAT_SOUTH], g_vis.aim_pose_side[SEAT_SOUTH], g_vis.arm_spin[SEAT_SOUTH], g_vis.aim_pose_pos[SEAT_SOUTH], g_vis.aim_pose_angle[SEAT_SOUTH]);
-    draw_human_figure(vp, L, east_world, east_angle, TEAM_BLACK, current_turn_seat == SEAT_EAST, figure_alpha, SEAT_EAST, current_time, g_vis.reach[SEAT_EAST], g_vis.aim_pose_striker[SEAT_EAST], g_vis.aim_pose_side[SEAT_EAST], g_vis.arm_spin[SEAT_EAST], g_vis.aim_pose_pos[SEAT_EAST], g_vis.aim_pose_angle[SEAT_EAST]);
-    draw_human_figure(vp, L, west_world, west_angle, TEAM_BLACK, current_turn_seat == SEAT_WEST, figure_alpha, SEAT_WEST, current_time, g_vis.reach[SEAT_WEST], g_vis.aim_pose_striker[SEAT_WEST], g_vis.aim_pose_side[SEAT_WEST], g_vis.arm_spin[SEAT_WEST], g_vis.aim_pose_pos[SEAT_WEST], g_vis.aim_pose_angle[SEAT_WEST]);
+    draw_human_figure(vp, L, north_world, north_angle, TEAM_WHITE, current_turn_seat == SEAT_NORTH, figure_alpha, SEAT_NORTH, current_time, north_spin_fast);
+    draw_human_figure(vp, L, south_world, south_angle, TEAM_WHITE, current_turn_seat == SEAT_SOUTH, figure_alpha, SEAT_SOUTH, current_time, south_spin_fast);
+    draw_human_figure(vp, L, east_world, east_angle, TEAM_BLACK, current_turn_seat == SEAT_EAST, figure_alpha, SEAT_EAST, current_time, east_spin_fast);
+    draw_human_figure(vp, L, west_world, west_angle, TEAM_BLACK, current_turn_seat == SEAT_WEST, figure_alpha, SEAT_WEST, current_time, west_spin_fast);
     
     // Pockets
     float pocket_r = math_world_to_screen_dist(vp, POCKET_RADIUS_NORM);
