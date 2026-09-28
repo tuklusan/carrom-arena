@@ -60,6 +60,36 @@ static void draw_coin_rim(Vec2 screen, float r, PieceColor c) {
 #define COLOR_AIM_PREVIEW_ARROW (Color){ 214, 160, 70, 235 }   // Subdued amber arrowhead
 
 static void draw_tri_any_winding(Vector2 a, Vector2 b, Vector2 c, Color col);
+
+/* -----------------------------------------------------------------------------
+ * Smooth visual state: nothing on screen teleports. The striker and each player figure keep a
+ * tracked position and glide toward wherever they should be at VISUAL_SLIDE_SPEED (board units
+ * per wall-clock second); during a shot the striker simply follows the physics body.
+ * --------------------------------------------------------------------------- */
+#define VISUAL_SLIDE_SPEED 2.0f
+
+typedef struct {
+    bool striker_valid;
+    Vec2 striker;
+    float fig[4];
+    bool fig_valid;
+    bool was_gone;      /* the striker fell into a pocket during the last shot */
+    float appear;       /* 0..1 fade-in of a fresh striker handed to the next player */
+    float reach[4];           /* 0..1 per seat: how far into the "moved to the shot line and reaching" pose */
+    Vec2 aim_pose_pos[4];     /* where that seat stands at reach=1: on ITS OWN fixed outside-the-board line, never on the board */
+    float aim_pose_angle[4];  /* which way it faces at reach=1 */
+    int aim_pose_side[4];     /* 0 forward, 1 left, 2 right: which pair of fingers flicks the strike, see draw_human_figure */
+    Vec2 aim_pose_striker[4]; /* the striker's own RESTING position while this seat is planning/taking its shot - frozen the
+                               * moment reach starts, so the reaching arm's length keeps targeting where the striker WAS,
+                               * never where it flies to after being struck (see draw_human_figure) */
+    float arm_spin[4];        /* the right arm's spin angle, held here the instant it starts telescoping so it can ease to 0 smoothly */
+    float arm_side[4];         /* +1/-1: which arm reaches, LATCHED the same moment as aim_pose_* below and for the same
+                                * reason - recomputing it fresh every frame let it flip mid-reach for a near-dead-straight
+                                * shot (the operator: "both arms are ending up on the same side or the striking arm is
+                                * suddenly swapping...in a jerky weird flipping"); see draw_human_figure. 0 = undecided. */
+} VisualState;
+
+static VisualState g_vis = { .appear = 1.0f };
 static float lerp_angle_shortest(float a, float b, float t);   /* used by draw_human_figure, defined later */
 
 /* A rectangle in the robot's own frame: u runs from the head toward the board, v to the robot's right. */
@@ -169,7 +199,15 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     RobotFrame final_f = { final_screen, { -final_away.x, -final_away.y }, { final_away.y, -final_away.x } };
     float ffdx = s_screen.x - final_screen.x, ffdy = s_screen.y - final_screen.y;
     float final_v_to_striker = ffdx * final_f.right.x + ffdy * final_f.right.y;
-    float side_sign = (final_v_to_striker >= 0.0f) ? 1.0f : -1.0f;   /* +1 = right arm reaches, -1 = left arm reaches */
+    /* LATCHED the same way aim_pose_pos now is, and for the same reason: recomputed fresh every single frame, this sign
+     * test flipped mid-reach for any shot with a near-zero sideways offset (the operator: "both arms are ending up on
+     * the same side or the striking arm is suddenly swapping...in a jerky weird flipping"). Computed once, at the one
+     * instant `reach` is still at rest, and left alone for the rest of the shot - it cannot flip mid-motion because
+     * nothing touches it again until the arm is back at rest for the NEXT shot. */
+    if (reach < 0.002f) {
+        g_vis.arm_side[seat] = (final_v_to_striker >= 0.0f) ? 1.0f : -1.0f;
+    }
+    float side_sign = g_vis.arm_side[seat];   /* +1 = right arm reaches, -1 = left arm reaches */
 
     float flap_r = 0.0f, flap_l = 0.0f;
     if (!is_current_turn) { flap_r = 0.9f * idle_wave(seat, 0, t * 1.8f); flap_l = 0.9f * idle_wave(seat, 1, t * 1.8f); }
@@ -274,31 +312,6 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     DrawCircleLines((int)a1.x, (int)a1.y, hr * 0.3f, line);
 }
 
-/* -----------------------------------------------------------------------------
- * Smooth visual state: nothing on screen teleports. The striker and each player figure keep a
- * tracked position and glide toward wherever they should be at VISUAL_SLIDE_SPEED (board units
- * per wall-clock second); during a shot the striker simply follows the physics body.
- * --------------------------------------------------------------------------- */
-#define VISUAL_SLIDE_SPEED 2.0f
-
-typedef struct {
-    bool striker_valid;
-    Vec2 striker;
-    float fig[4];
-    bool fig_valid;
-    bool was_gone;      /* the striker fell into a pocket during the last shot */
-    float appear;       /* 0..1 fade-in of a fresh striker handed to the next player */
-    float reach[4];           /* 0..1 per seat: how far into the "moved to the shot line and reaching" pose */
-    Vec2 aim_pose_pos[4];     /* where that seat stands at reach=1: on ITS OWN fixed outside-the-board line, never on the board */
-    float aim_pose_angle[4];  /* which way it faces at reach=1 */
-    int aim_pose_side[4];     /* 0 forward, 1 left, 2 right: which pair of fingers flicks the strike, see draw_human_figure */
-    Vec2 aim_pose_striker[4]; /* the striker's own RESTING position while this seat is planning/taking its shot - frozen the
-                               * moment reach starts, so the reaching arm's length keeps targeting where the striker WAS,
-                               * never where it flies to after being struck (see draw_human_figure) */
-    float arm_spin[4];        /* the right arm's spin angle, held here the instant it starts telescoping so it can ease to 0 smoothly */
-} VisualState;
-
-static VisualState g_vis = { .appear = 1.0f };
 static BoardViewDebug g_dbg;
 
 void board_view_get_debug(BoardViewDebug* out) {
@@ -323,23 +336,42 @@ static float lerp_angle_shortest(float a, float b, float t) {
     return a + d * t;
 }
 
-/* Where a ray from `pos` (inside the box) in direction `angle` exits the box the four robots stand on (their own fixed
- * outside-the-board lines, taken together as one rectangle: `x_min`..`x_max`, `y_min`..`y_max`). The robot's body never
- * enters the board because this box is strictly outside it; a shot too parallel/raking to exit through its own seat's
- * side simply carries the robot round the corner onto the neighbouring side, rather than off to the side indefinitely. */
-static Vec2 project_to_standing_rect(Vec2 pos, float angle, float x_min, float x_max, float y_min, float y_max) {
-    float c = cosf(angle), sn = sinf(angle);
-    float t = 1e9f;
-    if (fabsf(c) > 1e-6f) {
-        float tx = ((c > 0.0f ? x_max : x_min) - pos.x) / c;
-        if (tx > 0.0f && tx < t) t = tx;
+/* OPTIMAL STANDING POSITION (2026-09-28, the operator: "find the optimal algorithm for placing the robot...that causes
+ * the minimum mathematically possible rotation and arm extension"). The two goals turn out not to compete at all: the
+ * body's ROTATION is fixed the instant the shot is chosen - it must point along the shot's own back_angle so the arm
+ * approaches from the correct side, and that requirement does not depend in any way on WHERE along the boundary the
+ * robot is standing. Rotation is therefore already at its one possible (so trivially minimal) value regardless of
+ * position, and the only thing left to optimise is EXTENSION: how far the arm has to reach. That is minimised by
+ * simply standing at the point on the boundary closest to `target` (the exact point the arm needs to reach) - a plain
+ * nearest-point-on-a-rectangle's-edge computation, closed-form, no search needed. (This measures from the BODY'S
+ * centre, not its arm's own shoulder pivot, which sits a small, fixed distance to the side of centre - a deliberate
+ * simplification: that offset is only a few percent of a typical reach and does not change which side is closest.)
+ * Only the seat's OWN side and its two ADJACENT sides are ever considered, never the OPPOSITE one - a seat's robot
+ * should never stand on the far side of the board, however the maths might otherwise tempt it. The old approach
+ * (ray-cast from the striker along back_angle until it exits the box) is gone: it did not minimise anything - it just
+ * placed the robot wherever a straight line in the aim-reverse direction happened to land, which could be far short of
+ * the closest point for a raking shot. The box is the four robots' own fixed outside-the-board lines, taken together
+ * as one rectangle (`x_min`..`x_max`, `y_min`..`y_max`); the robot's body never enters the board because this box is
+ * strictly outside it. */
+static Vec2 closest_standing_point(Seat seat, Vec2 target, float x_min, float x_max, float y_min, float y_max) {
+    float cx = target.x < x_min ? x_min : (target.x > x_max ? x_max : target.x);
+    float cy = target.y < y_min ? y_min : (target.y > y_max ? y_max : target.y);
+    float d_top = y_max - target.y, d_bottom = target.y - y_min;
+    float d_left = target.x - x_min, d_right = x_max - target.x;
+    Vec2 p_top = { cx, y_max }, p_bottom = { cx, y_min }, p_left = { x_min, cy }, p_right = { x_max, cy };
+    float best_d; Vec2 best;
+    switch (seat) {
+        case SEAT_NORTH: best_d = d_top;    best = p_top;    break;
+        case SEAT_SOUTH: best_d = d_bottom; best = p_bottom; break;
+        case SEAT_EAST:  best_d = d_right;  best = p_right;  break;
+        case SEAT_WEST:  best_d = d_left;   best = p_left;   break;
+        default:         best_d = d_top;    best = p_top;    break;
     }
-    if (fabsf(sn) > 1e-6f) {
-        float ty = ((sn > 0.0f ? y_max : y_min) - pos.y) / sn;
-        if (ty > 0.0f && ty < t) t = ty;
-    }
-    if (t > 1e8f) t = 0.0f;
-    return (Vec2){ pos.x + c * t, pos.y + sn * t };
+    if (seat != SEAT_SOUTH && d_bottom < best_d) { best_d = d_bottom; best = p_bottom; }
+    if (seat != SEAT_NORTH && d_top    < best_d) { best_d = d_top;    best = p_top;    }
+    if (seat != SEAT_EAST  && d_right  < best_d) { best_d = d_right;  best = p_right;  }
+    if (seat != SEAT_WEST  && d_left   < best_d) { best_d = d_left;   best = p_left;   }
+    return best;
 }
 
 /* Which pair of the three fingers (thumb/index/middle) flicks the strike, from how far the shot's own direction (back_angle,
@@ -745,11 +777,29 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
             float target = 0.0f;
             if (game && is_aim_preview && game->computed_shot_valid && game->turn_seat == (Seat)s) {
                 target = game->aim_line_progress;
-                float back_angle = math_wrap_angle(game->computed_shot_plan.aim_angle + (float)M_PI);
-                g_vis.aim_pose_angle[s] = back_angle;
-                g_vis.aim_pose_side[s] = classify_strike_side(back_angle, SEAT_DEFAULT_ANGLE[s]);
-                g_vis.aim_pose_pos[s] = project_to_standing_rect(g_vis.striker, back_angle, west_fixed_x, east_fixed_x, south_fixed_y, north_fixed_y);
-                g_vis.aim_pose_striker[s] = g_vis.striker;   /* frozen here; stops updating (and so stays put) once the strike ends the aim preview */
+                /* LATCHED, not recomputed every frame (2026-09-28): the operator saw the standing position - and with
+                 * it, which arm reaches - occasionally jump mid-shot ("suddenly swapping...in a jerky weird flipping").
+                 * Recomputing this every frame from `g_vis.striker` meant that if the striker's own smoothing had not
+                 * quite finished settling exactly when the reach animation began, the target position (especially near
+                 * a corner, where two sides of the boundary are close to equally near) could shift again WHILE the arm
+                 * was already visibly reaching - a real, if brief, jump. Computed once instead, at the one instant
+                 * `reach` is still at its resting 0 (the same instant the right arm's spin is separately captured,
+                 * below), it is a true constant for the rest of the shot: it cannot move again once the arm starts
+                 * moving toward it, because it is simply never touched again until the NEXT shot resets it. */
+                if (g_vis.reach[s] < 0.002f) {
+                    float back_angle = math_wrap_angle(game->computed_shot_plan.aim_angle + (float)M_PI);
+                    g_vis.aim_pose_angle[s] = back_angle;
+                    g_vis.aim_pose_side[s] = classify_strike_side(back_angle, SEAT_DEFAULT_ANGLE[s]);
+                    /* The exact point the arm needs to reach: the striker's near rim, diametrically opposite the shot's
+                     * own travel direction. Built the same way the (already screenshot-verified) aim arrow itself is -
+                     * cosf/sinf of the shot's own angle added directly to a world-space point - so there is no risk of
+                     * this world-space computation disagreeing with the world-to-screen convention used elsewhere. */
+                    Vec2 back_dir_world = { cosf(back_angle), sinf(back_angle) };
+                    Vec2 contact_point_world = { g_vis.striker.x + back_dir_world.x * (STRIKER_RADIUS_NORM * 1.05f),
+                                                  g_vis.striker.y + back_dir_world.y * (STRIKER_RADIUS_NORM * 1.05f) };
+                    g_vis.aim_pose_pos[s] = closest_standing_point((Seat)s, contact_point_world, west_fixed_x, east_fixed_x, south_fixed_y, north_fixed_y);
+                    g_vis.aim_pose_striker[s] = g_vis.striker;   /* frozen here; stops updating (and so stays put) once the strike ends the aim preview */
+                }
             }
             if (target > g_vis.reach[s]) g_vis.reach[s] = target;
             else g_vis.reach[s] = approach_f(g_vis.reach[s], target, REACH_WITHDRAW_SPEED * frame_dt);
