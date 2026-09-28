@@ -110,7 +110,22 @@ typedef struct {
                                      * normalised even if the peak wasn't exactly 1.0 */
 } VisualState;
 
-static VisualState g_vis = { .appear = 1.0f };
+/* DEFAULT ARM SIDE (2026-09-28, found by direct trace after the operator's screenshot showed west and east
+ * robots with both arms merged into a shapeless blob on the body's own centreline, not off to either side at
+ * all): `arm_side` starts, like every other float in this struct, implicitly zeroed - but 0.0f is not a
+ * neutral default here the way it is for the others. It is read as `side_sign`, and both the reaching arm's
+ * pivot (`side_sign * ...`) and, since the last fix, the idle arm's own box coordinates (`idle_side * ...`,
+ * where `idle_side = -side_sign`) are directly proportional to it - so at exactly 0 BOTH arms collapse to
+ * v = 0, the body's own centreline, for any seat that has not yet taken its first shot of the whole game.
+ * That is exactly the merged-blob shape in the screenshot, and it explains why it was seen on east and west
+ * specifically: seats later in turn order that simply had not had a shot yet when the screenshot was taken,
+ * not a left/right mix-up at all. `arm_side` is latched to a real +1/-1 the instant a seat's first shot
+ * begins, so this only ever matters before that - but a robot standing with both arms invisibly bunched at
+ * its centre, for however brief a time, is still a real violation of "joined to the shoulder, parallel to
+ * the correct side of the robot". Given each of the two arms, by construction, is always on the OPPOSITE
+ * side from the other (`idle_side = -side_sign`), any consistent non-zero default is correct here; +1 is as
+ * good as any and gets overwritten the moment a real shot decides the real side. */
+static VisualState g_vis = { .appear = 1.0f, .arm_side = { 1.0f, 1.0f, 1.0f, 1.0f } };
 static float lerp_angle_shortest(float a, float b, float t);   /* used by draw_human_figure, defined later */
 
 /* A rectangle in the robot's own frame: u runs from the head toward the board, v to the robot's right. */
@@ -346,10 +361,23 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
         if (side_sign > 0.0f) { flap_l = w_idle; } else { flap_r = w_idle; }
     }
     float idle_ang = (side_sign > 0.0f) ? flap_l : flap_r;
+
+    /* IDLE ARM'S OWN SIDE (2026-09-28, found by direct re-reading after the operator's screenshot showed east and
+     * west robots with both arms merged into one blob at the shoulder instead of splayed to opposite sides): the
+     * ROTATION PIVOT below (`-pivot_v`) has always correctly mirrored with `side_sign` - whichever arm is reaching
+     * flips to the other side, and the pivot for the idle one flips right along with it. But the idle arm's own BOX
+     * COORDINATES, just below, were a hardcoded literal (`-arm_v - 0.4f * hr` .. `-arm_v`) that never depended on
+     * `side_sign` at all - a leftover from before either arm could reach, when the idle arm was always the fixed
+     * left one. So whenever `side_sign` flips (the other arm reaches this shot), the idle arm's rotation PIVOT moves
+     * to the new side but its actual drawn SHAPE stays put on the old one - rotating a box from a pivot far from its
+     * own geometry, which is exactly the "arms merged/crossed near the shoulder" shape in the screenshot, not two
+     * arms splayed to opposite sides. Fixed by mirroring the box's own coordinates with `idle_side` exactly the way
+     * the pivot already does, so the shape and its pivot always agree. */
+    float idle_side = -side_sign;
     robot_rbox(&f, pu, pivot_v, reach_ang, pu, pu + len_fore_far, pivot_v - hw_fore, pivot_v + hw_fore, steel, line);
     robot_rbox(&f, pu, pivot_v, reach_ang, pu + len_hand_near, pu + len_hand_far, pivot_v - hw_hand, pivot_v + hw_hand, dark, line);
-    robot_rbox(&f, pu, -pivot_v, idle_ang, sh0 + 0.1f * hr, torso_end - 0.2f * hr, -arm_v - 0.4f * hr, -arm_v, steel, line);
-    robot_rbox(&f, pu, -pivot_v, idle_ang, torso_end - 0.55f * hr, torso_end + 0.15f * hr, -arm_v - 0.45f * hr, -arm_v + 0.05f * hr, dark, line);
+    robot_rbox(&f, pu, -pivot_v, idle_ang, sh0 + 0.1f * hr, torso_end - 0.2f * hr, idle_side * (arm_v + 0.4f * hr), idle_side * arm_v, steel, line);
+    robot_rbox(&f, pu, -pivot_v, idle_ang, torso_end - 0.55f * hr, torso_end + 0.15f * hr, idle_side * (arm_v + 0.45f * hr), idle_side * (arm_v - 0.05f * hr), dark, line);
     /* torso with a chest panel and three lights */
     robot_box(&f, sh0, torso_end, -1.1f * hr, 1.1f * hr, base, line);
     robot_box(&f, sh0 + 0.9f * hr, torso_end - 0.25f * hr, -0.8f * hr, 0.8f * hr, dark, line);
