@@ -284,6 +284,16 @@ near point plus the striker's own diameter, continuing along the same ray. The t
 now built on the corrected point. Verified by reproducing close-in shots and comparing the contact point against the
 aim arrow directly: in both a heavily angled close-range case and a nearly straight one, contact now sits exactly
 opposite the arrow.
+The fingers themselves were removed the same day, on the operator's explicit instruction (2026-09-28): two more
+screenshots showed the flicking fingers crossing all the way through the striker to its far side, and the operator
+confirmed that crossing IS the problem, not a side-effect of the geometry bugs above - "the closest point of the
+striker to the robot is the point the arm can maximally extend to." Rather than cap the fingers at that point, the
+operator asked to remove the whole finger mechanism outright: "take the fingers out; that logic is another whole
+software evolution, we will push it to a future enhancement." Removed the three-finger draw block and the now-unused
+`r_far` target; the hand alone (already verified above to reach the near rim exactly, with no overshoot) is now the
+whole reaching mechanism. `strike_side` is still threaded through, unused, for whenever the finger mechanism is
+rebuilt. The operator also sent a reference image of the real "Scissors Grip"/"Straight Grip" carrom techniques for
+that future rebuild - noted in project memory (`project-finger-grip-reference.md`), not acted on now.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
