@@ -240,6 +240,22 @@ and stepping the radius off ALONG THAT SAME LINE, so the near point lands on the
 rim - diametrically opposite, through the centre - whatever angle the approach happens to be at. Verified with a
 temporary numeric probe (a marker drawn independently at the computed distance, confirmed sitting exactly on the far
 rim) and a pixel-exact zoom on the shipped build showing the finger reaching that same point.
+Two more corrections the same week (2026-09-28), from a single operator report: "the telescoping arms...are extending
+too much...crossing beyond the required exact distance" and a request to "have the robots use one of both arms...if the
+left arm is easier to get to the striker".
+- Overshoot: the arm's LENGTH (distinct from its rotation and drawn shape, which correctly track the live body frame)
+  was being measured against the live, still-moving positions of the robot and the striker. While the body was still
+  sliding into its final standing spot the raw distance swung with it, so the arm briefly overshot before settling;
+  after the strike, the striker starts flying across the board while the arm eases back, and the same live-tracking
+  made the retracting arm chase it. Fixed by measuring length against the shot's FROZEN final geometry instead: the
+  already-cached final standing pose, plus a new `aim_pose_striker` snapshot of the striker's pre-strike resting spot,
+  captured once when the aim preview starts and held through the whole reach and withdrawal. Verified with a per-frame
+  probe across an entire board: the pivot-to-striker distance is now EXACTLY constant within every episode (zero
+  spread), versus up to 349px of swing before.
+- Handedness: the reaching arm was always the right one, so it could end up reaching across in front of the body for a
+  striker on the left. Fixed by deciding, once per shot from the same frozen final pose, which side the striker is
+  actually on, and reaching with that arm - the other arm just keeps its own flavour animation. Verified across the
+  same board: both sides get used (roughly half and half), and a visual check on a left-arm reach renders cleanly.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
