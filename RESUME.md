@@ -256,6 +256,18 @@ left arm is easier to get to the striker".
   striker on the left. Fixed by deciding, once per shot from the same frozen final pose, which side the striker is
   actually on, and reaching with that arm - the other arm just keeps its own flavour animation. Verified across the
   same board: both sides get used (roughly half and half), and a visual check on a left-arm reach renders cleanly.
+A further correction the same week (2026-09-28): the operator reported the overshoot was STILL there, and asked for a
+detailed trace of the striker's true closest point against the arm's actual max extent, rather than another guess.
+That trace found a second, smaller overshoot source (up to ~14px, versus ~300px before): the length target above is a
+stable constant measured against the body's FINAL position, but the arm is DRAWN from the body's LIVE, still-moving
+position (needed to stay attached). While the body has not yet arrived, a length correct for the final pivot can carry
+the rendered tip past the striker's TRUE near/far edge as measured from where the arm is actually drawn right now, even
+though it always settles back to correct by reach = 1. Fixed with a hard clamp: the live pivot-to-striker distance is
+computed fresh every frame and used only as a ceiling (never as the smooth growth target, so it does not reintroduce
+the original jitter) - the near/far length targets are capped to whichever is smaller, the smooth frozen target or what
+the live geometry currently allows. Verified with the same trace across an entire board: the signed overshoot is now
+NEGATIVE at every single sampled frame in every episode - the arm always stays a fraction of a pixel short of the true
+edge, never crosses it.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
