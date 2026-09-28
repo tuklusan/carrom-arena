@@ -177,43 +177,46 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     else                       { flap_r = 10.5f * t + 2.0f; }        /* left arm is reaching: the right keeps flapping instead */
     float pivot_v = side_sign * (arm_v + 0.2f * hr);   /* the TRUE shoulder pivot for the reaching arm, on whichever side: (pu, pivot_v), fixed regardless of reach */
 
-    /* Target direction and reach-length, measured from the PIVOT (not from the body origin): the rotation angle is
-     * inherently pivot-relative and cannot drift.
-     * `r_near`/`r_far` are lengths, not (u,v) points, so - unlike a direction or a coordinate - they can safely be
-     * measured against the body's FINAL settled position instead of its live, still-moving one. Using the live
-     * position (as an earlier fix did) meant that, while the body was still sliding into its final standing spot -
-     * often a real distance for the newer corner-wrap positions - the raw pivot-to-striker distance swung with it,
-     * so the arm's own length briefly overshot well past the striker before settling back down as the body finished
-     * arriving (the operator: "the telescoping arms...are extending too much...crossing beyond the required exact
-     * distance"). Measured from the FINAL pose instead, this distance is a true constant for the whole reach, so the
-     * arm's length grows smoothly straight to the correct value with no overshoot, while its ROTATION and drawn SHAPE
-     * still track the live, still-turning frame (so it stays visibly attached throughout, as already fixed). */
-    Vector2 final_pivot_pt = robot_pt(&final_f, pu, pivot_v);
-    float fpdx = s_screen.x - final_pivot_pt.x, fpdy = s_screen.y - final_pivot_pt.y;
-    float dist_to_striker_center = sqrtf(fpdx * fpdx + fpdy * fpdy);
-    float theta_target = atan2f(v_to_striker - pivot_v, u_to_striker - pu);
-    float r_near = dist_to_striker_center - striker_r * 1.05f;
-    float r_far  = dist_to_striker_center + striker_r * 1.05f;
+    /* THE CONTACT POINT (2026-09-28, found from the operator's own screenshot: the hand was reaching to the side of the
+     * striker instead of the side diametrically opposite the shot's own arrowhead direction - "no realistic physical
+     * way that hand can launch the striker in the direction of the arrowhead"). Root cause: the target the arm aimed
+     * at was "whichever point on the striker's circle is closest to the ARM'S PIVOT" (found via atan2 from the pivot
+     * to the striker's CENTRE) - not the point fixed by the shot itself. Those are different points whenever the
+     * pivot sits off the aim line, which it always does a little (the arm attaches to the SIDE of the body, not its
+     * centre) and can do a lot for a close-in shot - exactly the case in the screenshot. The correct contact point is
+     * NOT "nearest the pivot": it is the FIXED point on the striker's rim, diametrically opposite the direction the
+     * striker is meant to travel, however near or far the pivot happens to be from it. Since this robot's body
+     * already faces along that exact direction (`f.back`/`final_f.back`, by construction, always equal the shot's own
+     * aim direction), that point is simply the striker's centre offset by the striker's radius along the frame's own
+     * +u axis - a pure `u` shift, `v` untouched - true for every seat and every angle, with no per-shot geometry
+     * needed at all. The PIVOT no longer decides WHERE that point is; it only decides the rotation and length needed
+     * to reach it. */
+    float near_u = u_to_striker - striker_r * 1.05f, near_v = v_to_striker;   /* the live, correct contact point: aims the ROTATION */
+    float theta_target = atan2f(near_v - pivot_v, near_u - pu);
 
-    /* SECOND overshoot source (2026-09-28, found from a per-frame trace comparing the striker's true closest point,
-     * computed live, against the arm's own actual rendered tip): even though the LENGTH target above is now a stable
-     * constant (the first overshoot fix), it is measured against the body's FINAL position while the arm is actually
-     * DRAWN from the body's LIVE, still-moving position (needed so the arm's rotation and shape stay attached, per an
-     * earlier fix). While the body has not yet arrived, those two pivots are in different places, so a length correct
-     * for the final pivot can still carry the rendered tip PAST the striker's true near/far edge as measured from
-     * where the arm is actually being drawn from right now - the trace showed up to +14px of this, mid-turn, even
-     * though it always settles back to correct by the time reach reaches 1. Fixed with a hard geometric clamp: the
-     * LIVE pivot-to-striker distance is computed fresh every frame (cheap, and unrelated to the jitter the first fix
-     * solved, since it is only ever used as a ceiling, never as the smooth target itself), and the near/far targets are
-     * capped to whichever is smaller - the smooth, frozen target, or what the CURRENT live geometry actually allows.
-     * The arm can now never be drawn past the striker's true edge, in either direction, at any point in the motion. */
-    Vector2 live_pivot_screen = robot_pt(&f, pu, pivot_v);
-    float ldx = s_screen.x - live_pivot_screen.x, ldy = s_screen.y - live_pivot_screen.y;
-    float live_dist_to_striker = sqrtf(ldx * ldx + ldy * ldy);
-    float r_near_live_limit = live_dist_to_striker - striker_r * 1.05f;
-    float r_far_live_limit  = live_dist_to_striker + striker_r * 1.05f;
+    /* `r_near` is a LENGTH, not a (u,v) point, so - unlike a direction or a coordinate - it can safely be measured
+     * against the body's FINAL settled position instead of its live, still-moving one, to keep it growing smoothly
+     * instead of swinging with the body's own approach (the operator, an earlier report: "the telescoping arms...are
+     * extending too much...crossing beyond the required exact distance"). Measured from the FINAL pose, using the
+     * SAME fixed-contact-point geometry above (never the old pivot-relative one), this distance is a true constant
+     * for the whole reach. `r_far` is not a second independently-aimed point at all (the arm cannot point at two
+     * different spots at once) - it is simply the first point PLUS the striker's own diameter, continuing straight on
+     * along the same, now-correct, ray the fingers are already reaching along. */
+    float final_u_to_striker = ffdx * final_f.back.x + ffdy * final_f.back.y;
+    float final_near_u = final_u_to_striker - striker_r * 1.05f, final_near_v = final_v_to_striker;
+    float r_near = sqrtf((final_near_u - pu) * (final_near_u - pu) + (final_near_v - pivot_v) * (final_near_v - pivot_v));
+
+    /* SECOND overshoot source (2026-09-28, an earlier report): even though the LENGTH target above is a stable
+     * constant, it is measured against the body's FINAL position while the arm is actually DRAWN from the body's
+     * LIVE, still-moving one (needed so its rotation and shape stay attached). While the body has not yet arrived,
+     * those two pivots are in different places, so a length correct for the final pivot can still carry the rendered
+     * tip past the striker's true edge as measured from where the arm is actually being drawn right now. Fixed with a
+     * hard geometric clamp: the LIVE distance to the same fixed contact point is computed fresh every frame and used
+     * only as a ceiling (never as the smooth target, so it cannot reintroduce jitter) - the arm can never be drawn
+     * past the striker's true edge, in either direction, at any point in the motion. */
+    float r_near_live_limit = sqrtf((near_u - pu) * (near_u - pu) + (near_v - pivot_v) * (near_v - pivot_v));
     r_near = fminf(r_near, r_near_live_limit);
-    r_far  = fminf(r_far,  r_far_live_limit);
+    float r_far = r_near + 2.0f * striker_r * 1.05f;
 
     /* Resting (reach = 0) lengths along the pivot's own local +u axis - identical to the old resting arm's distances
      * from this same pivot, so at reach = 0 the shape is unchanged from before. */
