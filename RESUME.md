@@ -1,6 +1,6 @@
 # Carrom Arena: RESUME playbook
 
-**Updated:** 2026-09-28 (UTC), after the parked-arm-during-reach fix. Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
+**Updated:** 2026-09-28 (UTC), after the one-trace-file redesign. Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
 
 ## Repo state
 - `main` head: see `git log`; tag `beta-0.0.12` = the spinning-arms release; identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. The next tag is `beta-0.0.13` (only when the operator asks; never move existing tags).
@@ -19,7 +19,7 @@
 
 ## What is done (2026-09-22 to 2026-09-24)
 - Pockets work end to end: sensor events in physics, `rules_resolve` marks pieces pocketed, pocketed pieces are registered in the game state the moment physics pockets them and drawn in their 3x3 slot by the pocket (the "looping pieces" bug is fixed; a piece physics reports pocketed is never drawn from physics).
-- Trace: 8 MiB circular JSONL with `POCKET` (immediate), `SHOT_PROGRESS` (every 2 s of sim time) and `SHOT_INTERRUPTED` (flushed on close mid-shot) records.
+- Trace (redesigned 2026-09-28, see "One trace file" below): `traces/trace.jsonl`, one fixed file reused and continued by every run, 8 MiB circular, with `POCKET_IMMEDIATE`, `SHOT_PROGRESS` (every 2 s of sim time), `SHOT_INTERRUPTED` (flushed on close mid-shot), `RUN_START`, `LOG` and `APP_EVENT` records among others.
 - Game speed: the configured speed (default 1.0x, `--playback-speed`, keys 0.05x-4x) applies only from striker launch to board settle; thinking, placement and aim preview run at 1x. The app runs at 60 FPS.
 - Physics: constant board deceleration 1.3 u/s^2 (about mu 0.10 for a 0.74 m board, no viscous term). No international coefficient exists; the ICF only requires 3.5 runs of a 15 g striker from a base line at maximum force. Full-power measurement (test `striker_realism_test`): crosses the board in 0.18 s, rests after 3.0 s, 7 cushion hits (possibly slightly slippery).
 - Layout: compact 560x560 canvas (the side margins equal the top/bottom margin of the board, 94 px; vertical layout unchanged), smaller player figures close to the board, no text occluded.
@@ -54,8 +54,8 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
   could return 1.0; `--seed 5` (space form, as in --help) was ignored; window size unclamped; window/audio init failure crashed instead of a message.
 - Dead duplicate definitions removed: `common/types.c` redefined seven init functions that `board.c`/`rules.c`/`match.c` also define (which copy linked depended on archive order).
 - Console: the exe is a GUI-subsystem program on Windows (`-mwindows`; borrows the parent terminal only for --help/--version/soak).
-  All debug output goes to `traces/debug_<seed>.log` (`platform_diag_logf`; raylib's log is routed there too). Old trace/flight/log files
-  are pruned to the newest 20 per kind at start-up.
+  All debug output (`platform_diag_logf`; raylib's log is routed there too) now goes into `traces/trace.jsonl` itself, as `LOG`
+  records - see "One trace file" below; there is nothing left to prune at start-up.
 
 ## Robots, teams, scoreboard, radio (2026-09-25 evening)
 - Players are robots (`draw_human_figure` in `board_view.c`, drawn from rotated boxes; antenna, eyes, arms, chest panel). The white team is RED and
@@ -418,6 +418,73 @@ strike (and fixed the matching one-time capture at the start of withdrawal, whic
 own starting point). Verified visually this time, not just numerically: captured a full reach-to-withdrawal sequence
 at normal speed and stepped through it frame by frame - the reaching arm correctly extends toward the striker, the
 other stays small and visibly tucked the whole way through, never vanishes, never swings wildly.
+
+A ninth investigation the same week (2026-09-28): two more screenshots, "at least one idle robot with incorrect arms."
+This time it did NOT reproduce. An 80-second live session with a diagnostic trace sampled every 2 seconds per seat,
+cross-checked against screenshots captured at the exact same score as the operator's own first image (P:004/004),
+showed every sampled seat correctly split - one arm on each side, mathematically and visually - in every sample. The
+two screenshots this round arrived without a saved file path (every earlier one in this whole saga had one), so they
+could not be pixel-inspected directly; verification stopped there, honestly reported as unreproduced rather than
+claimed fixed, pending the actual files.
+
+## Trace file: audit and one-file redesign (2026-09-28)
+Two separate operator requests, both about `traces/`, not about gameplay:
+
+**A full line-by-line audit** (reconstructing the ring buffer's true chronological order in Python, mirroring
+`trace_read_last_records()` exactly rather than trusting a plain read) found five real defects, all fixed the same day:
+1. `trace_write_pocket()`'s immediate record and the unrelated `EVENT_POCKET` game event both serialized
+   `"type":"POCKET"` with incompatible field sets - the immediate one renamed to `POCKET_IMMEDIATE`.
+2. A `POCKET` event's `team` field held the POCKETED PIECE's own team (rules.c sets it from the piece's colour), while
+   every other event's `team` holds the ACTING SEAT's own team - same field name, two silent meanings. Renamed to
+   `piece_team` specifically for `POCKET`, in both the JSON writer and its (now-removed, see below) human-readable
+   mirror.
+3. `shot_end.result.final_positions` always carried a 20th, permanently-unused, always-`(0,0)` phantom entry (the
+   writer looped to 20; `MAX_PIECES` is 19 and nothing ever writes index 19) - loop bound fixed to match every other
+   reader of this array.
+4. `shot_end.runtime_errors` was a hardcoded literal `"[]"` in the format string, not populated from any real error
+   state - removed rather than leave a fake diagnostic channel in the schema.
+5. `trace_read_last_records()`'s wrap detection inferred "has this ring actually wrapped" from the on-disk FILE SIZE,
+   which is always the full 8 MiB+header from the instant the file is created (it zero-fills eagerly) regardless of
+   how much real data has ever been written - so the flag was always true. Measured directly: a file that had written
+   only 263,601 of 8,388,608 bytes still produced an 8,125,007-byte leading run of zero padding in the reconstruction.
+   Harmless by luck, wrong and wasteful in principle. The index header is now 16 bytes - write offset plus a real,
+   persisted wrapped flag - and the reader uses that instead of guessing. (Two related overrun bugs found while
+   widening the header: both the writer's and the reader's old code read/wrote the new 16-byte header into/out of a
+   single 8-byte `uint64_t`, which would have corrupted adjacent memory - fixed alongside.)
+
+**"We must have EXACTLY ONE TRACE FILE... NO ADDITIONAL FILES"**, the operator, on seeing three separate files after
+the above (`trace.jsonl`, a `flight_<seed>.bin`, a `debug_<seed>.log`, plus trace.c's own `seed_<seed>.log` mirror).
+All folded into the one shared `traces/trace.jsonl`, and the separate systems removed rather than left disabled:
+- The binary flight recorder (`telemetry/flight.c/.h`, `tools/flight_dump.c`, its own test) is gone entirely. Its
+  discrete EVENT records (phase/turn/speed/pause/layout/sound/pocket/shot boundaries) are now `APP_EVENT` JSONL
+  records (`trace_write_app_event()`), self-describing via a `kind_name` string, no decoder tool or enum needed to
+  read them. Its other role - a full 19-piece binary snapshot of every single rendered frame - is deliberately NOT
+  replicated: trace's own `PHYSICS_STATE` and `SHOT_PROGRESS`/`SHOT_INTERRUPTED` already cover physics state at a
+  size the shared 8 MiB budget can sustain across a real session; a full-board JSON snapshot every frame would fill
+  the ring in seconds.
+- `platform_diag_open()`/`_close()` (its own `debug_<seed>.log`) is replaced by `platform_diag_set_sink()`:
+  `platform_diag_logf()` hands its line to a caller-supplied callback instead of a file it owns. `app.c` wires that
+  to `trace_diag_sink()` (new, in trace.c) right after `trace_open()` succeeds; it JSON-escapes the line and writes
+  it into the same file as a `LOG` record. `platform.c` stays generic - it never learns what a "trace" is.
+- trace.c's own optional human-readable mirror (`log_dir`/`verbose`, `seed_<seed>.log`, and the `events_log()`
+  function that formatted it) is gone; `trace_open()` dropped those two parameters everywhere (app.c and four test
+  files updated).
+- The trace itself moved from a seed-suffixed name (`trace_<seed>.jsonl` - meaning any run with a different seed,
+  the common case, silently started a brand-new file) to the single fixed `traces/trace.jsonl`, created if it does
+  not exist and otherwise reopened and continued (that ring-continuation logic already existed; only the naming
+  needed to change). `trace_open()` now writes a `RUN_START` marker - timestamp, build id, process id, this run's
+  seed - on every open, so a reader can find exactly where the latest run's own data begins in a file many runs now
+  share. `platform_prune_old_files()`, which kept the newest 20 of each per-run-named file, has nothing left to
+  prune and is removed along with its call site.
+
+Verified end to end on both platforms, not just against the source: cleared `traces/` entirely, ran the real game for
+15 real seconds on Linux, confirmed exactly one file existed afterward, and reconstructed and parsed its full ring -
+all 164 records valid JSON, one correct `RUN_START`, 91 `LOG` records (raylib's own startup banner included), 31
+self-describing `APP_EVENT` records, every pre-existing record type still present and correctly formed alongside
+them. Then downloaded and ran the actual Windows CI exe: it too produced exactly one well-formed `trace.jsonl`
+(87 valid records, correct `RUN_START` first), confirming the design works identically cross-platform. Full test
+suite: 24/24 (`flight_recorder_test` is gone with the subsystem it tested; the former log-file-size test in
+`test_trace_circular.c` is replaced with one that verifies the diag-sink integration itself).
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
