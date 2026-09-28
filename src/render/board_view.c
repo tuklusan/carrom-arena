@@ -87,6 +87,16 @@ typedef struct {
                                 * reason - recomputing it fresh every frame let it flip mid-reach for a near-dead-straight
                                 * shot (the operator: "both arms are ending up on the same side or the striking arm is
                                 * suddenly swapping...in a jerky weird flipping"); see draw_human_figure. 0 = undecided. */
+    bool aim_preview_active[4]; /* was this seat's aim preview running LAST frame - the true "a new shot just started"
+                                 * signal the aim_pose_* latch now uses instead of `reach < 0.002f` (2026-09-28, the
+                                 * operator, on a west robot mid-reach: "the...extended arm does not match the striker's
+                                 * vector", and an east robot that "never recovered its right arm"). An extra turn (a
+                                 * pocketed coin) can hand the SAME seat two shots back to back faster than the ~0.4s
+                                 * withdrawal takes to finish, so `reach` may never dip back under that threshold
+                                 * between them - the old latch then never re-fired, and the robot kept reaching for a
+                                 * target frozen from the shot before last for the ENTIRE new shot. This flag catches
+                                 * the actual moment a new aim preview begins for a seat, regardless of what `reach`
+                                 * still happens to be. */
 } VisualState;
 
 static VisualState g_vis = { .appear = 1.0f };
@@ -199,14 +209,9 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     RobotFrame final_f = { final_screen, { -final_away.x, -final_away.y }, { final_away.y, -final_away.x } };
     float ffdx = s_screen.x - final_screen.x, ffdy = s_screen.y - final_screen.y;
     float final_v_to_striker = ffdx * final_f.right.x + ffdy * final_f.right.y;
-    /* LATCHED the same way aim_pose_pos now is, and for the same reason: recomputed fresh every single frame, this sign
-     * test flipped mid-reach for any shot with a near-zero sideways offset (the operator: "both arms are ending up on
-     * the same side or the striking arm is suddenly swapping...in a jerky weird flipping"). Computed once, at the one
-     * instant `reach` is still at rest, and left alone for the rest of the shot - it cannot flip mid-motion because
-     * nothing touches it again until the arm is back at rest for the NEXT shot. */
-    if (reach < 0.002f) {
-        g_vis.arm_side[seat] = (final_v_to_striker >= 0.0f) ? 1.0f : -1.0f;
-    }
+    /* Which arm reaches is decided once, in the outer per-seat update loop, the moment this shot's aim preview actually
+     * begins (not merely whenever `reach` happens to dip near 0 - an extra turn can start a new shot before that ever
+     * happens; see the loop for the full story). Just read the decision here. */
     float side_sign = g_vis.arm_side[seat];   /* +1 = right arm reaches, -1 = left arm reaches */
 
     /* The arm's animation state must be driven by `reach`, not by `is_current_turn` alone (2026-09-28, the operator, on
@@ -380,10 +385,17 @@ static Vec2 closest_standing_point(Seat seat, Vec2 target, float x_min, float x_
         case SEAT_WEST:  best_d = d_left;   best = p_left;   break;
         default:         best_d = d_top;    best = p_top;    break;
     }
-    if (seat != SEAT_SOUTH && d_bottom < best_d) { best_d = d_bottom; best = p_bottom; }
-    if (seat != SEAT_NORTH && d_top    < best_d) { best_d = d_top;    best = p_top;    }
-    if (seat != SEAT_EAST  && d_right  < best_d) { best_d = d_right;  best = p_right;  }
-    if (seat != SEAT_WEST  && d_left   < best_d) { best_d = d_left;   best = p_left;   }
+    /* BUG FIX (2026-09-28, found from a per-frame trace showing the arm's target angle nowhere near the striker at
+     * full reach, up to +-180 degrees off, on seats whose shot happened to put the striker closer to the OPPOSITE
+     * edge than their own): these exclusion guards had the seat pairings backwards. `d_bottom` is SOUTH's own line
+     * and NORTH's opposite, so it must be excluded when seat == NORTH, not when seat == SOUTH (SOUTH excluding
+     * itself here was harmless - its own side is already the starting candidate from the switch above - but every
+     * OTHER seat, including NORTH, was then wrongly free to jump to the far side of the board whenever the maths
+     * said it was closer). Same mistake, mirrored, for the other three. */
+    if (seat != SEAT_NORTH && d_bottom < best_d) { best_d = d_bottom; best = p_bottom; }
+    if (seat != SEAT_SOUTH && d_top    < best_d) { best_d = d_top;    best = p_top;    }
+    if (seat != SEAT_WEST  && d_right  < best_d) { best_d = d_right;  best = p_right;  }
+    if (seat != SEAT_EAST  && d_left   < best_d) { best_d = d_left;   best = p_left;   }
     return best;
 }
 
@@ -788,32 +800,77 @@ void board_view_draw(Viewport vp, const BoardState* board, const PhysicsWorld* p
         static const float SEAT_DEFAULT_ANGLE[4] = { -(float)M_PI / 2.0f, 0.0f, (float)M_PI / 2.0f, (float)M_PI };  /* N, E, S, W */
         for (int s = 0; s < 4; s++) {
             float target = 0.0f;
-            if (game && is_aim_preview && game->computed_shot_valid && game->turn_seat == (Seat)s) {
+            bool this_seat_aim_preview = (game && is_aim_preview && game->computed_shot_valid && game->turn_seat == (Seat)s);
+            if (this_seat_aim_preview) {
                 target = game->aim_line_progress;
                 /* LATCHED, not recomputed every frame (2026-09-28): the operator saw the standing position - and with
                  * it, which arm reaches - occasionally jump mid-shot ("suddenly swapping...in a jerky weird flipping").
                  * Recomputing this every frame from `g_vis.striker` meant that if the striker's own smoothing had not
                  * quite finished settling exactly when the reach animation began, the target position (especially near
                  * a corner, where two sides of the boundary are close to equally near) could shift again WHILE the arm
-                 * was already visibly reaching - a real, if brief, jump. Computed once instead, at the one instant
-                 * `reach` is still at its resting 0 (the same instant the right arm's spin is separately captured,
-                 * below), it is a true constant for the rest of the shot: it cannot move again once the arm starts
-                 * moving toward it, because it is simply never touched again until the NEXT shot resets it. */
-                if (g_vis.reach[s] < 0.002f) {
-                    float back_angle = math_wrap_angle(game->computed_shot_plan.aim_angle + (float)M_PI);
-                    g_vis.aim_pose_angle[s] = back_angle;
-                    g_vis.aim_pose_side[s] = classify_strike_side(back_angle, SEAT_DEFAULT_ANGLE[s]);
+                 * was already visibly reaching - a real, if brief, jump. Computed once instead, at the one frame THIS
+                 * SEAT's aim preview actually begins (`!g_vis.aim_preview_active[s]`, i.e. it was not already running
+                 * last frame) - not at "reach is back near 0", which an extra turn (a pocketed coin, handing the SAME
+                 * seat a second shot before its first one has finished withdrawing) can reach well before the new shot
+                 * starts, leaving the old, now-wrong target latched for the entire new shot (the operator: the west
+                 * robot's "extended arm does not match the striker's vector"; the east robot that "never recovered its
+                 * right arm" was the same bug persisting across MULTIPLE later turns, never getting a fresh latch). It
+                 * is a true constant for the rest of the shot: nothing touches it again until the NEXT one begins. */
+                if (!g_vis.aim_preview_active[s]) {
+                    /* TWO angles, not one, and this is the actual root cause behind everything from "the extended arm
+                     * does not match the striker's vector" to "never recovered its right arm" (2026-09-28, found by
+                     * tracing theta_target at full reach across a long multi-board run: it averaged 93 degrees off
+                     * zero, sometimes nearly 180, when a fully converged reach should always put it near zero).
+                     *
+                     * `game->computed_shot_plan.aim_angle` is a WORLD-space angle (Y increases away from the board,
+                     * matching the physics engine and the board boundary constants) - confirmed by the aim arrow
+                     * itself, which adds cosf/sinf(aim_angle) directly to a world-space point before converting the
+                     * RESULT to screen space. `math_world_to_screen` flips Y (screen.y = centre - world.y * scale), so
+                     * a world-space direction's screen-space equivalent negates its y-component - equivalently, the
+                     * angle a WORLD vector needs to be treated as, once everything downstream of it is done in screen
+                     * pixels, is its MIRROR: `PI - aim_angle`, not `aim_angle`.
+                     *
+                     * The robot's own body-orientation system (`away`/`f.back` inside draw_human_figure, and the
+                     * SEAT_DEFAULT_ANGLE constants they are blended from) is NOT converted through math_world_to_screen
+                     * at all - `angle` is used directly, via cosf/sinf, as a SCREEN vector. SEAT_DEFAULT_ANGLE was
+                     * chosen to already work correctly in that screen-native system (confirmed by every idle robot in
+                     * every screenshot this whole feature has ever produced facing the right way at rest) - but the
+                     * shot's own `back_angle` was being computed as `aim_angle + PI`, the WORLD-space "reverse
+                     * direction", and fed DIRECTLY into that same screen-native system with no conversion. For a shot
+                     * needing very little rotation the mismatch barely shows; for one needing a real turn, the arm
+                     * ends up pointing up to 180 degrees away from the striker.
+                     *
+                     * `back_angle_world` (world convention, unconverted) is still exactly right for anything computed
+                     * in WORLD units, like the contact point below - it must stay as `aim_angle + PI`, matching the
+                     * arrow's own convention. `back_angle_screen` (`PI - aim_angle`) is its screen-native mirror, and
+                     * is what the robot's OWN orientation - and everything measured relative to it - must use instead. */
+                    float back_angle_world = math_wrap_angle(game->computed_shot_plan.aim_angle + (float)M_PI);
+                    float back_angle_screen = math_wrap_angle((float)M_PI - game->computed_shot_plan.aim_angle);
+                    g_vis.aim_pose_angle[s] = back_angle_screen;
+                    g_vis.aim_pose_side[s] = classify_strike_side(back_angle_screen, SEAT_DEFAULT_ANGLE[s]);
                     /* The exact point the arm needs to reach: the striker's near rim, diametrically opposite the shot's
                      * own travel direction. Built the same way the (already screenshot-verified) aim arrow itself is -
                      * cosf/sinf of the shot's own angle added directly to a world-space point - so there is no risk of
                      * this world-space computation disagreeing with the world-to-screen convention used elsewhere. */
-                    Vec2 back_dir_world = { cosf(back_angle), sinf(back_angle) };
+                    Vec2 back_dir_world = { cosf(back_angle_world), sinf(back_angle_world) };
                     Vec2 contact_point_world = { g_vis.striker.x + back_dir_world.x * (STRIKER_RADIUS_NORM * 1.05f),
                                                   g_vis.striker.y + back_dir_world.y * (STRIKER_RADIUS_NORM * 1.05f) };
                     g_vis.aim_pose_pos[s] = closest_standing_point((Seat)s, contact_point_world, west_fixed_x, east_fixed_x, south_fixed_y, north_fixed_y);
                     g_vis.aim_pose_striker[s] = g_vis.striker;   /* frozen here; stops updating (and so stays put) once the strike ends the aim preview */
+                    /* Which arm reaches: whichever side the striker is actually on, computed once here (alongside
+                     * everything else this shot needs) instead of being separately, repeatedly re-derived inside
+                     * draw_human_figure - one latch point for a shot's whole geometry, not two. Screen-native, like
+                     * the body orientation itself - so it must use `back_angle_screen`, not the world one. */
+                    Vec2 side_final_screen = math_world_to_screen(vp, g_vis.aim_pose_pos[s]);
+                    Vec2 side_away = { cosf(back_angle_screen), sinf(back_angle_screen) };
+                    Vec2 side_right = { side_away.y, -side_away.x };
+                    Vec2 side_striker_screen = math_world_to_screen(vp, g_vis.striker);
+                    float side_dx = side_striker_screen.x - side_final_screen.x, side_dy = side_striker_screen.y - side_final_screen.y;
+                    float side_v = side_dx * side_right.x + side_dy * side_right.y;
+                    g_vis.arm_side[s] = (side_v >= 0.0f) ? 1.0f : -1.0f;
                 }
             }
+            g_vis.aim_preview_active[s] = this_seat_aim_preview;
             if (target > g_vis.reach[s]) g_vis.reach[s] = target;
             else g_vis.reach[s] = approach_f(g_vis.reach[s], target, REACH_WITHDRAW_SPEED * frame_dt);
 
