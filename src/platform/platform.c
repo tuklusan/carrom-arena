@@ -83,6 +83,14 @@ uint64_t platform_time_us(void) {
 #endif
 }
 
+uint64_t platform_get_pid(void) {
+#if defined(_WIN32)
+    return (uint64_t)GetCurrentProcessId();
+#else
+    return (uint64_t)getpid();
+#endif
+}
+
 PlatformFile* platform_fopen(const char* path, const char* mode) {
     FILE* f = fopen(path, mode);
     if (!f) return NULL;

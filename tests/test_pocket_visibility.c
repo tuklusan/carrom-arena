@@ -69,7 +69,10 @@ void test_trace_pocket_progress_interrupted(void) {
     trace_write_shot_snapshot(w, true, 7, 3.5f, "SETTLING", &sp, &sv, pos, vel, alive, pocketed, 2);
     /* no trace_close: SHOT_INTERRUPTED must already be flushed */
     char* text = read_all(path);
-    TEST_ASSERT_NOT_NULL(strstr(text, "\"type\":\"POCKET\""));
+    /* trace_write_pocket()'s own immediate record is now "POCKET_IMMEDIATE" (2026-09-28), not "POCKET" -
+     * that literal string collided with the unrelated EVENT_POCKET game event, which also serialized
+     * "type":"POCKET" but with a completely different, incompatible schema. */
+    TEST_ASSERT_NOT_NULL(strstr(text, "\"type\":\"POCKET_IMMEDIATE\""));
     TEST_ASSERT_NOT_NULL(strstr(text, "\"piece_id\":18"));
     char* progress = strstr(text, "\"type\":\"SHOT_PROGRESS\"");
     TEST_ASSERT_NOT_NULL(progress);

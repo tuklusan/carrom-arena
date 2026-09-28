@@ -25,6 +25,9 @@ void platform_yield(void);
 /* Get current time as microseconds since epoch (for seeding) */
 uint64_t platform_time_us(void);
 
+/* Current process id (getpid on POSIX, GetCurrentProcessId on Windows). Used, together with the build id and a wall-clock timestamp, to mark where each run's data begins in a trace file that is now reused across every run rather than recreated per run. */
+uint64_t platform_get_pid(void);
+
 /* File I/O */
 typedef struct {
     void* handle;

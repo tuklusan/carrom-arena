@@ -5,7 +5,7 @@
 
 void events_log(const GameEvent* evt, PlatformFile* log_file) {
     if (!log_file) return;
-    
+
     const char* type_str = "UNKNOWN";
     switch (evt->type) {
         case EVENT_POCKET: type_str = "POCKET"; break;
@@ -20,11 +20,16 @@ void events_log(const GameEvent* evt, PlatformFile* log_file) {
         case EVENT_MATCH_START: type_str = "MATCH_START"; break;
         case EVENT_MATCH_END: type_str = "MATCH_END"; break;
     }
-    
-    platform_fprintf(log_file, "[%llu] %s seat=%s team=%s piece=%d color=%s pocket=%d score=(%d,%d) turn=%d\n",
+
+    /* See event_to_json()'s team_key for why this label differs for POCKET: evt->team is the pocketed piece's
+     * own team there, not the acting seat's, and the human-readable mirror should say so too. */
+    const char* team_label = (evt->type == EVENT_POCKET) ? "piece_team" : "team";
+
+    platform_fprintf(log_file, "[%llu] %s seat=%s %s=%s piece=%d color=%s pocket=%d score=(%d,%d) turn=%d\n",
            (unsigned long long)evt->tick, type_str,
-           (evt->seat == SEAT_NORTH) ? "NORTH" : (evt->seat == SEAT_EAST) ? "EAST" : 
+           (evt->seat == SEAT_NORTH) ? "NORTH" : (evt->seat == SEAT_EAST) ? "EAST" :
            (evt->seat == SEAT_SOUTH) ? "SOUTH" : "WEST",
+           team_label,
            (evt->team == TEAM_WHITE) ? "WHITE" : "BLACK",
            evt->piece_id,
            (evt->piece_color == PIECE_WHITE) ? "WHITE" : (evt->piece_color == PIECE_BLACK) ? "BLACK" : "QUEEN",
@@ -48,10 +53,17 @@ char* event_to_json(const GameEvent* evt, char* buffer, size_t size) {
         case EVENT_MATCH_START: type_str = "MATCH_START"; break;
         case EVENT_MATCH_END: type_str = "MATCH_END"; break;
     }
-    
-    const char* seat_str = (evt->seat == SEAT_NORTH) ? "NORTH" : (evt->seat == SEAT_EAST) ? "EAST" : 
+
+    const char* seat_str = (evt->seat == SEAT_NORTH) ? "NORTH" : (evt->seat == SEAT_EAST) ? "EAST" :
                            (evt->seat == SEAT_SOUTH) ? "SOUTH" : "WEST";
     const char* team_str = (evt->team == TEAM_WHITE) ? "WHITE" : "BLACK";
+    /* RENAMED (2026-09-28): for every other event, evt->team is the ACTING seat's own team, consistent with
+     * seat_str. For EVENT_POCKET specifically, rules.c deliberately sets it to the POCKETED PIECE's own team
+     * instead (which can genuinely differ from the striker's - pocketing an opponent's coin is legal and does
+     * not change whose turn it is), so the same struct field means two different things depending on event
+     * type. Rather than have "team" silently mean something else for one event type, the JSON key itself now
+     * says which one it is. */
+    const char* team_key = (evt->type == EVENT_POCKET) ? "piece_team" : "team";
     const char* color_str = (evt->piece_color == PIECE_WHITE) ? "WHITE" : (evt->piece_color == PIECE_BLACK) ? "BLACK" : "QUEEN";
     const char* turn_str = "ADVANCE";
     switch (evt->turn_decision) {
@@ -61,13 +73,13 @@ char* event_to_json(const GameEvent* evt, char* buffer, size_t size) {
         case TURN_GAME_OVER: turn_str = "GAME_OVER"; break;
         case TURN_MATCH_OVER: turn_str = "MATCH_OVER"; break;
     }
-    
+
     snprintf(buffer, size,
-        "{\"type\":\"%s\",\"tick\":%llu,\"seat\":\"%s\",\"team\":\"%s\",\"piece_id\":%d,\"piece_color\":\"%s\","
+        "{\"type\":\"%s\",\"tick\":%llu,\"seat\":\"%s\",\"%s\":\"%s\",\"piece_id\":%d,\"piece_color\":\"%s\","
         "\"pocket\":%d,\"score_delta_white\":%d,\"score_delta_black\":%d,\"turn_decision\":\"%s\"}",
-        type_str, (unsigned long long)evt->tick, seat_str, team_str,
+        type_str, (unsigned long long)evt->tick, seat_str, team_key, team_str,
         evt->piece_id, color_str, evt->pocket_index,
         evt->score_delta_white, evt->score_delta_black, turn_str);
-    
+
     return buffer;
 }

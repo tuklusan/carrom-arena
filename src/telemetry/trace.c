@@ -37,14 +37,17 @@ static bool trace_init_file(TraceWriter* w) {
     /* Open file in read/write binary mode to allow seeking */
     FILE* f = fopen(w->jsonl_path, "r+b");
     if (!f) {
-        /* Create new file */
+        /* Create new file (the FIRST time this fixed path is ever opened - every run after this one reopens
+         * and continues the same file; see the "one file, reused for every run" note in trace.h). */
         f = platform_fopen_private(w->jsonl_path, "w+b");
         if (!f) return false;
-        
-        /* Write initial index (0) + zero-fill data area */
-        uint64_t zero = 0;
-        fwrite(&zero, 1, TRACE_INDEX_SIZE, f);
-        
+
+        /* Write the initial 16-byte header - write_offset=0, wrapped=0 - as two explicit uint64_t fields, not
+         * one (TRACE_INDEX_SIZE is 16 bytes; a single uint64_t is 8 - writing/reading TRACE_INDEX_SIZE bytes
+         * into/out of just one would overrun it). */
+        uint64_t header[2] = { 0, 0 };
+        fwrite(header, 1, TRACE_INDEX_SIZE, f);
+
         /* Zero-fill the data area (8 MiB) - do in chunks */
         static char zero_buf[4096];
         memset(zero_buf, 0, sizeof(zero_buf));
@@ -53,38 +56,29 @@ static bool trace_init_file(TraceWriter* w) {
             fwrite(zero_buf, 1, chunk, f);
         }
         fflush(f);
-        
+
         w->write_offset = 0;
         w->file_size = 0;
         w->wrapped = false;
         fclose(f);   /* reopened through the platform layer below (the handle used to leak) */
     } else {
-        /* Read existing index */
-        uint64_t index;
-        if (fread(&index, 1, TRACE_INDEX_SIZE, f) == TRACE_INDEX_SIZE) {
-            w->write_offset = index;
-        } else {
-            w->write_offset = 0;
-        }
-        
-        /* Determine file size by seeking to end of data area */
-        fseek(f, 0, SEEK_END);
-        long total_size = ftell(f);
-        if (total_size >= (long)TRACE_INDEX_SIZE) {
-            w->file_size = (uint64_t)(total_size - TRACE_INDEX_SIZE);
-            if (w->file_size > TRACE_MAX_SIZE) w->file_size = TRACE_MAX_SIZE;
-        } else {
-            w->file_size = 0;
-        }
-        
-        w->wrapped = (w->write_offset == 0 && w->file_size == TRACE_MAX_SIZE);
-        if (!w->wrapped && w->file_size == TRACE_MAX_SIZE) {
-            w->wrapped = true;
-        }
-        
+        /* Reopening an existing file - almost every run, now that the trace is one file reused forever rather
+         * than recreated per run. Read BOTH header fields explicitly; a short read or an out-of-range offset
+         * means a corrupt or foreign file, so start this run's view of it from empty rather than trust it. */
+        uint64_t header[2] = { 0, 0 };
+        bool ok = (fread(header, 1, TRACE_INDEX_SIZE, f) == TRACE_INDEX_SIZE) && header[0] <= TRACE_MAX_SIZE;
+        w->write_offset = ok ? header[0] : 0;
+        w->wrapped = ok && (header[1] != 0);
+
+        /* file_size mirrors what trace_write_line_internal() itself maintains: the wrapped flag is now real,
+         * persisted state (see trace.h), not inferred from the on-disk size, which is always the full
+         * pre-allocated size from the moment the file was first created regardless of how much real data has
+         * ever been written. */
+        w->file_size = w->wrapped ? TRACE_MAX_SIZE : w->write_offset;
+
         fclose(f);
     }
-    
+
     /* Reopen via platform layer for writing */
     w->jsonl_file = platform_fopen(w->jsonl_path, "r+b");
     return w->jsonl_file != NULL;
@@ -92,15 +86,19 @@ static bool trace_init_file(TraceWriter* w) {
 
 static void trace_update_index(TraceWriter* w) {
     if (!w->jsonl_file || !w->jsonl_file->handle) return;
-    
+
     FILE* f = (FILE*)w->jsonl_file->handle;
     long pos = ftell(f);
-    
+
+    uint64_t header[2];
+    header[0] = w->write_offset;
+    header[1] = w->wrapped ? 1 : 0;
+
     /* Seek to index position (start of file) */
     fseek(f, 0, SEEK_SET);
-    fwrite(&w->write_offset, 1, TRACE_INDEX_SIZE, f);
+    fwrite(header, 1, TRACE_INDEX_SIZE, f);
     fflush(f);
-    
+
     /* Restore position */
     fseek(f, pos, SEEK_SET);
 }
@@ -222,7 +220,7 @@ static char* shot_result_to_json(const ShotResult* result, char* buf, size_t siz
     char final_pos_json[2048] = "[";
     char* fp = final_pos_json + 1;
     size_t fp_rem = sizeof(final_pos_json) - 2;
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < MAX_PIECES; i++) {
         int written = snprintf(fp, fp_rem,
             "%s{\"id\":%d,\"pos\":{\"x\":%.6f,\"y\":%.6f}}",
             i == 0 ? "" : ",", i, result->final_positions[i].x, result->final_positions[i].y);
@@ -305,6 +303,34 @@ void trace_write_pocket_near_miss(TraceWriter* writer, uint8_t piece_id, uint8_t
     }
 }
 
+/* RUN_START marker (2026-09-28): the trace is now ONE file reused for every run rather than recreated per
+ * run (see the header note in trace.h), so a single ring can hold records from many independent runs woven
+ * together across restarts. This marks exactly where each one's own data begins - a timestamp, the build id
+ * and the process id - so a reader can find the LAST RUN_START in the file and treat everything from there
+ * onward as the current run, without needing any other bookkeeping. Called once by trace_open(), right after
+ * a successful open, whether this run created the file or reopened an existing one. */
+void trace_write_run_start(TraceWriter* writer) {
+    if (!writer || !writer->jsonl_file) return;
+
+    uint64_t timestamp_us = platform_time_us();
+    uint64_t pid = platform_get_pid();
+
+    char json[512];
+    int written = snprintf(json, sizeof(json),
+        "{\"type\":\"RUN_START\",\"timestamp_us\":%" PRIu64 ",\"build_id\":\"%s\",\"pid\":%" PRIu64 ",\"seed\":%" PRIu64 "}",
+        timestamp_us, PLATFORM_BUILD_ID, pid, writer->seed);
+
+    (void)written;   /* a truncated record is written as far as it fits */
+
+    trace_write_line_internal(writer, json, strlen(json));
+
+    if (writer->log_file) {
+        platform_fprintf(writer->log_file, "# RUN_START timestamp_us=%" PRIu64 " build=%s pid=%" PRIu64 " seed=%" PRIu64 "\n",
+                         timestamp_us, PLATFORM_BUILD_ID, pid, writer->seed);
+        platform_fflush(writer->log_file);
+    }
+}
+
 TraceWriter* trace_open(const char* path, const char* log_dir, bool verbose, uint64_t seed) {
 
     /* Integer overflow check for TraceWriter allocation */
@@ -351,6 +377,9 @@ TraceWriter* trace_open(const char* path, const char* log_dir, bool verbose, uin
     }
     
     w->shot_count = 0;
+
+    trace_write_run_start(w);
+
     return w;
 }
 
@@ -445,8 +474,7 @@ void trace_write_shot_end(TraceWriter* writer, const ShotResult* result, const R
         "\"result\":%s,"
         "\"score_delta\":{\"white\":%d,\"black\":%d},"
         "\"turn_decision\":\"%s\","
-        "\"post_state_hash\":\"%016" PRIx64 "\","
-        "\"runtime_errors\":[]"
+        "\"post_state_hash\":\"%016" PRIx64 "\""
         "}",
         result_json,
         outcome->score_delta.white,
@@ -523,7 +551,7 @@ void trace_write_pocket(TraceWriter* writer, uint64_t shot_number, uint8_t piece
     if (!writer || !writer->jsonl_file) return;
     char json[256];
     snprintf(json, sizeof(json),
-        "{\"type\":\"POCKET\",\"shot_number\":%" PRIu64 ",\"piece_id\":%u,\"color\":%d,"
+        "{\"type\":\"POCKET_IMMEDIATE\",\"shot_number\":%" PRIu64 ",\"piece_id\":%u,\"color\":%d,"
         "\"pocket_index\":%u,\"sim_time\":%.6f}",
         shot_number, (unsigned)piece_id, color, (unsigned)pocket_index, sim_time);
     trace_write_line_internal(writer, json, strlen(json));
@@ -586,14 +614,13 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
     f = fopen(path, "rb");
     if (!f) goto cleanup;
 
-    uint64_t write_offset;
-    if (fread(&write_offset, 1, TRACE_INDEX_SIZE, f) != TRACE_INDEX_SIZE || write_offset > TRACE_MAX_SIZE) {
+    /* Read both header fields explicitly (TRACE_INDEX_SIZE is 16 bytes: write_offset then a wrapped flag -
+     * reading that many bytes into a single uint64_t, as this used to, would overrun it). */
+    uint64_t header[2] = { 0, 0 };
+    if (fread(header, 1, TRACE_INDEX_SIZE, f) != TRACE_INDEX_SIZE || header[0] > TRACE_MAX_SIZE) {
         goto cleanup;   /* short or corrupt index: reading on with it would index outside the buffer */
     }
-
-
-    fseek(f, 0, SEEK_END);
-    long actual_file_size = ftell(f);
+    uint64_t write_offset = header[0];
 
     fseek(f, TRACE_INDEX_SIZE, SEEK_SET);
     data = calloc(1, TRACE_MAX_SIZE);
@@ -604,8 +631,16 @@ TraceRecordArray trace_read_last_records(const char* path, size_t max_records) {
 
     if (read_bytes == 0) goto cleanup;
 
-    /* The buffer is wrapped if the file size is at least index + max size */
-    bool is_wrapped = (actual_file_size >= (long)(TRACE_INDEX_SIZE + TRACE_MAX_SIZE));
+    /* Whether the ring has actually wrapped is now real, persisted state (the writer sets and saves this the
+     * moment write_offset itself wraps past TRACE_MAX_SIZE - see trace_ring_put()/trace_update_index()), not
+     * inferred from the file's on-disk SIZE. That size is always the full pre-allocated 8 MiB+header from the
+     * instant trace_init_file() first creates the file, regardless of how much real data has ever been
+     * written, which used to make this always true - harmless only because the unwritten tail is zero bytes
+     * that can never look like a JSONL record start, but wrong, and wasteful (every read reconstructed and
+     * scanned a full 8 MiB logical buffer even when almost none of it was real - confirmed empirically: a file
+     * that had written only 263,601 of 8,388,608 bytes still produced an 8,125,007-byte leading run of zero
+     * padding in the "chronological" reconstruction below). */
+    bool is_wrapped = (header[1] != 0);
 
     logical_buf = calloc(1, TRACE_MAX_SIZE * 2 + 1);
     if (!logical_buf) goto cleanup;

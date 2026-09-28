@@ -135,12 +135,22 @@ static void app_setup_trace(AppContext* ctx) {
     if (ctx->config.trace_dir) {
         platform_mkdir(ctx->config.trace_dir);
         {
-            static const char* const kept[] = { "trace_", "flight_", "seed_", "debug_" };
-            platform_prune_old_files(ctx->config.trace_dir, kept, 4, 20);   /* the 20 newest sessions of each kind stay */
+            /* the trace file itself is no longer one of these: it is a single, fixed, reused file now (see
+             * below), never created fresh per run, so it has nothing here to prune */
+            static const char* const kept[] = { "flight_", "seed_", "debug_" };
+            platform_prune_old_files(ctx->config.trace_dir, kept, 3, 20);   /* the 20 newest sessions of each kind stay */
         }
+        /* ONE FILE, REUSED FOR EVERY RUN (2026-09-28, the operator: "the trace file must be one single file,
+         * reused for every run... you must not create a fresh trace file for each run; create it if it does
+         * not exist"). A fixed, obvious name - not the seed-suffixed name every other file here still uses -
+         * so every run opens the exact same path regardless of seed; trace_open() itself already knows how to
+         * create it fresh or reopen and continue an existing one (that ring-continuation logic predates this
+         * change), and now also writes a RUN_START marker on every open so a reader can always find exactly
+         * where the latest run's own data begins in a file that many runs' records now share. Built with the
+         * same snprintf + '/' join every other path in this function already uses, which this codebase already
+         * ships working identically on Windows, Linux and macOS. */
         char trace_path[512];
-        snprintf(trace_path, sizeof(trace_path), "%s/trace_%llu.jsonl", 
-                 ctx->config.trace_dir, (unsigned long long)ctx->rng.master_seed);
+        snprintf(trace_path, sizeof(trace_path), "%s/trace.jsonl", ctx->config.trace_dir);
         char diag_path[512];
         snprintf(diag_path, sizeof(diag_path), "%s/debug_%llu.log", ctx->config.trace_dir, (unsigned long long)ctx->rng.master_seed);
         platform_diag_open(diag_path);
