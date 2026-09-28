@@ -331,6 +331,28 @@ swinging onto the same side as the other, already-idle arm. Fixed by driving the
 it is. Verified with a per-frame trace: found the exact transition in the wild (reach still at 0.22 when the turn
 changed) and confirmed the fix carries it through smoothly - a 6.5 degree shift, a continuation, not a snap.
 
+A fourth correction the same week (2026-09-28), and the deepest one: two more screenshots, an east robot that "never
+recovered its right arm" and, in the same shot, a west robot whose "extended arm does not match the striker's vector."
+A long multi-board trace (700+ samples) first ruled out the obvious suspect - `reach` itself always decayed correctly -
+then, at full settled reach, showed the arm's target angle averaging 93 degrees off zero, sometimes nearly 180. Root
+cause: `game->computed_shot_plan.aim_angle` is a WORLD-space angle (confirmed by the aim arrow, which adds its
+cosf/sinf directly to a world-space point before converting to screen space); `math_world_to_screen` flips Y, so a
+world direction's screen equivalent negates its y-component - the angle needed once everything downstream is in screen
+pixels is `PI - aim_angle`, not `aim_angle + PI`. The robot's own body-orientation system (`away`/`f.back`,
+SEAT_DEFAULT_ANGLE) is never passed through that flip - it treats `angle` as already screen-native, which is why every
+idle robot has always faced correctly at rest - but the shot's own target angle was the WORLD-space `aim_angle + PI`,
+fed into that screen-native system unconverted. Small rotations barely showed the mismatch (why so many earlier
+screenshot checks looked right); a real turn could point the arm up to 180 degrees off. Fixed by keeping two angles
+where the code had conflated one: the existing world-space value stays for the one genuinely world-space use (the
+contact point); the robot's own orientation, the arm-side decision, and the finger-selection helper now use the
+correctly mirrored, screen-native one. A second, smaller, unrelated bug found in the same pass: yesterday's "optimal
+standing position" exclusion guards (never place a robot on the board's opposite side) had the seat pairings backwards
+- fixed too, though confirmed (identical before/after trace numbers on its own) not to be the cause of the angle
+mismatch. Verified with the same trace, before/after: average angular error at settled reach dropped from 93 to 22
+degrees, and the remaining 22 is the shoulder's own small, expected sideways offset from the body's centre (confirmed
+against atan(offset/distance) directly), not a bug. Confirmed visually on two more shots: the arm lands exactly
+opposite the aim arrow in both.
+
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
 - Should the ICF GAME score (which decides G) be reattributed by physical pair the same way B and P now are (see the compliance
