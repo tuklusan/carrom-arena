@@ -327,7 +327,12 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     bool shrinking_now = reaching_active && (reach < g_vis.reach_peak_seen[seat] - 0.0001f);
     if (shrinking_now && !g_vis.was_shrinking[seat]) {
         g_vis.withdrawal_reach_ang[seat] = lerp_angle_shortest(arm_spin, theta_target, reach);
-        g_vis.withdrawal_idle_ang[seat] = 10.5f * t + 2.0f;
+        /* PARKED, NOT SPINNING (2026-09-28, see the fuller note below at the actual `excited` flap): this
+         * captured the OTHER arm's wildly spinning "excited" angle as withdrawal's own starting point, so a
+         * withdrawal that began while that arm happened to be caught mid-spin would carry the same problem
+         * into the easing-back-to-neutral phase too. Since the other arm no longer spins at all, its "current
+         * angle" at this instant is just its own small idle sway - capture that instead. */
+        g_vis.withdrawal_idle_ang[seat] = 0.15f * idle_wave(seat, (side_sign > 0.0f) ? 1 : 0, t * 1.8f);
         g_vis.withdrawal_peak_reach[seat] = (g_vis.reach_peak_seen[seat] > 0.0001f) ? g_vis.reach_peak_seen[seat] : 1.0f;
     }
     g_vis.was_shrinking[seat] = shrinking_now;
@@ -350,8 +355,23 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
         g_vis.reach_peak_seen[seat] = 0.0f;
     } else if (!shrinking_now) {
         reach_ang = lerp_angle_shortest(arm_spin, theta_target, reach);
-        float excited = 10.5f * t + 2.0f;
-        if (side_sign > 0.0f) { flap_l = excited; } else { flap_r = excited; }
+
+        /* THE OTHER ARM STAYS PARKED (2026-09-28, the operator's own words: "the only exception is the transient
+         * frames where either arm is under use for a strike" - EITHER arm, singular: the one striking. Everything
+         * else about that sentence says the other one is not exempt at all). This used to spin the non-reaching arm
+         * fast and without limit for as long as the other one was reaching (`10.5f * t + 2.0f`, fed straight into
+         * cosf/sinf as `t` runs unbounded for the whole session) - a deliberate "excited" flavour animation from
+         * before the canonical rule existed. A trace caught exactly what that produces: idle_ang reaching into the
+         * THOUSANDS of degrees during a real reach (6452.7, 7364.9, 8276.1 sampled live). Mathematically that is
+         * still a well-defined rotation - cosf/sinf of any float stays in [-1,1] - but at any instant a screenshot
+         * happens to land on, that arm could be caught rotated to face straight along the body's own axis instead of
+         * out to the side, tucking it edge-on into the torso's own silhouette where it reads as simply gone - exactly
+         * the "one arm visible, the other just isn't there" screenshots. Fixed by giving the other arm the same
+         * small idle sway a fully-resting arm gets, instead of spinning it at all: it now stays visibly, correctly
+         * parked on its own side for the whole time the other arm is out on its own strike, satisfying the rule as
+         * written rather than the flavour text some earlier pass invented for it. */
+        float parked = 0.15f * idle_wave(seat, (side_sign > 0.0f) ? 1 : 0, t * 1.8f);
+        if (side_sign > 0.0f) { flap_l = parked; } else { flap_r = parked; }
     } else {
         float frac = reach / g_vis.withdrawal_peak_reach[seat];
         if (frac > 1.0f) frac = 1.0f;
