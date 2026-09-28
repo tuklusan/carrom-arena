@@ -1,6 +1,6 @@
 # Carrom Arena: RESUME playbook
 
-**Updated:** 2026-09-28 (UTC), after the arm-side default fix. Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
+**Updated:** 2026-09-28 (UTC), after the parked-arm-during-reach fix. Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
 
 ## Repo state
 - `main` head: see `git log`; tag `beta-0.0.12` = the spinning-arms release; identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. The next tag is `beta-0.0.13` (only when the operator asks; never move existing tags).
@@ -401,6 +401,23 @@ before its first shot. Fixed with a sane non-zero default, overwritten the insta
 Verified visually across a full played session (100 sampled frames): west and east both show two arms correctly split
 to opposite sides of the body from the very first frame - before either has taken a shot - and stay correctly split
 through many turns afterward.
+
+An eighth correction the same week (2026-09-28): the seventh fix held up under its own trace and its own screenshots,
+but the operator sent one more - west and east both broken again, "even at the beginning." This time the operator's
+own wording pointed straight at the answer: "the only exception is the transient frames where either arm is under use
+for a strike" - EITHER, singular, the one actually striking. A fresh trace of the OTHER arm's own angle during a real
+reach found it: `idle_ang` reaching into the THOUSANDS of degrees (6452.7, 7364.9, 8276.1 sampled live). The
+non-reaching arm's angle was `10.5f * t + 2.0f`, fed straight into cosf/sinf with `t` running unbounded for the whole
+session - a deliberate "excited flapping" flavour animation, written before the canonical rule existed, that the
+operator's rule never actually exempted. Mathematically still a well-defined rotation, but at whatever instant a
+screenshot lands on, that arm could be caught rotated to point along the body's own axis instead of out to the side,
+tucking itself edge-on into the torso's own silhouette where it simply reads as gone - exactly "one arm visible, the
+other isn't there." Fixed by giving the non-reaching arm the same small idle sway a resting arm gets instead of
+spinning it at all, so it stays visibly parked on its own side for the whole time the other arm is out on its own
+strike (and fixed the matching one-time capture at the start of withdrawal, which took the same unbounded value as its
+own starting point). Verified visually this time, not just numerically: captured a full reach-to-withdrawal sequence
+at normal speed and stepped through it frame by frame - the reaching arm correctly extends toward the striker, the
+other stays small and visibly tucked the whole way through, never vanishes, never swings wildly.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
