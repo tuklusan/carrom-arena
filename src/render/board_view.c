@@ -195,6 +195,26 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     float r_near = dist_to_striker_center - striker_r * 1.05f;
     float r_far  = dist_to_striker_center + striker_r * 1.05f;
 
+    /* SECOND overshoot source (2026-09-28, found from a per-frame trace comparing the striker's true closest point,
+     * computed live, against the arm's own actual rendered tip): even though the LENGTH target above is now a stable
+     * constant (the first overshoot fix), it is measured against the body's FINAL position while the arm is actually
+     * DRAWN from the body's LIVE, still-moving position (needed so the arm's rotation and shape stay attached, per an
+     * earlier fix). While the body has not yet arrived, those two pivots are in different places, so a length correct
+     * for the final pivot can still carry the rendered tip PAST the striker's true near/far edge as measured from
+     * where the arm is actually being drawn from right now - the trace showed up to +14px of this, mid-turn, even
+     * though it always settles back to correct by the time reach reaches 1. Fixed with a hard geometric clamp: the
+     * LIVE pivot-to-striker distance is computed fresh every frame (cheap, and unrelated to the jitter the first fix
+     * solved, since it is only ever used as a ceiling, never as the smooth target itself), and the near/far targets are
+     * capped to whichever is smaller - the smooth, frozen target, or what the CURRENT live geometry actually allows.
+     * The arm can now never be drawn past the striker's true edge, in either direction, at any point in the motion. */
+    Vector2 live_pivot_screen = robot_pt(&f, pu, pivot_v);
+    float ldx = s_screen.x - live_pivot_screen.x, ldy = s_screen.y - live_pivot_screen.y;
+    float live_dist_to_striker = sqrtf(ldx * ldx + ldy * ldy);
+    float r_near_live_limit = live_dist_to_striker - striker_r * 1.05f;
+    float r_far_live_limit  = live_dist_to_striker + striker_r * 1.05f;
+    r_near = fminf(r_near, r_near_live_limit);
+    r_far  = fminf(r_far,  r_far_live_limit);
+
     /* Resting (reach = 0) lengths along the pivot's own local +u axis - identical to the old resting arm's distances
      * from this same pivot, so at reach = 0 the shape is unchanged from before. */
     float fore_rest_len  = (torso_end - 0.2f  * hr) - pu;
