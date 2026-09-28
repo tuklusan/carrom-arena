@@ -209,8 +209,21 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     }
     float side_sign = g_vis.arm_side[seat];   /* +1 = right arm reaches, -1 = left arm reaches */
 
+    /* The arm's animation state must be driven by `reach`, not by `is_current_turn` alone (2026-09-28, the operator, on
+     * two different seats: "both arms are ending up on the same side" / "both arms on the same side after the last
+     * shot"). The game hands the turn to the NEXT seat as soon as the shot resolves - well before this seat's own
+     * ~0.4s visual withdrawal (reach easing 1 back to 0) has actually finished, since that easing is purely cosmetic
+     * and the game logic has no reason to wait for it. `is_current_turn` therefore goes false while the arm is still
+     * visibly extended. Gating the reaching-vs-idle choice on `is_current_turn` alone meant that, at that exact
+     * instant, the STILL-EXTENDED arm's rotation snapped from "pointing at the target" (theta_target-based) straight
+     * to "idle waving" (an unrelated, independently-oscillating angle) - a sudden, discontinuous jump in a still-long
+     * arm, which is exactly what could look like it swinging onto the same side as the other, still-idle-waving arm.
+     * `reaching_active` stays true for as long as `reach` itself is still meaningfully above 0, regardless of whose
+     * turn the game now says it is, so the withdrawal keeps its own smooth, already-correct animation right to the
+     * end, and only becomes plain idle-waving once the arm has actually finished coming down. */
+    bool reaching_active = is_current_turn || reach > 0.002f;
     float flap_r = 0.0f, flap_l = 0.0f;
-    if (!is_current_turn) { flap_r = 0.9f * idle_wave(seat, 0, t * 1.8f); flap_l = 0.9f * idle_wave(seat, 1, t * 1.8f); }
+    if (!reaching_active) { flap_r = 0.9f * idle_wave(seat, 0, t * 1.8f); flap_l = 0.9f * idle_wave(seat, 1, t * 1.8f); }
     else if (side_sign > 0.0f) { flap_l = 10.5f * t + 2.0f; }        /* right arm is reaching: the left keeps flapping, excited */
     else                       { flap_r = 10.5f * t + 2.0f; }        /* left arm is reaching: the right keeps flapping instead */
     float pivot_v = side_sign * (arm_v + 0.2f * hr);   /* the TRUE shoulder pivot for the reaching arm, on whichever side: (pu, pivot_v), fixed regardless of reach */
@@ -269,7 +282,7 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     /* The one rotation angle for the REACHING arm carries both the old jobs (easing the spin to a stop, then aiming);
      * the other arm just keeps its own flap/spin going as flavour animation. Both read whichever of flap_r/flap_l is
      * live for their own side. */
-    float reach_ang = (is_current_turn) ? lerp_angle_shortest(arm_spin, theta_target, reach) : (side_sign > 0.0f ? flap_r : flap_l);
+    float reach_ang = (reaching_active) ? lerp_angle_shortest(arm_spin, theta_target, reach) : (side_sign > 0.0f ? flap_r : flap_l);
     float idle_ang  = (side_sign > 0.0f) ? flap_l : flap_r;
     robot_rbox(&f, pu, pivot_v, reach_ang, pu, pu + len_fore_far, pivot_v - hw_fore, pivot_v + hw_fore, steel, line);
     robot_rbox(&f, pu, pivot_v, reach_ang, pu + len_hand_near, pu + len_hand_far, pivot_v - hw_hand, pivot_v + hw_hand, dark, line);
