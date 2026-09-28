@@ -97,6 +97,17 @@ typedef struct {
                                  * target frozen from the shot before last for the ENTIRE new shot. This flag catches
                                  * the actual moment a new aim preview begins for a seat, regardless of what `reach`
                                  * still happens to be. */
+    float reach_peak_seen[4];   /* the running maximum of `reach` since this seat last returned fully to rest - how
+                                 * draw_human_figure tells "still extending, or holding at full reach" apart from
+                                 * "now genuinely withdrawing", instead of a fragile frame-to-frame reach comparison
+                                 * that would misfire during the flat hold right before a shot fires (2026-09-28, the
+                                 * operator's canonical rule: both arms must fully collapse to their normal position
+                                 * before idle-waving resumes). Reset to 0 once the seat is fully back at rest. */
+    bool was_shrinking[4];      /* was `reach` genuinely below its own peak LAST frame - the edge this is latched on */
+    float withdrawal_reach_ang[4]; /* the reaching arm's own angle, captured the instant real withdrawal begins */
+    float withdrawal_idle_ang[4];  /* the OTHER (flapping) arm's angle, captured at that same instant */
+    float withdrawal_peak_reach[4]; /* `reach` at that same instant, so the blend back to neutral is correctly
+                                     * normalised even if the peak wasn't exactly 1.0 */
 } VisualState;
 
 static VisualState g_vis = { .appear = 1.0f };
@@ -214,23 +225,12 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
      * happens; see the loop for the full story). Just read the decision here. */
     float side_sign = g_vis.arm_side[seat];   /* +1 = right arm reaches, -1 = left arm reaches */
 
-    /* The arm's animation state must be driven by `reach`, not by `is_current_turn` alone (2026-09-28, the operator, on
-     * two different seats: "both arms are ending up on the same side" / "both arms on the same side after the last
-     * shot"). The game hands the turn to the NEXT seat as soon as the shot resolves - well before this seat's own
-     * ~0.4s visual withdrawal (reach easing 1 back to 0) has actually finished, since that easing is purely cosmetic
-     * and the game logic has no reason to wait for it. `is_current_turn` therefore goes false while the arm is still
-     * visibly extended. Gating the reaching-vs-idle choice on `is_current_turn` alone meant that, at that exact
-     * instant, the STILL-EXTENDED arm's rotation snapped from "pointing at the target" (theta_target-based) straight
-     * to "idle waving" (an unrelated, independently-oscillating angle) - a sudden, discontinuous jump in a still-long
-     * arm, which is exactly what could look like it swinging onto the same side as the other, still-idle-waving arm.
-     * `reaching_active` stays true for as long as `reach` itself is still meaningfully above 0, regardless of whose
-     * turn the game now says it is, so the withdrawal keeps its own smooth, already-correct animation right to the
-     * end, and only becomes plain idle-waving once the arm has actually finished coming down. */
+    /* `reaching_active` stays true for as long as `reach` itself is still meaningfully above 0, regardless of whose
+     * turn the game now says it is (2026-09-28: the game hands the turn to the NEXT seat as soon as a shot resolves,
+     * well before this seat's own visual withdrawal has actually finished, since that easing is purely cosmetic and
+     * the game logic has no reason to wait for it). The actual flap/reach angles are worked out further down, once
+     * `theta_target` is available - see there for the full withdrawal story. */
     bool reaching_active = is_current_turn || reach > 0.002f;
-    float flap_r = 0.0f, flap_l = 0.0f;
-    if (!reaching_active) { flap_r = 0.9f * idle_wave(seat, 0, t * 1.8f); flap_l = 0.9f * idle_wave(seat, 1, t * 1.8f); }
-    else if (side_sign > 0.0f) { flap_l = 10.5f * t + 2.0f; }        /* right arm is reaching: the left keeps flapping, excited */
-    else                       { flap_r = 10.5f * t + 2.0f; }        /* left arm is reaching: the right keeps flapping instead */
     float pivot_v = side_sign * (arm_v + 0.2f * hr);   /* the TRUE shoulder pivot for the reaching arm, on whichever side: (pu, pivot_v), fixed regardless of reach */
 
     /* THE CONTACT POINT (2026-09-28, found from the operator's own screenshot: the hand was reaching to the side of the
@@ -284,11 +284,59 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     float hw_fore = 0.20f * hr + (0.16f * hr - 0.20f * hr) * reach;   /* half-widths taper slightly as it extends, but stay CENTRED on pivot_v - never shift sideways */
     float hw_hand = 0.25f * hr + (0.16f * hr - 0.25f * hr) * reach;
 
-    /* The one rotation angle for the REACHING arm carries both the old jobs (easing the spin to a stop, then aiming);
-     * the other arm just keeps its own flap/spin going as flavour animation. Both read whichever of flap_r/flap_l is
-     * live for their own side. */
-    float reach_ang = (reaching_active) ? lerp_angle_shortest(arm_spin, theta_target, reach) : (side_sign > 0.0f ? flap_r : flap_l);
-    float idle_ang  = (side_sign > 0.0f) ? flap_l : flap_r;
+    /* BOTH ARMS MUST RETURN TO NEUTRAL BEFORE IDLE-WAVING RESUMES (2026-09-28, the operator's canonical rule: "At the
+     * end of a turn, a robot MUST collapse and return BOTH arms to their normal extents (lengths) and positions
+     * (joined to the shoulder, parallel to the correct side of the robot)...Only after returning arms to normal
+     * positions, the idle-robot hand animation will resume."). LENGTH already did this correctly - `len_hand_far` and
+     * friends are all `lerp(rest_value, target, reach)`, so they land exactly on the resting length the instant
+     * `reach` reaches 0, by construction. ANGLE did not: the reaching arm eased, during withdrawal, back toward
+     * `arm_spin` - the essentially RANDOM angle it happened to be spinning at when reaching began, not the straight,
+     * parallel-to-body neutral pose - and the OTHER arm's "excited flapping" (an ever-increasing angle, never reset)
+     * simply stopped and jumped straight into idle-waving the moment `reaching_active` went false, with no guarantee
+     * the two even agreed. Neither one was actually returning to a canonical rest position; both just stopped
+     * wherever they happened to be and handed off to a completely unrelated function.
+     *
+     * Fixed with a proper three-state machine, using `reach_peak_seen` (the running maximum of `reach` since this
+     * seat last rested) rather than a frame-to-frame comparison, so the flat HOLD right before a shot fires - reach
+     * sitting still at its cap, not yet declining - is never mistaken for withdrawal already starting:
+     *   - RESTING (`!reaching_active`): plain idle-waving, as always; `reach_peak_seen` resets to 0 so the next shot
+     *     starts its own tracking fresh.
+     *   - GROWING or HOLDING (`reach` at or above its own peak so far): the reaching arm eases from its live spin
+     *     toward the target, the other arm flaps excitedly - unchanged from before.
+     *   - WITHDRAWING (`reach` measurably below its own peak): the INSTANT this begins, both arms' current angles are
+     *     captured once as the withdrawal's own starting point; from then on both ease from THAT captured angle back
+     *     to exactly 0 (straight, parallel to the body) purely as a function of `reach` falling back to 0 - so by the
+     *     time `reach` reaches 0, both arms are provably back at their canonical rest position, and idle-waving can
+     *     only ever pick up from there. */
+    if (reach > g_vis.reach_peak_seen[seat]) g_vis.reach_peak_seen[seat] = reach;
+    bool shrinking_now = reaching_active && (reach < g_vis.reach_peak_seen[seat] - 0.0001f);
+    if (shrinking_now && !g_vis.was_shrinking[seat]) {
+        g_vis.withdrawal_reach_ang[seat] = lerp_angle_shortest(arm_spin, theta_target, reach);
+        g_vis.withdrawal_idle_ang[seat] = 10.5f * t + 2.0f;
+        g_vis.withdrawal_peak_reach[seat] = (g_vis.reach_peak_seen[seat] > 0.0001f) ? g_vis.reach_peak_seen[seat] : 1.0f;
+    }
+    g_vis.was_shrinking[seat] = shrinking_now;
+
+    float flap_r = 0.0f, flap_l = 0.0f;
+    float reach_ang;
+    if (!reaching_active) {
+        flap_r = 0.9f * idle_wave(seat, 0, t * 1.8f);
+        flap_l = 0.9f * idle_wave(seat, 1, t * 1.8f);
+        reach_ang = (side_sign > 0.0f) ? flap_r : flap_l;
+        g_vis.reach_peak_seen[seat] = 0.0f;
+    } else if (!shrinking_now) {
+        reach_ang = lerp_angle_shortest(arm_spin, theta_target, reach);
+        float excited = 10.5f * t + 2.0f;
+        if (side_sign > 0.0f) { flap_l = excited; } else { flap_r = excited; }
+    } else {
+        float frac = reach / g_vis.withdrawal_peak_reach[seat];
+        if (frac > 1.0f) frac = 1.0f;
+        if (frac < 0.0f) frac = 0.0f;
+        reach_ang = lerp_angle_shortest(0.0f, g_vis.withdrawal_reach_ang[seat], frac);
+        float w_idle = lerp_angle_shortest(0.0f, g_vis.withdrawal_idle_ang[seat], frac);
+        if (side_sign > 0.0f) { flap_l = w_idle; } else { flap_r = w_idle; }
+    }
+    float idle_ang = (side_sign > 0.0f) ? flap_l : flap_r;
     robot_rbox(&f, pu, pivot_v, reach_ang, pu, pu + len_fore_far, pivot_v - hw_fore, pivot_v + hw_fore, steel, line);
     robot_rbox(&f, pu, pivot_v, reach_ang, pu + len_hand_near, pu + len_hand_far, pivot_v - hw_hand, pivot_v + hw_hand, dark, line);
     robot_rbox(&f, pu, -pivot_v, idle_ang, sh0 + 0.1f * hr, torso_end - 0.2f * hr, -arm_v - 0.4f * hr, -arm_v, steel, line);
