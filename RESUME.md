@@ -1,9 +1,17 @@
 # Carrom Arena: RESUME playbook
 
-**Updated:** 2026-09-28 (UTC), after removing the reaching-arm feature entirely (robots now just wave). Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
+**Updated:** 2026-09-28 (UTC), tagged `beta-0.0.14`. Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
 
 ## Repo state
-- `main` head: see `git log`; tag `beta-0.0.12` = the spinning-arms release; identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. The next tag is `beta-0.0.13` (only when the operator asks; never move existing tags).
+- `main` head `32f41ff`, tagged `beta-0.0.14` (2026-09-28, on the operator's explicit request - "tag the latest source
+  code with the next available beta version identifier"): the reaching-arm removal, the one-trace-file redesign, and
+  the trace-anomaly fixes. Identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub
+  (`tuklusan/carrom-arena`) and the Windows H: clone. CI only triggers on branch pushes, not tag pushes (see
+  `.github/workflows/ci.yml`), so a plain `git push --tags` alone would have left the delivered exe's own version
+  string reading a commit-hash "-dirty" suffix rather than the clean tag; triggered a manual `workflow_dispatch` run
+  right after so `build_fresh`'s exes are the genuine `beta-0.0.14` build (`git describe --tags` on that checkout
+  returns exactly `beta-0.0.14`, confirming it). The next tag is `beta-0.0.15` (only when the operator asks; never
+  move existing tags).
 - CANONICAL RULE (operator): all build and edit activities happen on the Linux clone, which is the canonical local repo. Changes go from it to GitHub, and then the H: clone is updated to match GitHub and Linux. Never edit or build source in the H: clone.
 - Standing operator rule: after ANY change, commit on Linux, run `bash ~/clean_verify.sh`, `bash ~/bin/push_all.sh`, then `git pull --ff-only --tags` in the H: clone, without being asked. `HANDOFF.md` (next to the blog on H:) has the full procedure and the Windows exe build. Edits made on Windows must keep LF endings: the H: clone checks files out as CRLF, so never scp a Windows-side file over a Linux one without converting it.
 - The Linux box is ephemeral. "Push" means `bash ~/bin/push_all.sh` (GitHub + the guard against secrets) and then fast-forwarding the H: clone. The blog lives at `H:\My Documents\SOFTWARE-DEVELOPMENT\Carrom\SANYALnet-Labs-Dev-Blog.md` and is kept up to date as a story for a future blog post (no secrets).
