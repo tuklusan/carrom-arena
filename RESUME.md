@@ -353,6 +353,20 @@ degrees, and the remaining 22 is the shoulder's own small, expected sideways off
 against atan(offset/distance) directly), not a bug. Confirmed visually on two more shots: the arm lands exactly
 opposite the aim arrow in both.
 
+A fifth correction the same week (2026-09-28): the operator specified a canonical rule rather than reporting a specific
+glitch - "At the end of a turn, a robot MUST collapse and return BOTH arms to their normal extents (lengths) and
+positions...Only after returning arms to normal positions, the idle-robot hand animation will resume." LENGTH already
+did this correctly (every reach-dependent length is `lerp(rest, target, reach)`, landing exactly on rest at reach=0 by
+construction); ANGLE did not, in two ways: the reaching arm eased, during withdrawal, back toward the essentially
+random angle it happened to be spinning at when reaching began, not toward neutral; and the other (flapping) arm's
+ever-increasing "excited spin" simply stopped and handed off straight to idle-waving the instant it was cut off, with
+no guarantee the two even agreed. Fixed with a proper three-state machine per seat (RESTING / GROWING-or-HOLDING /
+WITHDRAWING, using the running peak of `reach` since last rest rather than a frame-to-frame comparison, so the flat
+hold right before a shot fires is never mistaken for withdrawal already starting): the instant real withdrawal begins,
+both arms' current angles are captured once and eased from there back to exactly 0 purely as a function of `reach`
+itself falling to 0. Verified with a per-frame trace across six boards: at every one of 89 sampled withdrawal-tail
+windows, both angles converge to under one degree of true neutral.
+
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
 - Should the ICF GAME score (which decides G) be reattributed by physical pair the same way B and P now are (see the compliance
