@@ -268,6 +268,22 @@ the original jitter) - the near/far length targets are capped to whichever is sm
 the live geometry currently allows. Verified with the same trace across an entire board: the signed overshoot is now
 NEGATIVE at every single sampled frame in every episode - the arm always stays a fraction of a pixel short of the true
 edge, never crosses it.
+A deeper, more fundamental correction the same day (2026-09-28): the operator sent an actual screenshot - the hand was
+reaching to the LEFT of the striker while the aim arrow pointed up-and-right, with the note "there is no realistic
+physical way that hand can launch the striker in the direction of the arrowhead." Root cause, different from anything
+above: the target the arm aimed at was "whichever point on the striker's circle is closest to the ARM'S PIVOT" (found
+via atan2() from the pivot to the striker's CENTRE) - not the point fixed by the shot itself. Those only coincide when
+the pivot sits almost exactly on the aim line; the arm attaches to the SIDE of the body, so it never quite does, and
+for a close-in shot (a robot standing right next to the striker at a corner) the gap becomes large and obviously wrong.
+Fixed by dropping the pivot-relative atan2() entirely: since the body already faces along the shot's own aim direction
+by construction, the correct contact point is simply the striker's centre offset by its radius along the body frame's
+own +u axis (v untouched) - true for every seat and angle, independent of where the pivot is. The pivot now only
+decides the rotation and length needed to REACH that fixed point, never where the point is. The far point (for the
+fingers) is not a second independently-aimed target either - a rigid arm cannot point at two spots at once - it is the
+near point plus the striker's own diameter, continuing along the same ray. The two length fixes above still apply,
+now built on the corrected point. Verified by reproducing close-in shots and comparing the contact point against the
+aim arrow directly: in both a heavily angled close-range case and a nearly straight one, contact now sits exactly
+opposite the arrow.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
