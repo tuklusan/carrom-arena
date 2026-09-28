@@ -319,6 +319,18 @@ Verified with a per-frame probe across an entire board: 0 of 12 shots showed mor
 whole reach-and-withdrawal cycle (previously every one was exposed to a possible flip); extension distances at settle
 are all sane. Visual check confirms the arm still reaches correctly, attached, to the right contact point.
 
+A third correction the same week (2026-09-28): two more screenshots, on two different seats, both "both arms...on the
+same side after the last shot." Not the arm-side latch above (verified separately, stayed correct) - a different bug:
+the game hands the turn to the NEXT seat as soon as a shot resolves, well before this seat's own ~0.4s visual
+withdrawal (reach easing 1 back to 0) has actually finished, since that easing is purely cosmetic. The reaching arm's
+rotation and the other arm's animation were both gated on `is_current_turn` alone, so the instant the game moved the
+turn on - while the arm was often still visibly extended - it snapped straight from "pointing at the target" to
+"idle waving" (an unrelated, independently-oscillating angle): a sudden jump in a still-long arm, easily read as it
+swinging onto the same side as the other, already-idle arm. Fixed by driving the animation state from `reach` itself:
+`reaching_active` stays true for as long as reach is meaningfully above 0, regardless of whose turn the game now says
+it is. Verified with a per-frame trace: found the exact transition in the wild (reach still at 0.22 when the turn
+changed) and confirmed the fix carries it through smoothly - a 6.5 degree shift, a continuation, not a snap.
+
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
 - Should the ICF GAME score (which decides G) be reattributed by physical pair the same way B and P now are (see the compliance
