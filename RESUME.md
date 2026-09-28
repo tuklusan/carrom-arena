@@ -230,6 +230,16 @@ One rotation angle now carries both the old jobs (easing the spin to a stop, the
 from the live spin angle to the target bearing. Verified by re-running the IDENTICAL trace on the fixed build: max gap
 dropped from 190-310px to 1.9px, bounded by the fixed pivot offset, not growing with reach at all, across every seat and
 every sampled frame. Also confirmed visually on the east seat. The diagnostic trace logging was removed before shipping.
+One more correction the same day: the operator noticed the fingers were reaching the striker's CENTRE, not flicking
+through to the far side ("the fingers must end at the diametrically opposing side of the strike's direction"). Cause: the
+near/far reach targets were built by shifting only the U-component of the striker's position by its radius, reusing the
+SAME v-offset for both - which only lands on the striker's actual circle when the approach line happens to run parallel
+to the body's own u-axis; at any other angle the point drifts off the circle, so the fingers closed on a point partway
+in rather than the true rim. Fixed by measuring the real straight-line distance from the pivot to the striker's centre
+and stepping the radius off ALONG THAT SAME LINE, so the near point lands on the near rim and the far point on the far
+rim - diametrically opposite, through the centre - whatever angle the approach happens to be at. Verified with a
+temporary numeric probe (a marker drawn independently at the computed distance, confirmed sitting exactly on the far
+rim) and a pixel-exact zoom on the shipped build showing the finger reaching that same point.
 
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
