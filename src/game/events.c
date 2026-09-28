@@ -1,42 +1,7 @@
 #include "events.h"
 #include "common/types.h"
-#include "platform/platform.h"
 #include <stdio.h>
 
-void events_log(const GameEvent* evt, PlatformFile* log_file) {
-    if (!log_file) return;
-
-    const char* type_str = "UNKNOWN";
-    switch (evt->type) {
-        case EVENT_POCKET: type_str = "POCKET"; break;
-        case EVENT_FOUL: type_str = "FOUL"; break;
-        case EVENT_QUEEN_POCKETED: type_str = "QUEEN_POCKETED"; break;
-        case EVENT_QUEEN_COVERED: type_str = "QUEEN_COVERED"; break;
-        case EVENT_TURN_CHANGE: type_str = "TURN_CHANGE"; break;
-        case EVENT_BOARD_START: type_str = "BOARD_START"; break;
-        case EVENT_BOARD_END: type_str = "BOARD_END"; break;
-        case EVENT_GAME_START: type_str = "GAME_START"; break;
-        case EVENT_GAME_END: type_str = "GAME_END"; break;
-        case EVENT_MATCH_START: type_str = "MATCH_START"; break;
-        case EVENT_MATCH_END: type_str = "MATCH_END"; break;
-    }
-
-    /* See event_to_json()'s team_key for why this label differs for POCKET: evt->team is the pocketed piece's
-     * own team there, not the acting seat's, and the human-readable mirror should say so too. */
-    const char* team_label = (evt->type == EVENT_POCKET) ? "piece_team" : "team";
-
-    platform_fprintf(log_file, "[%llu] %s seat=%s %s=%s piece=%d color=%s pocket=%d score=(%d,%d) turn=%d\n",
-           (unsigned long long)evt->tick, type_str,
-           (evt->seat == SEAT_NORTH) ? "NORTH" : (evt->seat == SEAT_EAST) ? "EAST" :
-           (evt->seat == SEAT_SOUTH) ? "SOUTH" : "WEST",
-           team_label,
-           (evt->team == TEAM_WHITE) ? "WHITE" : "BLACK",
-           evt->piece_id,
-           (evt->piece_color == PIECE_WHITE) ? "WHITE" : (evt->piece_color == PIECE_BLACK) ? "BLACK" : "QUEEN",
-           evt->pocket_index,
-           evt->score_delta_white, evt->score_delta_black,
-           evt->turn_decision);
-}
 
 char* event_to_json(const GameEvent* evt, char* buffer, size_t size) {
     const char* type_str = "UNKNOWN";

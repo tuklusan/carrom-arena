@@ -36,23 +36,25 @@ typedef struct {
 
 PlatformFile* platform_fopen(const char* path, const char* mode);
 
-/* fopen for files the game CREATES (traces, flight recorder, markers): owner-only permissions (0600) on POSIX instead of
- * the umask default of 0666. `mode` is a normal fopen mode ("w", "w+b", ...). */
+/* fopen for files the game CREATES (the trace, markers): owner-only permissions (0600) on POSIX instead of the umask
+ * default of 0666. `mode` is a normal fopen mode ("w", "w+b", ...). */
 FILE* platform_fopen_private(const char* path, const char* mode);
 
-/* Debug log sink. All debugging output goes to a file (next to the trace), never to a console window: the game is a
- * windowed program. Lines logged before platform_diag_open, or with no file open, are dropped. */
-void platform_diag_open(const char* path);
-void platform_diag_close(void);
+/* Debug log sink (2026-09-28): all debugging output - raylib's own log, per-frame phase notes, everything that used
+ * to go to its own debug_<seed>.log file - is now handed to a caller-supplied sink instead of a file this layer
+ * owns, so it can be folded into the one shared trace file as LOG records (see trace_diag_sink() in telemetry/trace.h)
+ * without platform.c needing to know anything about the trace format. Lines logged before a sink is registered, or
+ * after it is cleared, are dropped - the same "no file open yet" behaviour this always had, just generalised. */
+typedef void (*PlatformDiagSink)(const char* line, void* userdata);
+void platform_diag_set_sink(PlatformDiagSink sink, void* userdata);
 void platform_diag_logf(const char* fmt, ...);
 
 /* A fatal start-up problem the player must be told about: a message box on Windows (there is no console), stderr elsewhere.
  * Also written to the debug log. */
 void platform_fatal(const char* message);
 
-/* Housekeeping for the trace directory: of the files in `dir` whose names start with any of the prefixes, keep only the
- * `keep` most recently modified per prefix and delete the rest. Every run leaves up to ~20 MB of trace and flight files. */
-void platform_prune_old_files(const char* dir, const char* const* prefixes, int prefix_count, int keep);
+/* (platform_prune_old_files was removed 2026-09-28: it kept the newest N of each per-run-named file - flight_,
+ * seed_, debug_ - now that the trace is a single fixed-name file reused forever, there is nothing left to prune.) */
 int platform_fclose(PlatformFile* file);
 int platform_fprintf(PlatformFile* file, const char* format, ...) __attribute__((format(printf, 2, 3)));
 int platform_fflush(PlatformFile* file);

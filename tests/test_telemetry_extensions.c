@@ -24,7 +24,7 @@ void setUp(void) {}
 void tearDown(void) {}
 
 void test_trace_write_near_miss(void) {
-    TraceWriter* w = trace_open("test_telemetry_near_miss.jsonl", "tests/logs", true, 12345);
+    TraceWriter* w = trace_open("test_telemetry_near_miss.jsonl", 12345);
     TEST_ASSERT_NOT_NULL(w);
     
     trace_write_pocket_near_miss(w, 5, 2, 0.005f, 0.1f);
@@ -58,7 +58,7 @@ void test_trace_write_near_miss(void) {
 }
 
 void test_trace_shot_end_fields(void) {
-    TraceWriter* w = trace_open("test_telemetry_shot_end.jsonl", "tests/logs", true, 12345);
+    TraceWriter* w = trace_open("test_telemetry_shot_end.jsonl", 12345);
     TEST_ASSERT_NOT_NULL(w);
     
     // Setup mock result with a pocketed piece and final positions

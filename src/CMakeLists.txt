@@ -15,7 +15,6 @@ add_library(carrom_core
     ai/arena_controller.c
     ai/shot_candidates.c
     ai/geometry_planner.c
-    telemetry/flight.c
     audio/audio_policy.c
     audio/radio_stream.c
     audio/radio_mp3.c
@@ -220,10 +219,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
     target_link_options(radio_probe PRIVATE -fsanitize=address,undefined)
 endif()
 
-# Flight-recorder decoder
-add_executable(flight_dump tools/flight_dump.c)
-target_link_libraries(flight_dump carrom_core)
-
 # Headless AI-vs-AI self-play (stall detector)
 add_executable(selfplay tools/selfplay.c)
 target_link_libraries(selfplay carrom_core)
@@ -290,15 +285,6 @@ endif()
 set_target_properties(carrom_arena PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
 )
-set_target_properties(flight_dump PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
-)
-if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(flight_dump PRIVATE -Wno-error=implicit-function-declaration)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
-        target_link_options(flight_dump PRIVATE -fsanitize=address,undefined)
-    endif()
-endif()
 
 # Disable -Werror=implicit-function-declaration for targets including Box2D headers
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")

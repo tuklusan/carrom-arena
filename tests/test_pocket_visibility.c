@@ -56,7 +56,7 @@ static char* read_all(const char* path) {
 
 void test_trace_pocket_progress_interrupted(void) {
     const char* path = "test_pocket_visibility.jsonl";
-    TraceWriter* w = trace_open(path, "tests/logs", false, 99);
+    TraceWriter* w = trace_open(path, 99);
     TEST_ASSERT_NOT_NULL(w);
     Vec2 pos[MAX_PIECES] = {{0}}, vel[MAX_PIECES] = {{0}}, sp = {0.1f, 0.2f}, sv = {1.0f, 0.0f};
     bool alive[MAX_PIECES] = {false};

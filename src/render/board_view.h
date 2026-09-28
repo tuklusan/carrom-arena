@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-/* What the last board_view_draw put on screen (for the flight recorder) */
+/* What the last board_view_draw put on screen. (2026-09-28: board_view_get_debug() itself has no callers left now that the flight recorder is gone - kept as-is, out of scope for the trace consolidation, but a candidate for its own future cleanup pass.) */
 typedef struct {
     bool striker_valid;
     Vec2 striker_vis;          /* drawn striker position (world units) */

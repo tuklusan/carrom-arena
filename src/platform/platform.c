@@ -7,7 +7,6 @@
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
-#include <dirent.h>
 #include <sys/stat.h>
 #if !defined(_WIN32)
 #include <fcntl.h>
@@ -150,16 +149,12 @@ FILE* platform_fopen_private(const char* path, const char* mode) {
 #endif
 }
 
-static FILE* g_diag_file;
+static PlatformDiagSink g_diag_sink;
+static void* g_diag_userdata;
 
-void platform_diag_open(const char* path) {
-    platform_diag_close();
-    g_diag_file = platform_fopen_private(path, "w");
-}
-
-void platform_diag_close(void) {
-    if (g_diag_file) fclose(g_diag_file);
-    g_diag_file = NULL;
+void platform_diag_set_sink(PlatformDiagSink sink, void* userdata) {
+    g_diag_sink = sink;
+    g_diag_userdata = userdata;
 }
 
 #if defined(__clang__)
@@ -167,12 +162,13 @@ void platform_diag_close(void) {
 #pragma clang diagnostic ignored "-Wformat-nonliteral"
 #endif
 void platform_diag_logf(const char* fmt, ...) {
-    if (!g_diag_file) return;
+    if (!g_diag_sink) return;
+    char buf[1024];
     va_list args;
     va_start(args, fmt);
-    vfprintf(g_diag_file, fmt, args);
+    vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
-    fflush(g_diag_file);
+    g_diag_sink(buf, g_diag_userdata);
 }
 #if defined(__clang__)
 #pragma clang diagnostic pop
@@ -185,40 +181,4 @@ void platform_fatal(const char* message) {
 #else
     fprintf(stderr, "%s\n", message);
 #endif
-}
-
-typedef struct { char name[260]; time_t mtime; } PruneEntry;
-
-static int prune_newest_first(const void* a, const void* b) {
-    time_t ta = ((const PruneEntry*)a)->mtime, tb = ((const PruneEntry*)b)->mtime;
-    return (ta < tb) - (ta > tb);
-}
-
-void platform_prune_old_files(const char* dir, const char* const* prefixes, int prefix_count, int keep) {
-    if (!dir || !prefixes || keep < 0) return;
-    for (int p = 0; p < prefix_count; p++) {
-        DIR* d = opendir(dir);
-        if (!d) return;
-        PruneEntry list[512];
-        int n = 0;
-        size_t plen = strlen(prefixes[p]);
-        struct dirent* de;
-        while ((de = readdir(d)) != NULL && n < 512) {
-            if (strncmp(de->d_name, prefixes[p], plen) != 0 || strlen(de->d_name) >= sizeof(list[0].name)) continue;
-            char path[1024];
-            snprintf(path, sizeof(path), "%s/%s", dir, de->d_name);
-            struct stat st;
-            if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) continue;
-            strcpy(list[n].name, de->d_name);
-            list[n].mtime = st.st_mtime;
-            n++;
-        }
-        closedir(d);
-        qsort(list, (size_t)n, sizeof(list[0]), prune_newest_first);
-        for (int i = keep; i < n; i++) {
-            char path[1024];
-            snprintf(path, sizeof(path), "%s/%s", dir, list[i].name);
-            remove(path);
-        }
-    }
 }

@@ -6,6 +6,7 @@
 #include "unity.h"
 #include "common/vecmath.h"
 #include "telemetry/trace.h"
+#include "platform/platform.h"
 #include "common/types.h"
 #include "game/rules.h"
 #include "game/board.h"
@@ -21,11 +22,9 @@
  * --------------------------------------------------------------------------- */
 
 static char test_trace_path[512];
-static char test_log_dir[512];
 
 static void setup_test_paths(void) {
     snprintf(test_trace_path, sizeof(test_trace_path), "%s", "test_trace_circular.jsonl");
-    snprintf(test_log_dir, sizeof(test_log_dir), "%s", "test_logs");
 }
 
 static uint64_t get_file_size(const char* path) {
@@ -79,27 +78,15 @@ static void create_dummy_shot_data(ShotPlan* plan, ShotResult* result, RulesOutc
 
 void setUp(void) {
     setup_test_paths();
-    /* Clean up any existing test files */
-    remove(test_trace_path);
-    char log_path[512];
-    (void)snprintf(log_path, sizeof(log_path), "%s/seed_12345.log", test_log_dir);
-    remove(log_path);
-    /* Remove log dir if empty */
-    (void)test_log_dir;  // Suppress unused warning in tests
-    // rmdir(test_log_dir);  // Requires unistd.h, skip for portability
+    remove(test_trace_path);   /* clean up any existing test file - there is no separate log file any more */
 }
 
 void tearDown(void) {
     remove(test_trace_path);
-    char log_path[512];
-    (void)snprintf(log_path, sizeof(log_path), "%s/seed_12345.log", test_log_dir);
-    remove(log_path);
-    (void)test_log_dir;  // Suppress unused warning in tests
-    // rmdir(test_log_dir);  // Requires unistd.h, skip for portability
 }
 
 void test_trace_open_creates_file_with_index(void) {
-    TraceWriter* writer = trace_open(test_trace_path, test_log_dir, true, 12345);
+    TraceWriter* writer = trace_open(test_trace_path, 12345);
     TEST_ASSERT_NOT_NULL(writer);
     
     /* File should exist */
@@ -113,7 +100,7 @@ void test_trace_open_creates_file_with_index(void) {
 }
 
 void test_trace_write_shot_start_end(void) {
-    TraceWriter* writer = trace_open(test_trace_path, test_log_dir, true, 12345);
+    TraceWriter* writer = trace_open(test_trace_path, 12345);
     TEST_ASSERT_NOT_NULL(writer);
     
     ShotPlan plan;
@@ -136,7 +123,7 @@ void test_trace_write_shot_start_end(void) {
 }
 
 void test_trace_file_never_exceeds_8mib(void) {
-    TraceWriter* writer = trace_open(test_trace_path, test_log_dir, true, 12345);
+    TraceWriter* writer = trace_open(test_trace_path, 12345);
     TEST_ASSERT_NOT_NULL(writer);
     
     ShotPlan plan;
@@ -169,7 +156,7 @@ void test_trace_file_never_exceeds_8mib(void) {
 }
 
 void test_trace_last_records_intact_and_parsable(void) {
-    TraceWriter* writer = trace_open(test_trace_path, test_log_dir, true, 12345);
+    TraceWriter* writer = trace_open(test_trace_path, 12345);
     TEST_ASSERT_NOT_NULL(writer);
     
     ShotPlan plan;
@@ -263,7 +250,7 @@ void test_trace_last_records_intact_and_parsable(void) {
 }
 
 void test_trace_wrap_preserves_recent_data(void) {
-    TraceWriter* writer = trace_open(test_trace_path, test_log_dir, true, 12345);
+    TraceWriter* writer = trace_open(test_trace_path, 12345);
     TEST_ASSERT_NOT_NULL(writer);
     
     ShotPlan plan;
@@ -316,36 +303,37 @@ void test_trace_wrap_preserves_recent_data(void) {
     TEST_ASSERT_TRUE(order_valid);
 }
 
-void test_trace_log_file_also_circular(void) {
-    TraceWriter* writer = trace_open(test_trace_path, test_log_dir, true, 12345);
+/* There is no separate human-readable mirror log any more (2026-09-28: "we must have EXACTLY ONE TRACE FILE" - see
+ * trace.h and app_setup_trace() in app/app.c) - platform_diag_logf() output is folded into THIS SAME file as LOG
+ * records instead, via platform_diag_set_sink(trace_diag_sink, writer). Checks that integration actually works
+ * end to end: install the sink, log a line, and confirm it comes back out of the trace file itself as a
+ * well-formed LOG record carrying that text - not silently dropped, not corrupting the record after it. */
+void test_trace_diag_sink_writes_into_the_same_file(void) {
+    TraceWriter* writer = trace_open(test_trace_path, 12345);
     TEST_ASSERT_NOT_NULL(writer);
-    
-    ShotPlan plan;
-    ShotResult result;
-    RulesOutcome outcome;
-    MatchState match;
-    GameState game;
-    
-    char log_path[512];
-    (void)snprintf(log_path, sizeof(log_path), "%s/seed_12345.log", test_log_dir);
-    
-    /* Write many shots */
-    for (int i = 1; i <= 5000; i++) {
-        create_dummy_shot_data(&plan, &result, &outcome, &match, &game, i);
-        trace_write_shot_start(writer, &match, &game, (uint64_t)i, SEAT_NORTH, &plan);
-        trace_write_shot_end(writer, &result, &outcome);
-    }
-    
+
+    platform_diag_set_sink(trace_diag_sink, writer);
+    platform_diag_logf("diagnostic message %d\n", 42);
+    platform_diag_set_sink(NULL, NULL);
+
     trace_flush(writer);
     trace_close(writer);
-    
-    /* Log file should also be bounded */
-    uint64_t log_size = get_file_size(log_path);
-    TEST_ASSERT_LESS_OR_EQUAL(TRACE_TOTAL_SIZE + 100, log_size);
+
+    TraceRecordArray arr = trace_read_last_records(test_trace_path, 5);
+    bool found = false;
+    for (size_t i = 0; i < arr.count; i++) {
+        if (arr.lines[i] && strstr(arr.lines[i], "\"type\":\"LOG\"") != NULL &&
+            strstr(arr.lines[i], "diagnostic message 42") != NULL) {
+            found = true;
+            break;
+        }
+    }
+    trace_record_array_free(&arr);
+    TEST_ASSERT_TRUE(found);
 }
 
 void test_trace_reopen_continues_from_index(void) {
-    TraceWriter* writer = trace_open(test_trace_path, test_log_dir, true, 12345);
+    TraceWriter* writer = trace_open(test_trace_path, 12345);
     TEST_ASSERT_NOT_NULL(writer);
     
     ShotPlan plan;
@@ -365,7 +353,7 @@ void test_trace_reopen_continues_from_index(void) {
     trace_close(writer);
     
     /* Reopen and continue */
-    writer = trace_open(test_trace_path, test_log_dir, true, 12345);
+    writer = trace_open(test_trace_path, 12345);
     TEST_ASSERT_NOT_NULL(writer);
     
     for (int i = 101; i <= 200; i++) {
@@ -406,8 +394,8 @@ void test_trace_validate_determinism(void) {
     remove(trace1);
     remove(trace2);
     
-    TraceWriter* w1 = trace_open(trace1, test_log_dir, false, 42);
-    TraceWriter* w2 = trace_open(trace2, test_log_dir, false, 42);
+    TraceWriter* w1 = trace_open(trace1, 42);
+    TraceWriter* w2 = trace_open(trace2, 42);
     
     ShotPlan plan;
     ShotResult result;
@@ -464,7 +452,7 @@ int main(void) {
     RUN_TEST(test_trace_file_never_exceeds_8mib);
     RUN_TEST(test_trace_last_records_intact_and_parsable);
     RUN_TEST(test_trace_wrap_preserves_recent_data);
-    RUN_TEST(test_trace_log_file_also_circular);
+    RUN_TEST(test_trace_diag_sink_writes_into_the_same_file);
     RUN_TEST(test_trace_reopen_continues_from_index);
     RUN_TEST(test_trace_validate_determinism);
     

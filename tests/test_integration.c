@@ -31,7 +31,7 @@ void test_app_parse_args_help(void) {
 void test_trace_write_read(void) {
     system("mkdir -p test_trace_out");
     
-    TraceWriter* writer = trace_open("test_trace_out/test.jsonl", "test_trace_out", true, 12345);
+    TraceWriter* writer = trace_open("test_trace_out/test.jsonl", 12345);
     TEST_ASSERT_NOT_NULL(writer);
     
     MatchState match;

@@ -15,10 +15,7 @@
 
 struct TraceWriter {
     PlatformFile* jsonl_file;
-    PlatformFile* log_file;
     char jsonl_path[512];
-    char log_path[512];
-    bool verbose;
     uint64_t seed;
     
     /* Ring buffer state */
@@ -294,13 +291,6 @@ void trace_write_pocket_near_miss(TraceWriter* writer, uint8_t piece_id, uint8_t
     (void)written;   /* a truncated record is written as far as it fits */
     
     trace_write_line_internal(writer, json, strlen(json));
-
-    if (writer->log_file) {
-        platform_fprintf(writer->log_file, 
-            "  [NEAR MISS] Piece %d near pocket %d (dist=%.4f, speed=%.4f)\n",
-            piece_id, pocket_index, distance, speed);
-        platform_fflush(writer->log_file);
-    }
 }
 
 /* RUN_START marker (2026-09-28): the trace is now ONE file reused for every run rather than recreated per
@@ -323,15 +313,77 @@ void trace_write_run_start(TraceWriter* writer) {
     (void)written;   /* a truncated record is written as far as it fits */
 
     trace_write_line_internal(writer, json, strlen(json));
-
-    if (writer->log_file) {
-        platform_fprintf(writer->log_file, "# RUN_START timestamp_us=%" PRIu64 " build=%s pid=%" PRIu64 " seed=%" PRIu64 "\n",
-                         timestamp_us, PLATFORM_BUILD_ID, pid, writer->seed);
-        platform_fflush(writer->log_file);
-    }
 }
 
-TraceWriter* trace_open(const char* path, const char* log_dir, bool verbose, uint64_t seed) {
+/* Diagnostic log sink (2026-09-28): installed via platform_diag_set_sink(trace_diag_sink, writer) right after
+ * trace_open() succeeds, so every platform_diag_logf() call - raylib's own log, per-frame phase notes, everything
+ * that used to go to its own debug_<seed>.log file - lands in the SAME shared trace file instead, as a LOG record.
+ * `line` is plain text (may contain a trailing newline, quotes, backslashes, or control characters - raylib messages
+ * and %s-substituted paths can contain any of these) and must be escaped to be embedded safely as a JSON string. */
+static void json_escape_into(const char* src, char* dst, size_t dst_size) {
+    size_t j = 0;
+    for (size_t i = 0; src[i] != '\0' && j + 7 < dst_size; i++) {
+        unsigned char c = (unsigned char)src[i];
+        if (c == '"' || c == '\\') { dst[j++] = '\\'; dst[j++] = (char)c; }
+        else if (c == '\n') { dst[j++] = '\\'; dst[j++] = 'n'; }
+        else if (c == '\r') { dst[j++] = '\\'; dst[j++] = 'r'; }
+        else if (c == '\t') { dst[j++] = '\\'; dst[j++] = 't'; }
+        else if (c < 0x20) { int w = snprintf(dst + j, 7, "\\u%04x", c); if (w > 0) j += (size_t)w; }
+        else { dst[j++] = (char)c; }
+    }
+    dst[j] = '\0';
+}
+
+void trace_diag_sink(const char* line, void* userdata) {
+    TraceWriter* writer = (TraceWriter*)userdata;
+    if (!writer || !writer->jsonl_file || !line) return;
+
+    /* Trim a single trailing newline (almost every call site's format string ends with one) - JSONL already
+     * puts one record per line, so keeping it would just show up as a literal "\n" inside the text field. */
+    size_t len = strlen(line);
+    char trimmed[1024];
+    if (len > 0 && len < sizeof(trimmed) && line[len - 1] == '\n') {
+        memcpy(trimmed, line, len - 1);
+        trimmed[len - 1] = '\0';
+    } else {
+        strncpy(trimmed, line, sizeof(trimmed) - 1);
+        trimmed[sizeof(trimmed) - 1] = '\0';
+    }
+
+    char escaped[1536];
+    json_escape_into(trimmed, escaped, sizeof(escaped));
+
+    char json[1600];
+    int written = snprintf(json, sizeof(json), "{\"type\":\"LOG\",\"text\":\"%s\"}", escaped);
+    (void)written;   /* a truncated record is written as far as it fits */
+
+    trace_write_line_internal(writer, json, strlen(json));
+}
+
+/* Folds in what used to be the separate binary flight recorder's discrete EVENT records (phase changes, plans,
+ * shots, pockets, speed/pause/mute changes, layout, sound cues...) as JSONL too, so they live in the one shared
+ * trace instead of a second 8 MiB ring only a dedicated decoder tool (flight_dump) could read. `kind` keeps the
+ * caller's own small integer enum (app.c's APP_EV_*) for anyone matching on it programmatically; `kind_name` makes
+ * the record self-describing without needing that enum's definition in hand. Frame-by-frame full-board state -
+ * the flight recorder's other, much higher-frequency role - is not replicated here: trace's own PHYSICS_STATE and
+ * SHOT_PROGRESS/SHOT_INTERRUPTED records already cover it at a size the shared 8 MiB budget can actually sustain
+ * across a real session; a full 19-piece snapshot every rendered frame would fill the ring in seconds. */
+void trace_write_app_event(TraceWriter* writer, int kind, const char* kind_name, float sim_time,
+                           float a, float b, float c, float d) {
+    if (!writer || !writer->jsonl_file) return;
+
+    uint64_t timestamp_us = platform_time_us();
+
+    char json[320];
+    snprintf(json, sizeof(json),
+        "{\"type\":\"APP_EVENT\",\"timestamp_us\":%" PRIu64 ",\"sim_time\":%.6f,\"kind\":%d,\"kind_name\":\"%s\","
+        "\"a\":%.6f,\"b\":%.6f,\"c\":%.6f,\"d\":%.6f}",
+        timestamp_us, (double)sim_time, kind, kind_name ? kind_name : "", (double)a, (double)b, (double)c, (double)d);
+
+    trace_write_line_internal(writer, json, strlen(json));
+}
+
+TraceWriter* trace_open(const char* path, uint64_t seed) {
 
     /* Integer overflow check for TraceWriter allocation */
     if (sizeof(TraceWriter) > SIZE_MAX) {
@@ -339,35 +391,19 @@ TraceWriter* trace_open(const char* path, const char* log_dir, bool verbose, uin
     }
     TraceWriter* w = calloc(1, sizeof(TraceWriter));
     if (!w) return NULL;
-    
-    w->verbose = verbose;
+
     w->seed = seed;
-    
+
     /* JSONL path */
     strncpy(w->jsonl_path, path, sizeof(w->jsonl_path) - 1);
     w->jsonl_path[sizeof(w->jsonl_path) - 1] = '\0';
-    
+
     /* Initialize the circular file */
     if (!trace_init_file(w)) {
         free(w);
         return NULL;
     }
-    
-    /* Human-readable log file (also circular, separate 8 MiB ring) */
-    if (verbose && log_dir) {
-        platform_mkdir(log_dir);
-        
-        snprintf(w->log_path, sizeof(w->log_path), "%s/seed_%" PRIu64 ".log", log_dir, seed);
-        
-        /* For log file, use same circular approach but simpler - just append with size check */
-        w->log_file = platform_fopen(w->log_path, "w");
-        if (w->log_file) {
-            /* Write header */
-            platform_fprintf(w->log_file, "# Carrom Arena Log - Seed: %" PRIu64 " - Build: %s\n", seed, PLATFORM_BUILD_ID);
-            platform_fflush(w->log_file);
-        }
-    }
-    
+
     /* Write initial header comment to JSONL (only on fresh file) */
     if (w->file_size == 0 && !w->wrapped) {
         char header[256];
@@ -389,14 +425,12 @@ void trace_close(TraceWriter* writer) {
     trace_flush(writer);
     
     if (writer->jsonl_file) platform_fclose(writer->jsonl_file);
-    if (writer->log_file) platform_fclose(writer->log_file);
     free(writer);
 }
 
 void trace_flush(TraceWriter* writer) {
     if (!writer || !writer->jsonl_file) return;
     platform_fflush(writer->jsonl_file);
-    if (writer->log_file) platform_fflush(writer->log_file);
 }
 
 void trace_write_shot_start(TraceWriter* writer, const MatchState* match, const GameState* game, 
@@ -447,19 +481,6 @@ void trace_write_shot_start(TraceWriter* writer, const MatchState* match, const 
     (void)written;   /* a truncated record is written as far as it fits */
     
     trace_write_line_internal(writer, json, strlen(json));
-    
-    /* Human-readable log */
-    if (writer->log_file) {
-        platform_fprintf(writer->log_file, 
-            "[SHOT %" PRIu64 "] %s (%s) - Plan: pos=(%.3f,%.3f) aim=%.3f power=%.3f tactic=%s\n",
-            shot_number,
-            seat_to_str(seat),
-            team_to_str(seat),
-            plan->placement.x, plan->placement.y,
-            plan->aim_angle, plan->power,
-            tactic_to_str(plan->tactic));
-        platform_fflush(writer->log_file);
-    }
 }
 
 void trace_write_shot_end(TraceWriter* writer, const ShotResult* result, const RulesOutcome* outcome) {
@@ -485,32 +506,15 @@ void trace_write_shot_end(TraceWriter* writer, const ShotResult* result, const R
     (void)written;   /* a truncated record is written as far as it fits */
     
     trace_write_line_internal(writer, json, strlen(json));
-    
-    if (writer->log_file) {
-        platform_fprintf(writer->log_file, 
-            "  -> Result: pockets=%d queen=%s striker=%s fouls=0x%X score=(%d,%d) turn=%s\n",
-            result->pocketed_count,
-            result->queen_pocketed ? "YES" : "NO",
-            result->striker_pocketed ? "YES" : "NO",
-            result->fouls,
-            outcome->score_delta.white, outcome->score_delta.black,
-            turn_decision_to_str(outcome->turn_decision));
-        platform_fflush(writer->log_file);
-    }
 }
 
 void trace_write_event(TraceWriter* writer, const GameEvent* evt) {
     if (!writer || !writer->jsonl_file) return;
-    
+
     char json[512];
     event_to_json(evt, json, sizeof(json));
-    
+
     trace_write_line_internal(writer, json, strlen(json));
-    
-    if (writer->log_file) {
-        events_log(evt, writer->log_file);
-        platform_fflush(writer->log_file);
-    }
 }
 
 void trace_write_physics_state(TraceWriter* writer, uint64_t frame, uint64_t shot_number, 

@@ -35,17 +35,27 @@ extern "C" {
 
 typedef struct TraceWriter TraceWriter;
 
-/* Open trace files for a run. 
- * path: base path for JSONL trace (e.g., "traces/seed_12345.jsonl")
- * log_dir: directory for human-readable mirror log (e.g., "logs/")
- * verbose: also write human-readable .log mirror
- * seed: run seed for naming log file
- */
-TraceWriter* trace_open(const char* path, const char* log_dir, bool verbose, uint64_t seed);
+/* Open THE trace file for a run - always the one fixed path (traces/trace.jsonl - see app_setup_trace() in
+ * app/app.c), created if it does not exist, reused and continued otherwise. `seed` is this run's own seed, kept
+ * only to stamp records (pre_state_hash, RUN_START) - it plays no part in the path any more. */
+TraceWriter* trace_open(const char* path, uint64_t seed);
 void trace_close(TraceWriter* writer);
 
-/* Marks where a run's own data begins in the (now shared, cross-run) ring: timestamp, build id, process id and the run's seed. Called once by trace_open() right after a successful open, so every run - whether it created the file or reopened an existing one - leaves a marker a reader can search for. */
+/* Marks where a run's own data begins in the (now shared, cross-run) ring: timestamp, build id, process id and the
+ * run's seed. Called once by trace_open() right after a successful open, so every run - whether it created the file
+ * or reopened an existing one - leaves a marker a reader can search for. */
 void trace_write_run_start(TraceWriter* writer);
+
+/* Install with platform_diag_set_sink(trace_diag_sink, writer): folds platform_diag_logf() output (raylib's own
+ * log, per-frame phase notes - everything that used to go to a separate debug_<seed>.log) into this same trace file
+ * as LOG records, instead of a second file. */
+void trace_diag_sink(const char* line, void* userdata);
+
+/* Folds in what the separate binary flight recorder used to call an EVENT record (phase/turn/speed/pause/layout/
+ * sound/pocket/shot boundaries...) as JSONL here instead. `kind` is the caller's own small integer enum (see
+ * app.c's APP_EV_*); `kind_name` makes the record self-describing without that enum in hand. */
+void trace_write_app_event(TraceWriter* writer, int kind, const char* kind_name, float sim_time,
+                           float a, float b, float c, float d);
 
 /* Write operations - automatically handles ring buffer wrapping */
 void trace_write_shot_start(TraceWriter* writer, const MatchState* match, const GameState* game, 

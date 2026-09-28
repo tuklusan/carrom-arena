@@ -13,7 +13,6 @@
 #include "physics/physics.h"
 #include "ai/controller.h"
 #include "telemetry/trace.h"
-#include "telemetry/flight.h"
 #include "board_view.h"
 #include "piece_draw.h"
 #include "render/renderer.h"
@@ -42,13 +41,14 @@
     int bounce_count;
     AudioPolicy audio_policy;      // which sound / how loud / rate limiting
     bool prev_muted;
-    FlightRecorder* flight;        // binary flight recorder (per-frame state + events)
-    double flight_t0;
-    int flight_prev_phase;
-    int flight_prev_seat;
-    float flight_prev_speed;
-    bool flight_prev_paused;
-    float flight_prev_layout[3];
+    /* App-level event tracking (2026-09-28): these replace the separate binary flight recorder's own
+     * previous-value tracking, now folded into the shared trace file as APP_EVENT records - see
+     * trace_write_app_event() in telemetry/trace.c and the APP_EVENT() macro below. */
+    int app_ev_prev_phase;
+    int app_ev_prev_seat;
+    float app_ev_prev_speed;
+    bool app_ev_prev_paused;
+    float app_ev_prev_layout[3];
     Renderer* renderer;
     Controller* controllers[4];  // One per seat
     uint64_t frame_count;
@@ -131,44 +131,72 @@ static void app_init_match(AppContext* ctx) {
     ctx->thinking_min_wall = 0.0;
 }
 
+/* App-level event kinds (2026-09-28): what used to be the separate binary flight recorder's own APP_EV_* enum,
+ * now written as APP_EVENT JSONL records into the shared trace file instead (trace_write_app_event()). Kept as the
+ * same small integers for continuity; app_ev_kind_name() below is what makes each record self-describing. */
+enum {
+    APP_EV_START = 1, APP_EV_PHASE = 2, APP_EV_PLAN = 3, APP_EV_SHOT_START = 4, APP_EV_POCKET = 5,
+    APP_EV_STRIKER_POCKET = 6, APP_EV_SHOT_END = 7, APP_EV_SPEED = 8, APP_EV_PAUSE = 9, APP_EV_STASH = 10,
+    APP_EV_TURN = 11, APP_EV_CLOSE = 12, APP_EV_LAYOUT = 13, APP_EV_SOUND = 14, APP_EV_MUTE = 15
+};
+
+static const char* app_ev_kind_name(int kind) {
+    switch (kind) {
+        case APP_EV_START:          return "START";
+        case APP_EV_PHASE:          return "PHASE";
+        case APP_EV_PLAN:           return "PLAN";
+        case APP_EV_SHOT_START:     return "SHOT_START";
+        case APP_EV_POCKET:         return "POCKET";
+        case APP_EV_STRIKER_POCKET: return "STRIKER_POCKET";
+        case APP_EV_SHOT_END:       return "SHOT_END";
+        case APP_EV_SPEED:          return "SPEED";
+        case APP_EV_PAUSE:          return "PAUSE";
+        case APP_EV_STASH:          return "STASH";
+        case APP_EV_TURN:           return "TURN";
+        case APP_EV_CLOSE:          return "CLOSE";
+        case APP_EV_LAYOUT:         return "LAYOUT";
+        case APP_EV_SOUND:          return "SOUND";
+        case APP_EV_MUTE:           return "MUTE";
+        default:                    return "UNKNOWN";
+    }
+}
+
+#define APP_EVENT(ctx, kind, a, b, c, d) \
+    do { if ((ctx)->trace) trace_write_app_event((ctx)->trace, (kind), app_ev_kind_name(kind), \
+         (ctx)->physics ? physics_get_sim_time((ctx)->physics) : 0.0f, \
+         (float)(a), (float)(b), (float)(c), (float)(d)); } while (0)
+
 static void app_setup_trace(AppContext* ctx) {
     if (ctx->config.trace_dir) {
         platform_mkdir(ctx->config.trace_dir);
-        {
-            /* the trace file itself is no longer one of these: it is a single, fixed, reused file now (see
-             * below), never created fresh per run, so it has nothing here to prune */
-            static const char* const kept[] = { "flight_", "seed_", "debug_" };
-            platform_prune_old_files(ctx->config.trace_dir, kept, 3, 20);   /* the 20 newest sessions of each kind stay */
-        }
-        /* ONE FILE, REUSED FOR EVERY RUN (2026-09-28, the operator: "the trace file must be one single file,
-         * reused for every run... you must not create a fresh trace file for each run; create it if it does
-         * not exist"). A fixed, obvious name - not the seed-suffixed name every other file here still uses -
-         * so every run opens the exact same path regardless of seed; trace_open() itself already knows how to
-         * create it fresh or reopen and continue an existing one (that ring-continuation logic predates this
-         * change), and now also writes a RUN_START marker on every open so a reader can always find exactly
-         * where the latest run's own data begins in a file that many runs' records now share. Built with the
-         * same snprintf + '/' join every other path in this function already uses, which this codebase already
-         * ships working identically on Windows, Linux and macOS. */
+
+        /* ONE FILE, REUSED FOR EVERY RUN, AND NO OTHER FILES (2026-09-28, the operator: "we must have EXACTLY ONE
+         * TRACE FILE that captures everything you need to debug... NO ADDITIONAL FILES"). Three separate files
+         * used to exist alongside this one - a binary flight recorder (flight_<seed>.bin, needing its own
+         * flight_dump tool to read), a plain-text debug log (debug_<seed>.log), and trace.c's own human-readable
+         * mirror (seed_<seed>.log) - all now folded into this single JSONL ring: platform_diag_set_sink() below
+         * routes every platform_diag_logf() call (raylib's own log, per-frame phase notes) here as LOG records,
+         * and APP_EVENT() (this file, further down) replaces the flight recorder's discrete EVENT records. A
+         * fixed, obvious name - not seed-suffixed - so every run, whatever its seed, opens the exact same path;
+         * trace_open() creates it if it does not exist and otherwise reopens and continues it, and writes a
+         * RUN_START marker on every open so a reader can find exactly where the latest run's own data begins in
+         * a file many runs' records now share. Built with the same snprintf + '/' join every path in this
+         * function already uses, which this codebase already ships working identically on Windows, Linux and
+         * macOS. */
         char trace_path[512];
         snprintf(trace_path, sizeof(trace_path), "%s/trace.jsonl", ctx->config.trace_dir);
-        char diag_path[512];
-        snprintf(diag_path, sizeof(diag_path), "%s/debug_%llu.log", ctx->config.trace_dir, (unsigned long long)ctx->rng.master_seed);
-        platform_diag_open(diag_path);
+        ctx->trace = trace_open(trace_path, ctx->rng.master_seed);
+        if (ctx->trace) {
+            platform_diag_set_sink(trace_diag_sink, ctx->trace);
+        }
         platform_diag_logf("Carrom Arena %s seed=%llu speed=%.2fx window=%dx%d\n", BUILD_ID,
                            (unsigned long long)ctx->rng.master_seed, ctx->playback_speed, ctx->config.window_width, ctx->config.window_height);
-        ctx->trace = trace_open(trace_path, ctx->config.trace_dir, ctx->config.verbose, ctx->rng.master_seed);
-        char flight_path[512];
-        snprintf(flight_path, sizeof(flight_path), "%s/flight_%llu.bin",
-                 ctx->config.trace_dir, (unsigned long long)ctx->rng.master_seed);
-        ctx->flight = flight_open(flight_path, ctx->rng.master_seed);
-        ctx->flight_t0 = platform_time_now();
-        ctx->flight_prev_phase = -1;
-        ctx->flight_prev_seat = -1;
-        ctx->flight_prev_speed = -1.0f;
-        if (ctx->flight) {
-            flight_write_event(ctx->flight, 0.0, 0.0f, FLIGHT_EV_START, (float)(ctx->rng.master_seed & 0xFFFFFFu),
-                               (float)ctx->config.window_width, (float)ctx->config.window_height, 0.0f);
-        }
+
+        ctx->app_ev_prev_phase = -1;
+        ctx->app_ev_prev_seat = -1;
+        ctx->app_ev_prev_speed = -1.0f;
+        APP_EVENT(ctx, APP_EV_START, (float)(ctx->rng.master_seed & 0xFFFFFFu),
+                  (float)ctx->config.window_width, (float)ctx->config.window_height, 0.0f);
     }
 }
 
@@ -241,103 +269,52 @@ static ShotResult app_collect_shot_result(AppContext* ctx) {
     return result;
 }
 
-#define FLIGHT_EVENT(ctx, kind, a, b, c, d) \
-    do { if ((ctx)->flight) flight_write_event((ctx)->flight, platform_time_now() - (ctx)->flight_t0, \
-         (ctx)->physics ? physics_get_sim_time((ctx)->physics) : 0.0f, (kind), (float)(a), (float)(b), (float)(c), (float)(d)); } while (0)
 
-/* One FRAME record per rendered frame: physics state of everything, and what the renderer actually drew. */
-static void app_flight_frame(AppContext* ctx, float alpha, double frame_dt) {
-    if (!ctx->flight) return;
-    double wall = platform_time_now() - ctx->flight_t0;
+/* Discrete state-change events, checked once a frame (2026-09-28): this used to also assemble a full per-piece,
+ * per-frame FlightFrame binary record here - dropped along with the rest of the separate flight recorder (see the
+ * operator's "exactly one trace file" note in app_setup_trace()). That full-board-every-frame fidelity is not
+ * replicated: trace's own PHYSICS_STATE (striker, roughly every frame during a shot) and SHOT_PROGRESS/
+ * SHOT_INTERRUPTED (every moving or all-pieces-on-interrupt) already cover physics state at a size the shared
+ * 8 MiB budget can actually sustain across a real session, where a full 19-piece JSON snapshot every rendered
+ * frame would fill the ring in seconds. What is kept is exactly the discrete, cheap, high-debug-value part: phase/
+ * turn/speed/pause/layout actually CHANGING. */
+static void app_track_state_changes(AppContext* ctx) {
+    if (!ctx->trace) return;
 
-    /* change events */
-    if ((int)ctx->game.phase != ctx->flight_prev_phase) {
-        FLIGHT_EVENT(ctx, FLIGHT_EV_PHASE, ctx->flight_prev_phase, ctx->game.phase, ctx->game.turn_seat, 0);
-        ctx->flight_prev_phase = (int)ctx->game.phase;
+    if ((int)ctx->game.phase != ctx->app_ev_prev_phase) {
+        APP_EVENT(ctx, APP_EV_PHASE, ctx->app_ev_prev_phase, ctx->game.phase, ctx->game.turn_seat, 0);
+        ctx->app_ev_prev_phase = (int)ctx->game.phase;
     }
-    if ((int)ctx->game.turn_seat != ctx->flight_prev_seat) {
-        FLIGHT_EVENT(ctx, FLIGHT_EV_TURN, ctx->game.turn_seat, ctx->game.active_player.team, 0, 0);
-        ctx->flight_prev_seat = (int)ctx->game.turn_seat;
+    if ((int)ctx->game.turn_seat != ctx->app_ev_prev_seat) {
+        APP_EVENT(ctx, APP_EV_TURN, ctx->game.turn_seat, ctx->game.active_player.team, 0, 0);
+        ctx->app_ev_prev_seat = (int)ctx->game.turn_seat;
     }
-    if (fabsf(ctx->playback_speed - ctx->flight_prev_speed) > 1e-6f) {
-        FLIGHT_EVENT(ctx, FLIGHT_EV_SPEED, ctx->playback_speed, 0, 0, 0);
-        ctx->flight_prev_speed = ctx->playback_speed;
+    if (fabsf(ctx->playback_speed - ctx->app_ev_prev_speed) > 1e-6f) {
+        APP_EVENT(ctx, APP_EV_SPEED, ctx->playback_speed, 0, 0, 0);
+        ctx->app_ev_prev_speed = ctx->playback_speed;
     }
-    if (ctx->paused != ctx->flight_prev_paused) {
-        FLIGHT_EVENT(ctx, FLIGHT_EV_PAUSE, ctx->paused ? 1 : 0, 0, 0, 0);
-        ctx->flight_prev_paused = ctx->paused;
+    if (ctx->paused != ctx->app_ev_prev_paused) {
+        APP_EVENT(ctx, APP_EV_PAUSE, ctx->paused ? 1 : 0, 0, 0, 0);
+        ctx->app_ev_prev_paused = ctx->paused;
     }
     Layout L = renderer_get_layout(ctx->renderer);
-    if (fabsf((float)L.board_x - ctx->flight_prev_layout[0]) > 0.5f || fabsf((float)L.board_y - ctx->flight_prev_layout[1]) > 0.5f ||
-        fabsf((float)L.board_size - ctx->flight_prev_layout[2]) > 0.5f) {
-        FLIGHT_EVENT(ctx, FLIGHT_EV_LAYOUT, L.board_x, L.board_y, L.board_size, L.sw);
-        ctx->flight_prev_layout[0] = (float)L.board_x;
-        ctx->flight_prev_layout[1] = (float)L.board_y;
-        ctx->flight_prev_layout[2] = (float)L.board_size;
+    if (fabsf((float)L.board_x - ctx->app_ev_prev_layout[0]) > 0.5f || fabsf((float)L.board_y - ctx->app_ev_prev_layout[1]) > 0.5f ||
+        fabsf((float)L.board_size - ctx->app_ev_prev_layout[2]) > 0.5f) {
+        APP_EVENT(ctx, APP_EV_LAYOUT, L.board_x, L.board_y, L.board_size, L.sw);
+        ctx->app_ev_prev_layout[0] = (float)L.board_x;
+        ctx->app_ev_prev_layout[1] = (float)L.board_y;
+        ctx->app_ev_prev_layout[2] = (float)L.board_size;
     }
-
-    FlightFrame f;
-    memset(&f, 0, sizeof(f));
-    f.wall = wall;
-    f.frame = ctx->frame_count;
-    f.sim_time = physics_get_sim_time(ctx->physics);
-    f.playback_speed = ctx->playback_speed;
-    f.alpha = alpha;
-    f.frame_dt = (float)frame_dt;
-    f.placement_timer = (float)ctx->placement_timer;
-    f.thinking_timer = (float)ctx->thinking_timer;
-    f.aim_timer = (float)ctx->aim_preview_timer;
-    f.phase = (uint8_t)ctx->game.phase;
-    f.turn_seat = (uint8_t)ctx->game.turn_seat;
-
-    BoardViewDebug dbg;
-    board_view_get_debug(&dbg);
-    Vec2 sp, sv;
-    physics_get_striker_position(ctx->physics, &sp);
-    physics_get_striker_velocity(ctx->physics, &sv);
-    f.striker_pos[0] = sp.x; f.striker_pos[1] = sp.y;
-    f.striker_vel[0] = sv.x; f.striker_vel[1] = sv.y;
-    f.striker_vis[0] = dbg.striker_vis.x; f.striker_vis[1] = dbg.striker_vis.y;
-    for (int i = 0; i < 4; i++) f.figures[i] = dbg.figures[i];
-    f.aim_angle = ctx->game.computed_shot_plan.aim_angle;
-    f.aim_power = ctx->game.computed_shot_plan.power;
-    if (dbg.aim_drawn) {
-        f.aim_line[0] = dbg.aim_start.x; f.aim_line[1] = dbg.aim_start.y;
-        f.aim_line[2] = dbg.aim_end.x;   f.aim_line[3] = dbg.aim_end.y;
-    }
-    f.layout[0] = (float)L.board_x; f.layout[1] = (float)L.board_y; f.layout[2] = (float)L.board_size;
-    f.layout[3] = (float)L.sw;      f.layout[4] = (float)L.sh;
-    f.score_white = (uint16_t)ctx->match.games_won_white;
-    f.score_black = (uint16_t)ctx->match.games_won_black;
-
-    unsigned int falling = effects_falling_mask();
-    Vec2 pos[MAX_PIECES];
-    physics_get_positions(ctx->physics, pos);
-    _Static_assert(FLIGHT_PIECES == MAX_PIECES, "the flight recorder records every piece");
-    for (int i = 0; i < FLIGHT_PIECES; i++) {
-        FlightPiece* p = &f.piece[i];
-        Vec2 v;
-        bool alive = physics_get_piece_velocity(ctx->physics, i, &v);
-        p->x = alive ? pos[i].x : ctx->game.board.pieces[i].position.x;
-        p->y = alive ? pos[i].y : ctx->game.board.pieces[i].position.y;
-        p->vx = v.x; p->vy = v.y;
-        p->flags = (uint8_t)((ctx->game.board.pieces[i].on_board ? 1 : 0) | (ctx->game.board.pieces[i].pocketed ? 2 : 0) |
-                             (alive ? 4 : 0) | (((falling >> i) & 1u) ? 8 : 0) | (((dbg.drawn_from_physics_mask >> i) & 1u) ? 16 : 0));
-    }
-    f.flags = (uint8_t)((ctx->paused ? 1 : 0) | (dbg.aim_drawn ? 2 : 0) | (physics_is_striker_pocketed(ctx->physics) ? 4 : 0) |
-                        (ctx->game.board.striker.on_baseline ? 8 : 0) | (dbg.striker_valid ? 16 : 0));
-    for (int i = 0; i <= MAX_PIECES; i++) if ((falling >> i) & 1u) f.n_falling++;
-    flight_write_frame(ctx->flight, &f);
 }
 
-/* Play a cue through the audio policy (loudness, variant rotation, rate limit) and log it in the flight recorder. */
+/* Play a cue through the audio policy (loudness, variant rotation, rate limit) and log it in the trace. */
 static void app_cue(AppContext* ctx, AudioCue cue, float speed) {
     float volume;
     int variant;
     double now = platform_time_now();
     if (!audio_policy_admit(&ctx->audio_policy, cue, speed, now, audio_variant_count(cue), &volume, &variant)) return;
     audio_play(cue, volume, variant);
-    FLIGHT_EVENT(ctx, FLIGHT_EV_SOUND, cue, speed, volume, variant);
+    APP_EVENT(ctx, APP_EV_SOUND, cue, speed, volume, variant);
     if (cue == CUE_STRIKER_POCKET && ctx->bounce_count == 0) {
         /* the striker dropped through the pocket to the floor: two bounces, each quieter */
         ctx->bounce[0].at = now + 0.32; ctx->bounce[0].speed = 1.5f;
@@ -366,7 +343,7 @@ static void app_play_sounds(AppContext* ctx) {
     }
     if (audio_is_muted() != ctx->prev_muted) {
         ctx->prev_muted = audio_is_muted();
-        FLIGHT_EVENT(ctx, FLIGHT_EV_MUTE, ctx->prev_muted ? 1 : 0, 0, 0, 0);
+        APP_EVENT(ctx, APP_EV_MUTE, ctx->prev_muted ? 1 : 0, 0, 0, 0);
     }
 }
 
@@ -418,8 +395,8 @@ static void app_shot_progress(AppContext* ctx) {
         {
             Vec2 lp, lv;
             physics_get_pocketed_last(ctx->physics, i, &lp, &lv);
-            FLIGHT_EVENT(ctx, FLIGHT_EV_POCKET, r.pocketed_ids[i], r.pocketed_pocket_indices[i], sqrtf(lv.x * lv.x + lv.y * lv.y), t);
-            FLIGHT_EVENT(ctx, FLIGHT_EV_STASH, r.pocketed_ids[i], r.pocketed_pocket_indices[i],
+            APP_EVENT(ctx, APP_EV_POCKET, r.pocketed_ids[i], r.pocketed_pocket_indices[i], sqrtf(lv.x * lv.x + lv.y * lv.y), t);
+            APP_EVENT(ctx, APP_EV_STASH, r.pocketed_ids[i], r.pocketed_pocket_indices[i],
                          ctx->game.board.pieces[r.pocketed_ids[i]].pocketed_position.x,
                          ctx->game.board.pieces[r.pocketed_ids[i]].pocketed_position.y);
         }
@@ -444,7 +421,7 @@ static void app_shot_progress(AppContext* ctx) {
         if (physics_get_striker_pocket_info(ctx->physics, &sp, &sv, &spocket)) {
             ctx->striker_fall_registered = true;
             ctx->striker_fall_pocket = spocket;
-            FLIGHT_EVENT(ctx, FLIGHT_EV_STRIKER_POCKET, spocket, sqrtf(sv.x * sv.x + sv.y * sv.y), 0, 0);
+            APP_EVENT(ctx, APP_EV_STRIKER_POCKET, spocket, sqrtf(sv.x * sv.x + sv.y * sv.y), 0, 0);
             effects_trigger_pocket_fall(EFFECTS_STRIKER_ID, PIECE_STRIKER, sp, sv, spocket);
             if (ctx->config.verbose) { platform_diag_logf("[POCKET] striker pocket=%d\n", spocket); }
             effects_trigger_pocket_fade_long(spocket, 0.9f);
@@ -585,7 +562,7 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
         decision = TURN_BOARD_OVER;
     }
 
-    FLIGHT_EVENT(ctx, FLIGHT_EV_SHOT_END, (int)outcome.turn_decision, result->pocketed_count, result->striker_pocketed ? 1 : 0, result->sim_time);
+    APP_EVENT(ctx, APP_EV_SHOT_END, (int)outcome.turn_decision, result->pocketed_count, result->striker_pocketed ? 1 : 0, result->sim_time);
 
     if (outcome.foul) app_cue(ctx, CUE_FOUL, 1.0f);
     if (outcome.returned_count > 0) {
@@ -595,7 +572,7 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
             const ReturnedCoin* rc = &outcome.returned[i];
             if (rc->id == QUEEN_ID) queen_back = true;
             if (ctx->renderer) effects_trigger_return(rc->id, ctx->game.board.pieces[rc->id].color, rc->from_pocket, rc->pos);
-            FLIGHT_EVENT(ctx, FLIGHT_EV_STASH, rc->id, rc->from_pocket, rc->pos.x, rc->pos.y);
+            APP_EVENT(ctx, APP_EV_STASH, rc->id, rc->from_pocket, rc->pos.x, rc->pos.y);
         }
         if (queen_back) app_cue(ctx, CUE_QUEEN_BACK, 1.0f);
     }
@@ -889,13 +866,7 @@ int app_run_simulation(AppContext* ctx) {
                             
                             ctx->pending_shot_plan = plan;
                             ctx->pending_shot_valid = true;
-                            FLIGHT_EVENT(ctx, FLIGHT_EV_PLAN, plan.aim_angle, plan.power, plan.placement.x, plan.placement.y);
-                            if (ctx->flight) {
-                                char note[160];
-                                snprintf(note, sizeof(note), "plan seat=%d tactic=%d aim=%.4f power=%.3f placement=(%.4f,%.4f)",
-                                         (int)seat, (int)plan.tactic, plan.aim_angle, plan.power, plan.placement.x, plan.placement.y);
-                                flight_write_text(ctx->flight, platform_time_now() - ctx->flight_t0, note);
-                            }
+                            APP_EVENT(ctx, APP_EV_PLAN, plan.aim_angle, plan.power, plan.placement.x, plan.placement.y);
                             
                             if (ctx->config.verbose) {
                                 platform_diag_logf("[DEBUG] Frame %llu: THINKING complete for seat %d, tactic=%d\n", 
@@ -998,7 +969,7 @@ int app_run_simulation(AppContext* ctx) {
                                 trace_write_shot_start(ctx->trace, &ctx->match, &ctx->game, 
                                                        ctx->shot_count, seat, &ctx->game.computed_shot_plan);
                             }
-                            FLIGHT_EVENT(ctx, FLIGHT_EV_SHOT_START, ctx->shot_count, seat, ctx->game.computed_shot_plan.aim_angle, ctx->game.computed_shot_plan.power);
+                            APP_EVENT(ctx, APP_EV_SHOT_START, ctx->shot_count, seat, ctx->game.computed_shot_plan.aim_angle, ctx->game.computed_shot_plan.power);
                             ctx->shot_count++;
                         }
                     }
@@ -1049,7 +1020,7 @@ int app_run_simulation(AppContext* ctx) {
             renderer_draw_effects(ctx->renderer, &ctx->game, ctx->placement_timer);
             renderer_end_board(ctx->renderer);
             renderer_end(ctx->renderer);
-            app_flight_frame(ctx, alpha, dt);
+            app_track_state_changes(ctx);
             ctx->frame_count++;
         }
         
@@ -1121,16 +1092,15 @@ void app_destroy(AppContext* ctx) {
     
     app_cleanup_controllers(ctx);
     
-    if (ctx->flight) {
-        FLIGHT_EVENT(ctx, FLIGHT_EV_CLOSE, ctx->game.phase, 0, 0, 0);
-        flight_close(ctx->flight);
-        ctx->flight = NULL;
-    }
+    APP_EVENT(ctx, APP_EV_CLOSE, ctx->game.phase, 0, 0, 0);
     if (ctx->trace) {
         if (ctx->game.phase == PHASE_SHOT_EXECUTION || ctx->game.phase == PHASE_SETTLING) {
             app_snapshot_trace(ctx, true);
         }
         trace_close(ctx->trace);
+        /* Detach the sink right here, not after: everything below (radio/audio/renderer/physics shutdown) can
+         * still call platform_diag_logf on an error path, and the trace writer it would be handed to is gone. */
+        platform_diag_set_sink(NULL, NULL);
     }
     
     radio_shutdown();
@@ -1143,7 +1113,6 @@ void app_destroy(AppContext* ctx) {
         physics_destroy(ctx->physics);
     }
     
-    platform_diag_close();
     free(ctx);
 }
 
