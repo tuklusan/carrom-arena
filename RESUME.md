@@ -295,6 +295,30 @@ whole reaching mechanism. `strike_side` is still threaded through, unused, for w
 rebuilt. The operator also sent a reference image of the real "Scissors Grip"/"Straight Grip" carrom techniques for
 that future rebuild - noted in project memory (`project-finger-grip-reference.md`), not acted on now.
 
+Two more corrections the same week (2026-09-28), both from the operator, both about the reaching-robot animation:
+
+- "The robot's left and right arms are getting confused somewhere...the striking arm is suddenly swapping...in a jerky
+  weird flipping." The arm-side decision was recomputed from scratch every frame; for a near-dead-straight shot that
+  test sits right at its own +/- boundary, and while the geometry it read was itself stable, redoing the SAME
+  borderline test every single frame left it exposed to flipping mid-motion. Fixed by LATCHING it: decided once, at
+  the instant `reach` is still at rest for a shot, never touched again until the arm returns to rest for the next one.
+- "Find the optimal algorithm for placing the robot...that causes the minimum mathematically possible rotation and arm
+  extension." Worked out the actual optimum: the body's ROTATION is fixed by the shot itself (it must face the shot's
+  reverse direction, regardless of where along the boundary it stands), so it is already at its one, trivially minimal
+  value everywhere - the only thing position can affect is EXTENSION. Minimising extension is then just "stand at the
+  closest point on the boundary to where the arm needs to reach," restricted to the seat's own side plus its two
+  adjacent sides (never the opposite one) - a closed-form nearest-point-on-a-rectangle computation, replacing the old
+  ray-cast (which did not minimise anything, it just went wherever a line in the reverse-shot direction happened to
+  land). This standing position is ALSO now latched, at the same instant as the arm side and for the same reason -
+  recomputing it from the still-settling striker mid-reach is almost certainly what caused the "jerky flip" report in
+  the first place, not just noise in the side test alone. (Simplification, noted rather than hidden: this optimises the
+  BODY's centre distance to the target, not the arm's own shoulder pivot, which sits a small, fixed offset to the side
+  of centre - a few percent of a typical reach, not enough to change which side is closest.)
+
+Verified with a per-frame probe across an entire board: 0 of 12 shots showed more than one arm-side value across their
+whole reach-and-withdrawal cycle (previously every one was exposed to a possible flip); extension distances at settle
+are all sane. Visual check confirms the arm still reaches correctly, attached, to the right contact point.
+
 ## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
 Decisions for the operator:
 - Should the ICF GAME score (which decides G) be reattributed by physical pair the same way B and P now are (see the compliance
