@@ -320,8 +320,17 @@ static void draw_human_figure(Viewport vp, const Layout* L, Vec2 world_pos, floa
     float flap_r = 0.0f, flap_l = 0.0f;
     float reach_ang;
     if (!reaching_active) {
-        flap_r = 0.9f * idle_wave(seat, 0, t * 1.8f);
-        flap_l = 0.9f * idle_wave(seat, 1, t * 1.8f);
+        /* IDLE SWAY AMPLITUDE (2026-09-28): this used to scale idle_wave() (range -1..1) by 0.9f, i.e. up to about
+         * 51 degrees of swing per arm, independently per arm. The withdrawal state machine above provably lands both
+         * arms EXACTLY at neutral (0) the moment reach reaches 0 - but idle-waving then took over and was free to
+         * swing either arm up to 51 degrees off the body, which at an unlucky phase (both arms swung outward at
+         * once) looks exactly like the operator's "arms NOT in their normal positions" screenshots, even though the
+         * state machine itself was correct. This is a genuinely different bug from anything fixed earlier this
+         * session: it is not about the withdrawal transition at all, it is that the resting idle animation's own
+         * range was never checked against the canonical "parallel to the correct side of the robot" rule. Cut to a
+         * small twitch (about 8 degrees) so a waiting robot still reads as alive without ever looking un-tucked. */
+        flap_r = 0.15f * idle_wave(seat, 0, t * 1.8f);
+        flap_l = 0.15f * idle_wave(seat, 1, t * 1.8f);
         reach_ang = (side_sign > 0.0f) ? flap_r : flap_l;
         g_vis.reach_peak_seen[seat] = 0.0f;
     } else if (!shrinking_now) {
