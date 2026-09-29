@@ -17,6 +17,13 @@ permissions:
   contents: write
   actions: read
 
+# At most one release run at a time (queue size 1): a second dispatch waits for the first
+# to finish rather than running in parallel, which previously raced the commit-screenshots
+# push against a second run's own git operations.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   build:
     name: build (${{ matrix.runner }})
