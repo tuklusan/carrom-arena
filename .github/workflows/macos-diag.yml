@@ -35,6 +35,7 @@ jobs:
           chmod +x "$bin"
           echo "DIAG: bin=$bin"
           lldb -b \
+            -o "settings set interpreter.stop-command-source-on-error false" \
             -o "run" \
             -o "bt" \
             -o "up" \
