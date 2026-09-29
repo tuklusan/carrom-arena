@@ -26,47 +26,25 @@ jobs:
           fetch-depth: 0
       - run: python3 build/build.py --build-type Release --no-test
         shell: bash
-      - name: Run with diagnostics
+      - name: Run under lldb for a live backtrace
         shell: bash --noprofile --norc -uo pipefail {0}
         run: |
           bin=$(ls out/dist/* | head -1)
           chmod +x "$bin"
           echo "DIAG: bin=$bin"
           file "$bin" || true
-          otool -L "$bin" || true
-          "$bin" --seed=1 --no-radio > game-stdout.log 2> game-stderr.log &
-          GPID=$!
-          sleep 15
-          if kill -0 $GPID 2>/dev/null; then
-            echo "DIAG: still running (pid $GPID)"
-          else
-            wait $GPID
-            echo "DIAG: exited early, code $?"
-          fi
-          echo "DIAG: --- stdout ---"; cat game-stdout.log
-          echo "DIAG: --- stderr ---"; cat game-stderr.log
-          screencapture -x screenshot.png || echo "DIAG: screencapture failed"
-          kill $GPID 2>/dev/null || true
-          ls -la /cores/ 2>/dev/null || true
-          sleep 5
-          echo "DIAG: --- crash reports ---"
-          ls -la ~/Library/Logs/DiagnosticReports/ 2>/dev/null || true
-          report=$(ls -t ~/Library/Logs/DiagnosticReports/carrom_arena*.ips 2>/dev/null | head -1)
-          if [ -n "$report" ]; then
-            echo "DIAG: found $report"
-            cp "$report" crash-report.ips
-            cat "$report"
-          else
-            echo "DIAG: no crash report found"
-          fi
+          lldb -b \
+            -o "run" \
+            -o "bt all" \
+            -o "quit" \
+            -- "$bin" --seed=1 --no-radio > lldb.log 2>&1
+          echo "DIAG: --- lldb output ---"
+          cat lldb.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: diag-${{ inputs.runner }}
           path: |
-            screenshot.png
-            game-stdout.log
-            game-stderr.log
-            crash-report.ips
+            lldb.log
           if-no-files-found: warn
           retention-days: 3
