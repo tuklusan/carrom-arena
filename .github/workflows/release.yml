@@ -176,7 +176,7 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          set -eu
+          set -u
           bin=$(ls out/dist/* | head -1)
           chmod +x "$bin"
           "$bin" --seed=${{ matrix.seed }} --no-radio > game-stdout.log 2> game-stderr.log &
@@ -185,11 +185,12 @@ jobs:
           if kill -0 $GPID 2>/dev/null; then
             echo "DIAG: game process still running (pid $GPID)"
           else
-            wait $GPID 2>/dev/null; echo "DIAG: game process exited early, code $?"
+            wait $GPID
+            echo "DIAG: game process exited early, code $?"
           fi
-          echo "DIAG: --- stdout ---"; cat game-stdout.log || true
-          echo "DIAG: --- stderr ---"; cat game-stderr.log || true
-          screencapture -x "screenshot-${{ matrix.runner }}.png"
+          echo "DIAG: --- stdout ---"; cat game-stdout.log
+          echo "DIAG: --- stderr ---"; cat game-stderr.log
+          screencapture -x "screenshot-${{ matrix.runner }}.png" || echo "DIAG: screencapture failed"
           kill $GPID 2>/dev/null || true
       - name: Install Mesa software OpenGL (Windows x64 only; headless runners have no GPU driver)
         if: runner.os == 'Windows' && runner.arch == 'X64'
