@@ -1,17 +1,30 @@
 # Carrom Arena: RESUME playbook
 
-**Updated:** 2026-09-28 (UTC), tagged `beta-0.0.14`. Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched.
+**Updated:** 2026-09-29 (UTC), tagged `beta-0.0.16`. Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched. `~/.kimi-code` on the Linux box must be RETAINED (operator: "that's where kimi lives") even though everything else kimi-era has been cleaned up.
 
 ## Repo state
-- `main` head `32f41ff`, tagged `beta-0.0.14` (2026-09-28, on the operator's explicit request - "tag the latest source
-  code with the next available beta version identifier"): the reaching-arm removal, the one-trace-file redesign, and
-  the trace-anomaly fixes. Identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub
-  (`tuklusan/carrom-arena`) and the Windows H: clone. CI only triggers on branch pushes, not tag pushes (see
-  `.github/workflows/ci.yml`), so a plain `git push --tags` alone would have left the delivered exe's own version
-  string reading a commit-hash "-dirty" suffix rather than the clean tag; triggered a manual `workflow_dispatch` run
-  right after so `build_fresh`'s exes are the genuine `beta-0.0.14` build (`git describe --tags` on that checkout
-  returns exactly `beta-0.0.14`, confirming it). The next tag is `beta-0.0.15` (only when the operator asks; never
-  move existing tags).
+- `main` head is the README rewrite commit, tagged `beta-0.0.16` (2026-09-29). Identical on the Linux box
+  (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. Since `beta-0.0.14`:
+  a full temp/dead-code cleanup across all three locations (see the dated section near the end of this file); a new
+  `.github/workflows/release.yml` (build+zip+publish+verify the six canonical runners, plus a much wider
+  screenshot-only matrix for README proof); three real upstream raylib bugs found and fixed via a maintained fork
+  (`tuklusan/raylib`, branch `carrom-arena-fixes`, pinned in `build/pins.txt` in place of stock raysan5/raylib);
+  `beta-0.0.15` then `beta-0.0.16` tagged and released; and `README.md` rewritten as a short player-facing document
+  with a screenshot gallery. CI still only triggers on branch pushes, not tag pushes (see `.github/workflows/ci.yml`),
+  so a fresh tag needs a manual `workflow_dispatch` right after if a cleanly-versioned exe matters. The next tag is
+  `beta-0.0.17` (only when the operator asks; never move existing tags).
+- **raylib is no longer stock upstream.** `build/pins.txt`'s `raylib` line points at `https://github.com/tuklusan/raylib`
+  (fork), branch/commit `carrom-arena-fixes`, not `raysan5/raylib`. Three commits ahead of the pinned stock 5.5 release:
+  (1) `InitPlatform()` in `rcore_desktop_glfw.c` didn't check `glfwCreateWindow()`'s return before immediately using it
+  in `GetCurrentMonitor()`, crashing instead of failing cleanly when window/GL-context creation fails; (2) `InitWindow()`
+  in `rcore.c` never checked `InitPlatform()`'s own return value either (this is upstream raylib PR #4803, cherry-picked
+  verbatim, the other half of upstream issue #4801); (3) GLFW's Cocoa backend (`nsgl_context.m`) unconditionally requests
+  `NSOpenGLPFAAccelerated`, which excludes Apple's software renderer entirely - some CI/VM macOS environments have no
+  hardware-accelerated GL path at all, so pixel format negotiation failed outright. Fix (3) is gated behind a
+  `CARROM_CI_SCREENSHOT` env var real players never set, so this changes nothing about normal play on any platform,
+  including real Retina Macs. If raylib ever needs bumping again, these three fixes need to be re-applied (or
+  re-verified already-merged upstream) on the new base commit - see the dated section near the end of this file for
+  exactly how each was found and why.
 - CANONICAL RULE (operator): all build and edit activities happen on the Linux clone, which is the canonical local repo. Changes go from it to GitHub, and then the H: clone is updated to match GitHub and Linux. Never edit or build source in the H: clone.
 - Standing operator rule: after ANY change, commit on Linux, run `bash ~/clean_verify.sh`, `bash ~/bin/push_all.sh`, then `git pull --ff-only --tags` in the H: clone, without being asked. `HANDOFF.md` (next to the blog on H:) has the full procedure and the Windows exe build. Edits made on Windows must keep LF endings: the H: clone checks files out as CRLF, so never scp a Windows-side file over a Linux one without converting it.
 - The Linux box is ephemeral. "Push" means `bash ~/bin/push_all.sh` (GitHub + the guard against secrets) and then fast-forwarding the H: clone. The blog lives at `H:\My Documents\SOFTWARE-DEVELOPMENT\Carrom\SANYALnet-Labs-Dev-Blog.md` and is kept up to date as a story for a future blog post (no secrets).
@@ -544,6 +557,12 @@ Known gaps (nothing decided needed):
 - CI notices: Node 20 actions run on Node 24, and the `ubuntu-latest` and `windows-11-arm` labels change later in 2026 (`admit` and `verdict` use ubuntu-latest).
 - The queue tickets are git refs under `refs/ci-lock/`; a job killed without releasing leaves one until the next request finds its run finished and takes it over.
 - The operator said earlier there are "many issues": collect more from hands-on testing of the latest exe.
+- `windows-11-arm` and `windows-11-vs2026-arm` screenshots (`release.yml`'s screenshot matrix) are blocked on a
+  GitHub-side runner-image bug (`actions/runner-images#14677`, reported 2026-09-03, already closed upstream but
+  evidently still rolling out): the job's own session reports zero attached displays, not merely an unreachable one.
+  Dropped from the screenshot matrix (2026-09-29); they remain in the six-runner set that builds real release
+  artifacts, since `ctest` never needs a display. Revisit by re-adding the two entries and re-running once GitHub's
+  fix has fully propagated - no code change needed here if/when it has.
 
 ## Locked
 The window is locked at 560x560 and NOT resizable (operator, 2026-09-26; no FLAG_WINDOW_RESIZABLE, --width/--height ignored in rendered mode).
@@ -565,3 +584,71 @@ The Laws (PDF in `reference/`) are implemented rule by rule; code comments and t
 - Break layout (ICF Rule 41(a), fixed 2026-09-26): queen in the centre circle; the first row (6 coins) alternates black and white; the second row (12 places) holds the Y (three white coins lined up behind the three white first-row coins) and alternates all the way round, so every TIP is white and every NOTCH is black (9 white + 9 black). Positions are unchanged, only colours moved (`board_setup_initial_formation`); `tests/test_icf_layout.c` checks the rule itself (first row alternates, second row alternates, the Y).
 - Returned coins (the queen, dues) slide from the pocket they fell into to their spot (`effects_trigger_return`); the queen back on the board has
   her own sound (`queen_back_1.ogg`) and so has a foul (`foul_1.ogg`, Kenney interface error_006).
+
+## Cleanup across all three locations (2026-09-28)
+Asked to clear temporary build/test/temp clutter everywhere: Linux `/tmp` fully wiped (old Xvfb/smoke-test debris,
+confirmed nothing was in active use first), the project's own regenerable `out/` build directory removed (`deps/`,
+the FetchContent cache, deliberately left alone - a re-fetch had already shown transient network flakiness this
+session). A stray `nul` file on the H: side (Windows redirect-mishap debris, contents were just SSH host public
+keys) deleted, along with a `traces/` folder that had wandered into the exe-staging area where it doesn't belong.
+Everything kimi-era was removed except `~/.kimi-code` itself, which the operator was explicit must stay: a 405 MB
+stale manual clone with `CEO_APPROVAL.md` and similar artefacts still in it (its deletion was first refused outright
+by the coding assistant's own auto-mode safety layer as an irreversible bulk delete; the operator ran it themselves),
+`kimi-code-src`, `kimi-upgrade.sh`, H:'s `linux_support/` directory, and the formal kimi-era "delivery agreement"
+document. Dead branches on GitHub were also pruned down to just `main`.
+
+## Release workflow, and a real cross-platform screenshot gallery (2026-09-28 to 2026-09-29)
+A new `.github/workflows/release.yml`, separate from the ordinary push/PR `ci.yml`, added on request: given an
+existing tag, it builds and zips the six canonical runners' executables, publishes them to a GitHub Release, then
+sanity-checks the published assets by downloading and re-unzipping them. Alongside that, a much wider screenshot-only
+matrix - the actual current catalogue of GitHub-hosted runner images across Ubuntu/Windows/macOS, landing on 21
+labels once asked to reach that count deliberately - runs the game headless on every one of them and uploads
+whatever it captures, purely as proof-of-life for the README, never gating the release itself. Getting the workflow
+itself right took several rounds: Windows has no `zip` binary in its git-bash (`Compress-Archive` instead);
+re-publishing to an already-released tag failed until publishing learned to update rather than only ever create; and
+two runs fired close together raced each other's own `git push` from the screenshot-commit step, fixed with an
+`admit` job that rejects a second concurrent run outright (same queue-ticket idea as `ci.yml`'s gate, adapted to
+fail-fast rather than queue, since queuing still let the two collide).
+
+**Windows screenshot fix.** Every Windows screenshot came back showing the CI agent's own console or (on the arm64
+images) Windows's own first-boot setup screen, never the game - these headless runners have no real GPU driver, and
+raylib's OpenGL context creation was failing with nothing downstream checking for it. Fixed by dropping Mesa's
+prebuilt software-OpenGL DLL next to the executable, gated behind `CARROM_CI_SCREENSHOT` so no real player is ever
+affected.
+
+**macOS screenshot fix - the real story, and now covered above under "Repo state".** A first theory (a HiDPI window
+flag needing an interactive WindowServer session) was wrong; disproving it needed a live debugger, which itself
+needed macOS's Developer Mode enabled before it would attach to a non-interactive process at all - not discovered
+until several rounds of a debugger that reported a crash but printed no backtrace. Once a real trace was obtained (on
+an old-lab Intel Mac reachable directly over SSH, building locally with prebuilt cmake/ninja binaries since pip's
+cmake wheel wasn't available for that exact OS/Python combination and was compiling from source), the true fault was
+raylib's own: `InitPlatform()` never checked whether `glfwCreateWindow()` had actually succeeded before immediately
+using the result. Fixing that surfaced a second, deeper bug behind it (`InitWindow()` not checking `InitPlatform()`'s
+own return value either - matching an already-merged upstream fix, PR #4803), and fixing THAT surfaced the true root
+cause: GLFW's Cocoa backend unconditionally demands a hardware-accelerated pixel format, with no software-renderer
+fallback, so any environment without real GPU-backed OpenGL - the lab Mac (a VirtualBox VM, confirmed by its GPU's
+PCI vendor ID) and, unexpectedly, some of GitHub's own real-Apple-Silicon-hardware runners too - failed outright.
+All three fixes live in a maintained raylib fork now pinned in `build/pins.txt` (see "Repo state" above for the
+commit-level detail). Proven twice before trusting it: a real game window confirmed on the lab Mac's physical screen
+by the operator directly, then a genuine in-progress board captured as a screenshot artifact on an actual GitHub-
+hosted `macos-15` Apple Silicon runner.
+
+**Two runner images still not fixed, and not by us.** `windows-11-arm` and `windows-11-vs2026-arm` kept producing
+Windows's own OOBE screen throughout all of the above. A proper diagnostic (checking the actual session the job runs
+in, not just retrying) found zero attached displays reported at all - not an unreachable desktop, no desktop session
+to reach - and a search turned up an already-closed GitHub-side issue for exactly this (`actions/runner-images#14677`,
+reported 2026-09-03), evidently still mid-rollout to some runner pools weeks later. Dropped from the screenshot
+matrix; see "Open items" above.
+
+**Tagged `beta-0.0.15`, then `beta-0.0.16`.** The first tag went out once the release workflow itself looked ready;
+testing against it then showed the Windows/macOS fixes above were still sitting on the branch, not yet in any tagged
+commit, so a second tag followed once they had actually landed. Full pipeline against `beta-0.0.16`: all six platform
+zips built, published, verified; sixteen of eighteen attempted screenshot runners produced real, distinct in-progress
+boards (every Linux distribution/architecture tried, every macOS version/architecture including a preview Xcode
+image, three of five Windows images), each given its own random seed so no two screenshots match - the fullest
+cross-platform proof this project has had. Screenshots live in `docs/screenshots/`, named `screenshot-<runner>.png`.
+
+**README rewritten** (2026-09-29): the long-standing formal, kimi-era document (stale `--mode` flags, CEO-delivery
+language) replaced with a short one for players - what the game is, a direct link to the latest GitHub Release, the
+handful of spectator keys, and the sixteen-runner screenshot gallery, each image labelled with its OS and CPU
+architecture. Verified by loading the actual rendered page on GitHub, not just the markdown source.
