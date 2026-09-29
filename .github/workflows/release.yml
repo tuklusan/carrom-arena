@@ -1,0 +1,207 @@
+name: Release
+
+# Manual, on-demand: build zipped executables for every supported platform (build/build.py's canonical RUNNERS),
+# publish them to a GitHub Release on an existing tag, then run an extra screenshot-only matrix across a much wider
+# catalog of GitHub-hosted runner images (release builds only, never the normal push/PR CI) purely to capture
+# proof-of-life screenshots for the README. A screenshot runner failing (deprecated/preview/exotic image) does not
+# fail the release; the release artifacts come only from the 6 canonical runners.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (e.g. beta-0.0.15)"
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build:
+    name: build (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, windows-2022, windows-11-arm, macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+      - run: $(command -v python3 || command -v python) build/build.py --build-type Release
+        shell: bash
+      - name: Zip the release binary
+        shell: bash
+        run: |
+          set -eu
+          cd out/dist
+          bin=$(ls)
+          zip -j "../../carrom-arena-${{ inputs.tag }}-${{ matrix.runner }}.zip" "$bin" ../../LICENSE ../../README.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-zip-${{ matrix.runner }}
+          path: carrom-arena-${{ inputs.tag }}-*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-zip-*
+          path: dist
+          merge-multiple: true
+      - run: ls -la dist
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.tag }}" dist/*.zip \
+            --title "${{ inputs.tag }}" \
+            --notes "Automated release build. See RESUME.md and the dev blog for details."
+
+  verify:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and sanity-check the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          rm -rf verify && mkdir verify && cd verify
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}"
+          fail=0
+          for z in *.zip; do
+            if unzip -l "$z" | grep -qi 'carrom_arena'; then
+              echo "OK   $z"
+            else
+              echo "FAIL $z (no carrom_arena binary inside)"
+              fail=1
+            fi
+          done
+          test "$fail" -eq 0
+
+  screenshots:
+    name: screenshot (${{ matrix.runner }})
+    needs: build
+    continue-on-error: true
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-26.04
+          - ubuntu-26.04-arm
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
+          - ubuntu-slim
+          - windows-2025
+          - windows-2025-vs2026
+          - windows-2022
+          - windows-11-arm
+          - windows-11-vs2026-arm
+          - macos-26
+          - macos-26-xlarge
+          - macos-26-intel
+          - macos-15
+          - macos-15-xlarge
+          - macos-15-intel
+          - macos-14
+          - macos-14-large
+          - xcode-27
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+      - run: $(command -v python3 || command -v python) build/build.py --build-type Release --no-test
+        shell: bash
+      - name: Capture a screenshot (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -eu
+          sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick xvfb || true
+          bin=$(ls out/dist/* | head -1)
+          chmod +x "$bin"
+          Xvfb :95 -screen 0 800x600x24 >/dev/null 2>&1 &
+          sleep 1
+          DISPLAY=:95 "$bin" --seed=1 --no-radio >/dev/null 2>&1 &
+          GPID=$!
+          sleep 3
+          DISPLAY=:95 import -window root "screenshot-${{ matrix.runner }}.png"
+          kill $GPID 2>/dev/null || true
+      - name: Capture a screenshot (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -eu
+          bin=$(ls out/dist/* | head -1)
+          chmod +x "$bin"
+          "$bin" --seed=1 --no-radio >/dev/null 2>&1 &
+          GPID=$!
+          sleep 3
+          screencapture -x "screenshot-${{ matrix.runner }}.png"
+          kill $GPID 2>/dev/null || true
+      - name: Capture a screenshot (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bin = (Get-ChildItem out/dist/*.exe | Select-Object -First 1).FullName
+          Start-Process -FilePath $bin -ArgumentList "--seed=1 --no-radio"
+          Start-Sleep -Seconds 3
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $b = New-Object System.Drawing.Bitmap([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width, [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height)
+          $g = [System.Drawing.Graphics]::FromImage($b)
+          $g.CopyFromScreen(0, 0, 0, 0, $b.Size)
+          $b.Save("screenshot-${{ matrix.runner }}.png")
+          Get-Process -Name carrom_arena* | Stop-Process -Force -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: screenshot-${{ matrix.runner }}
+          path: screenshot-${{ matrix.runner }}.png
+          if-no-files-found: warn
+          retention-days: 7
+
+  commit-screenshots:
+    needs: screenshots
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: screenshot-*
+          path: docs/screenshots
+          merge-multiple: true
+        continue-on-error: true
+      - name: Commit whichever screenshots came through
+        run: |
+          set -eu
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          if ! git diff --cached --quiet; then
+            git commit -m "docs: refresh runner screenshots (${{ inputs.tag }})"
+            git push origin main
+          else
+            echo "no screenshots changed"
+          fi
