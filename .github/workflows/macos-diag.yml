@@ -26,36 +26,35 @@ jobs:
           fetch-depth: 0
       - run: python3 build/build.py --build-type Release --no-test
         shell: bash
-      - name: Run under lldb with the HiDPI bypass
+      - name: Enable Developer Mode
+        run: sudo /usr/sbin/DevToolsSecurity -enable
+        shell: bash
+      - name: Run and collect the macOS crash report
         shell: bash --noprofile --norc -uo pipefail {0}
         env:
           CARROM_CI_SCREENSHOT: "1"
         run: |
-          ulimit -c unlimited
+          rm -f ~/Library/Logs/DiagnosticReports/carrom_arena*.crash
           bin=$(ls out/dist/* | head -1)
           chmod +x "$bin"
           echo "DIAG: bin=$bin"
-          "$bin" --seed=1 --no-radio > game-stdout.log 2> game-stderr.log &
-          GPID=$!
-          sleep 15
-          wait $GPID
-          echo "DIAG: exit code $?, pid $GPID"
-          echo "DIAG: --- /cores ---"
-          ls -la /cores/ 2>&1
-          CORE="/cores/core.$GPID"
-          if [ -f "$CORE" ]; then
-            echo "DIAG: found $CORE, loading into lldb"
-            lldb -c "$CORE" "$bin" -o "bt" -o "quit" > lldb.log 2>&1
-            echo "DIAG: --- lldb output ---"
-            cat lldb.log
+          "$bin" --seed=1 --no-radio || true
+          sleep 5
+          echo "DIAG: --- crash reports ---"
+          ls -la ~/Library/Logs/DiagnosticReports/ 2>&1
+          report=$(ls -t ~/Library/Logs/DiagnosticReports/carrom_arena*.crash 2>/dev/null | head -1)
+          if [ -n "$report" ]; then
+            echo "DIAG: found $report"
+            cp "$report" crash-report.crash
+            grep -A15 "Thread 0 Crashed" "$report"
           else
-            echo "DIAG: no core file found"
+            echo "DIAG: no crash report found"
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: diag-${{ inputs.runner }}
           path: |
-            lldb.log
+            crash-report.crash
           if-no-files-found: warn
           retention-days: 3
