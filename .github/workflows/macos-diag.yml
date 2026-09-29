@@ -36,8 +36,12 @@ jobs:
           echo "DIAG: bin=$bin"
           lldb -b \
             -o "run" \
-            -o "bt all" \
-            -o "quit" \
+            -o "bt" \
+            -o "up" \
+            -o "up" \
+            -o "up" \
+            -o "up" \
+            -o "up" \
             -- "$bin" --seed=1 --no-radio > lldb.log 2>&1
           echo "DIAG: --- lldb output ---"
           cat lldb.log
