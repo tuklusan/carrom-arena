@@ -27,9 +27,8 @@ jobs:
       - run: python3 build/build.py --build-type Release --no-test
         shell: bash
       - name: Run with diagnostics
-        shell: bash
+        shell: bash --noprofile --norc -uo pipefail {0}
         run: |
-          set -u
           bin=$(ls out/dist/* | head -1)
           chmod +x "$bin"
           echo "DIAG: bin=$bin"
