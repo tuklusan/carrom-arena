@@ -17,16 +17,30 @@ permissions:
   contents: write
   actions: read
 
-# At most one release run at a time (queue size 1): a second dispatch waits for the first
-# to finish rather than running in parallel, which previously raced the commit-screenshots
-# push against a second run's own git operations.
-concurrency:
-  group: release
-  cancel-in-progress: false
-
+# At most one release run at a time (queue size 1): a second dispatch is rejected outright
+# (not queued) if another run is already active, mirroring ci.yml's admit/reject gate. Queuing
+# was tried first but a queued second run's own git operations raced the first run's
+# commit-screenshots push, so reject-fast is used instead.
 jobs:
+  admit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject if another release run is already active
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          active=$(gh run list --repo "${{ github.repository }}" --workflow=release.yml \
+            --json databaseId,status --jq \
+            '[.[] | select(.databaseId != ${{ github.run_id }} and (.status == "in_progress" or .status == "queued" or .status == "waiting" or .status == "requested"))] | length')
+          if [ "$active" -gt 0 ]; then
+            echo "::error::Another release workflow run is already active; rejecting this trigger (queue size 1)."
+            exit 1
+          fi
+
   build:
     name: build (${{ matrix.runner }})
+    needs: admit
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
@@ -202,8 +216,8 @@ jobs:
           retention-days: 7
 
   commit-screenshots:
-    needs: screenshots
-    if: always()
+    needs: [admit, screenshots]
+    if: always() && needs.admit.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
