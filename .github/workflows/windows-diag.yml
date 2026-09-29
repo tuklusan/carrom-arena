@@ -1,0 +1,50 @@
+name: Windows Diag
+
+# Scratch workflow for investigating the windows-11-arm / windows-11-vs2026-arm
+# OOBE-screen screenshot issue without paying for the full release.yml matrix.
+# Not wired into any release; delete once the issue is understood/fixed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Single Windows runner label to test"
+        required: true
+        default: windows-11-arm
+
+jobs:
+  diag:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 15
+    steps:
+      - name: Session and OOBE diagnostics
+        shell: pwsh
+        run: |
+          Write-Host "DIAG: whoami = $(whoami)"
+          Write-Host "DIAG: session info:"
+          query session 2>&1 | Write-Host
+          Write-Host "DIAG: current process session id: $((Get-Process -Id $PID).SessionId)"
+          Write-Host "DIAG: explorer processes:"
+          Get-Process -Name explorer -ErrorAction SilentlyContinue | Format-Table Id,SessionId,ProcessName | Out-String | Write-Host
+          Write-Host "DIAG: OOBE-related processes:"
+          Get-Process | Where-Object { $_.ProcessName -match 'OOBE|BackgroundTaskHost|UserOOBEBroker|LogonUI' } | Format-Table Id,SessionId,ProcessName | Out-String | Write-Host
+          Write-Host "DIAG: all processes with a MainWindowTitle:"
+          Get-Process | Where-Object { $_.MainWindowTitle -ne '' } | Format-Table Id,SessionId,ProcessName,MainWindowTitle | Out-String | Write-Host
+          Write-Host "DIAG: screen resolution via .NET:"
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Screen]::AllScreens | ForEach-Object { Write-Host "  $($_.DeviceName) $($_.Bounds)" }
+          Write-Host "DIAG: registry OOBE state:"
+          Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\OOBE' -ErrorAction SilentlyContinue | Out-String | Write-Host
+          Write-Host "DIAG: taking a screenshot for reference"
+          Add-Type -AssemblyName System.Drawing
+          $b = New-Object System.Drawing.Bitmap([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width, [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height)
+          $g = [System.Drawing.Graphics]::FromImage($b)
+          $g.CopyFromScreen(0, 0, 0, 0, $b.Size)
+          $b.Save("diag-screenshot.png")
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: windows-diag-${{ inputs.runner }}
+          path: diag-screenshot.png
+          if-no-files-found: warn
+          retention-days: 3
