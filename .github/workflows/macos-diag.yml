@@ -34,16 +34,7 @@ jobs:
           bin=$(ls out/dist/* | head -1)
           chmod +x "$bin"
           echo "DIAG: bin=$bin"
-          lldb -b \
-            -o "settings set interpreter.stop-command-source-on-error false" \
-            -o "run" \
-            -o "bt" \
-            -o "up" \
-            -o "up" \
-            -o "up" \
-            -o "up" \
-            -o "up" \
-            -- "$bin" --seed=1 --no-radio > lldb.log 2>&1
+          printf 'run\nbt\nup\nup\nup\nup\nup\nquit\n' | lldb -- "$bin" --seed=1 --no-radio > lldb.log 2>&1
           echo "DIAG: --- lldb output ---"
           cat lldb.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
