@@ -106,28 +106,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner:
-          - ubuntu-26.04
-          - ubuntu-26.04-arm
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
-          - ubuntu-22.04
-          - ubuntu-22.04-arm
-          - ubuntu-slim
-          - windows-2025
-          - windows-2025-vs2026
-          - windows-2022
-          - windows-11-arm
-          - windows-11-vs2026-arm
-          - macos-26
-          - macos-26-xlarge
-          - macos-26-intel
-          - macos-15
-          - macos-15-xlarge
-          - macos-15-intel
-          - macos-14
-          - macos-14-large
-          - xcode-27
+        include:
+          - { runner: ubuntu-26.04,           seed: 101 }
+          - { runner: ubuntu-26.04-arm,       seed: 102 }
+          - { runner: ubuntu-24.04,           seed: 103 }
+          - { runner: ubuntu-24.04-arm,       seed: 104 }
+          - { runner: ubuntu-22.04,           seed: 105 }
+          - { runner: ubuntu-22.04-arm,       seed: 106 }
+          - { runner: ubuntu-slim,            seed: 107 }
+          - { runner: windows-2025,           seed: 108 }
+          - { runner: windows-2025-vs2026,    seed: 109 }
+          - { runner: windows-2022,           seed: 110 }
+          - { runner: windows-11-arm,         seed: 111 }
+          - { runner: windows-11-vs2026-arm,  seed: 112 }
+          - { runner: macos-26,               seed: 113 }
+          - { runner: macos-26-intel,         seed: 114 }
+          - { runner: macos-15,               seed: 115 }
+          - { runner: macos-15-intel,         seed: 116 }
+          - { runner: macos-14,               seed: 117 }
+          - { runner: xcode-27,               seed: 118 }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -145,9 +142,9 @@ jobs:
           chmod +x "$bin"
           Xvfb :95 -screen 0 800x600x24 >/dev/null 2>&1 &
           sleep 1
-          DISPLAY=:95 "$bin" --seed=1 --no-radio >/dev/null 2>&1 &
+          DISPLAY=:95 "$bin" --seed=${{ matrix.seed }} --no-radio >/dev/null 2>&1 &
           GPID=$!
-          sleep 3
+          sleep 15
           DISPLAY=:95 import -window root "screenshot-${{ matrix.runner }}.png"
           kill $GPID 2>/dev/null || true
       - name: Capture a screenshot (macOS)
@@ -157,9 +154,9 @@ jobs:
           set -eu
           bin=$(ls out/dist/* | head -1)
           chmod +x "$bin"
-          "$bin" --seed=1 --no-radio >/dev/null 2>&1 &
+          "$bin" --seed=${{ matrix.seed }} --no-radio >/dev/null 2>&1 &
           GPID=$!
-          sleep 3
+          sleep 15
           screencapture -x "screenshot-${{ matrix.runner }}.png"
           kill $GPID 2>/dev/null || true
       - name: Capture a screenshot (Windows)
@@ -167,8 +164,8 @@ jobs:
         shell: pwsh
         run: |
           $bin = (Get-ChildItem out/dist/*.exe | Select-Object -First 1).FullName
-          Start-Process -FilePath $bin -ArgumentList "--seed=1 --no-radio"
-          Start-Sleep -Seconds 3
+          Start-Process -FilePath $bin -ArgumentList "--seed=${{ matrix.seed }} --no-radio"
+          Start-Sleep -Seconds 15
           Add-Type -AssemblyName System.Windows.Forms
           Add-Type -AssemblyName System.Drawing
           $b = New-Object System.Drawing.Bitmap([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width, [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height)
