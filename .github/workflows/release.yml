@@ -67,13 +67,17 @@ jobs:
           path: dist
           merge-multiple: true
       - run: ls -la dist
-      - name: Create the GitHub Release
+      - name: Create or update the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ inputs.tag }}" dist/*.zip \
-            --title "${{ inputs.tag }}" \
-            --notes "Automated release build. See RESUME.md and the dev blog for details."
+          if gh release view "${{ inputs.tag }}" >/dev/null 2>&1; then
+            gh release upload "${{ inputs.tag }}" dist/*.zip --clobber
+          else
+            gh release create "${{ inputs.tag }}" dist/*.zip \
+              --title "${{ inputs.tag }}" \
+              --notes "Automated release build. See RESUME.md and the dev blog for details."
+          fi
 
   verify:
     needs: publish
