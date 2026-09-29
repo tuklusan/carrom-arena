@@ -349,13 +349,7 @@ Renderer* renderer_create(int width, int height, const char* title, bool debug_p
     r->viewport = (Viewport){0};
 
     SetTraceLogCallback(raylib_log_to_file);
-    /* CARROM_CI_SCREENSHOT: headless macOS CI runners crash inside GLFW's Cocoa backend
-       (_glfwGetWindowPosCocoa, null NSWindow) during HiDPI setup - no attached WindowServer
-       session for the Actions runner process. Real users never set this env var, so this
-       only affects CI screenshot capture, never normal play on any platform. */
-    unsigned flags = FLAG_VSYNC_HINT;
-    if (!getenv("CARROM_CI_SCREENSHOT")) flags |= FLAG_WINDOW_HIGHDPI;
-    SetConfigFlags(flags);
+    SetConfigFlags(FLAG_WINDOW_HIGHDPI | FLAG_VSYNC_HINT);
     InitWindow(width, height, "SANYALnet Labs Carrom Arena");
     if (!IsWindowReady()) {
         free(r);

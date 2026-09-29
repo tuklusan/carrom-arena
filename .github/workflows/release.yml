@@ -175,6 +175,8 @@ jobs:
       - name: Capture a screenshot (macOS)
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          CARROM_CI_SCREENSHOT: "1"
         run: |
           set -u
           bin=$(ls out/dist/* | head -1)
