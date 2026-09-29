@@ -29,32 +29,22 @@ jobs:
       - name: Enable Developer Mode
         run: sudo /usr/sbin/DevToolsSecurity -enable
         shell: bash
-      - name: Run and collect the macOS crash report
+      - name: Run under lldb for a live backtrace (Developer Mode now enabled)
         shell: bash --noprofile --norc -uo pipefail {0}
         env:
           CARROM_CI_SCREENSHOT: "1"
         run: |
-          rm -f ~/Library/Logs/DiagnosticReports/carrom_arena*.crash
           bin=$(ls out/dist/* | head -1)
           chmod +x "$bin"
           echo "DIAG: bin=$bin"
-          "$bin" --seed=1 --no-radio || true
-          sleep 5
-          echo "DIAG: --- crash reports ---"
-          ls -la ~/Library/Logs/DiagnosticReports/ 2>&1
-          report=$(ls -t ~/Library/Logs/DiagnosticReports/carrom_arena*.crash 2>/dev/null | head -1)
-          if [ -n "$report" ]; then
-            echo "DIAG: found $report"
-            cp "$report" crash-report.crash
-            grep -A15 "Thread 0 Crashed" "$report"
-          else
-            echo "DIAG: no crash report found"
-          fi
+          lldb -b -o "run" -o "bt all" -o "quit" -- "$bin" --seed=1 --no-radio > lldb.log 2>&1
+          echo "DIAG: --- lldb output ---"
+          cat lldb.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: diag-${{ inputs.runner }}
           path: |
-            crash-report.crash
+            lldb.log
           if-no-files-found: warn
           retention-days: 3
