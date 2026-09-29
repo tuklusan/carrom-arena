@@ -33,13 +33,20 @@ jobs:
           fetch-depth: 0
       - run: $(command -v python3 || command -v python) build/build.py --build-type Release
         shell: bash
-      - name: Zip the release binary
+      - name: Zip the release binary (Linux, macOS)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -eu
           cd out/dist
           bin=$(ls)
           zip -j "../../carrom-arena-${{ inputs.tag }}-${{ matrix.runner }}.zip" "$bin" ../../LICENSE ../../README.md
+      - name: Zip the release binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bin = (Get-ChildItem out/dist/*.exe | Select-Object -First 1).FullName
+          Compress-Archive -Path $bin, LICENSE, README.md -DestinationPath "carrom-arena-${{ inputs.tag }}-${{ matrix.runner }}.zip"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-zip-${{ matrix.runner }}
@@ -198,6 +205,7 @@ jobs:
           set -eu
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p docs/screenshots
           git add docs/screenshots
           if ! git diff --cached --quiet; then
             git commit -m "docs: refresh runner screenshots (${{ inputs.tag }})"
