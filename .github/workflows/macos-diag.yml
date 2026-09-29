@@ -31,12 +31,26 @@ jobs:
         env:
           CARROM_CI_SCREENSHOT: "1"
         run: |
+          ulimit -c unlimited
           bin=$(ls out/dist/* | head -1)
           chmod +x "$bin"
           echo "DIAG: bin=$bin"
-          printf 'run\nbt\nup\nup\nup\nup\nup\nquit\n' | lldb -- "$bin" --seed=1 --no-radio > lldb.log 2>&1
-          echo "DIAG: --- lldb output ---"
-          cat lldb.log
+          "$bin" --seed=1 --no-radio > game-stdout.log 2> game-stderr.log &
+          GPID=$!
+          sleep 15
+          wait $GPID
+          echo "DIAG: exit code $?, pid $GPID"
+          echo "DIAG: --- /cores ---"
+          ls -la /cores/ 2>&1
+          CORE="/cores/core.$GPID"
+          if [ -f "$CORE" ]; then
+            echo "DIAG: found $CORE, loading into lldb"
+            lldb -c "$CORE" "$bin" -o "bt" -o "quit" > lldb.log 2>&1
+            echo "DIAG: --- lldb output ---"
+            cat lldb.log
+          else
+            echo "DIAG: no core file found"
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
