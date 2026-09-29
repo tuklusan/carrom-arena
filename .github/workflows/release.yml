@@ -168,8 +168,17 @@ jobs:
         shell: pwsh
         run: |
           $bin = (Get-ChildItem out/dist/*.exe | Select-Object -First 1).FullName
-          Start-Process -FilePath $bin -ArgumentList "--seed=${{ matrix.seed }} --no-radio"
+          $p = Start-Process -FilePath $bin -ArgumentList "--seed=${{ matrix.seed }} --no-radio" -RedirectStandardOutput game-stdout.log -RedirectStandardError game-stderr.log -PassThru
           Start-Sleep -Seconds 15
+          if ($p.HasExited) {
+            Write-Host "DIAG: game process exited early, code $($p.ExitCode)"
+          } else {
+            Write-Host "DIAG: game process still running after 15s (pid $($p.Id))"
+          }
+          Write-Host "DIAG: --- stdout ---"
+          Get-Content game-stdout.log -ErrorAction SilentlyContinue
+          Write-Host "DIAG: --- stderr ---"
+          Get-Content game-stderr.log -ErrorAction SilentlyContinue
           Add-Type -AssemblyName System.Windows.Forms
           Add-Type -AssemblyName System.Drawing
           $b = New-Object System.Drawing.Bitmap([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width, [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height)
