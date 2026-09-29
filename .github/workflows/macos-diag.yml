@@ -26,25 +26,34 @@ jobs:
           fetch-depth: 0
       - run: python3 build/build.py --build-type Release --no-test
         shell: bash
-      - name: Run under lldb for a live backtrace
+      - name: Try a real screenshot with the HiDPI bypass
         shell: bash --noprofile --norc -uo pipefail {0}
+        env:
+          CARROM_CI_SCREENSHOT: "1"
         run: |
           bin=$(ls out/dist/* | head -1)
           chmod +x "$bin"
           echo "DIAG: bin=$bin"
-          file "$bin" || true
-          lldb -b \
-            -o "run" \
-            -o "bt all" \
-            -o "quit" \
-            -- "$bin" --seed=1 --no-radio > lldb.log 2>&1
-          echo "DIAG: --- lldb output ---"
-          cat lldb.log
+          "$bin" --seed=1 --no-radio > game-stdout.log 2> game-stderr.log &
+          GPID=$!
+          sleep 15
+          if kill -0 $GPID 2>/dev/null; then
+            echo "DIAG: still running (pid $GPID) - good sign"
+          else
+            wait $GPID
+            echo "DIAG: exited early, code $?"
+          fi
+          echo "DIAG: --- stdout ---"; cat game-stdout.log
+          echo "DIAG: --- stderr ---"; cat game-stderr.log
+          screencapture -x screenshot.png || echo "DIAG: screencapture failed"
+          kill $GPID 2>/dev/null || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: diag-${{ inputs.runner }}
           path: |
-            lldb.log
+            screenshot.png
+            game-stdout.log
+            game-stderr.log
           if-no-files-found: warn
           retention-days: 3
