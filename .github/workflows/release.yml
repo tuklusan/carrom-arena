@@ -184,9 +184,22 @@ jobs:
           sleep 15
           screencapture -x "screenshot-${{ matrix.runner }}.png"
           kill $GPID 2>/dev/null || true
+      - name: Install Mesa software OpenGL (Windows x64 only; headless runners have no GPU driver)
+        if: runner.os == 'Windows' && runner.arch == 'X64'
+        shell: pwsh
+        run: |
+          $bin = (Get-ChildItem out/dist/*.exe | Select-Object -First 1).FullName
+          $binDir = Split-Path $bin -Parent
+          Invoke-WebRequest -Uri "https://github.com/pal1000/mesa-dist-win/releases/download/26.2.3/mesa3d-26.2.3-release-msvc.7z" -OutFile mesa.7z
+          & "C:\Program Files\7-Zip\7z.exe" x mesa.7z -omesa -y | Out-Null
+          $dllDir = (Get-ChildItem -Path mesa -Filter opengl32.dll -Recurse | Where-Object { $_.DirectoryName -match '\\x64($|\\)' } | Select-Object -First 1).DirectoryName
+          if (-not $dllDir) { throw "Mesa x64 opengl32.dll not found in archive" }
+          Copy-Item (Join-Path $dllDir '*.dll') -Destination $binDir -Force
       - name: Capture a screenshot (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          GALLIUM_DRIVER: llvmpipe
         run: |
           $bin = (Get-ChildItem out/dist/*.exe | Select-Object -First 1).FullName
           $p = Start-Process -FilePath $bin -ArgumentList "--seed=${{ matrix.seed }} --no-radio" -RedirectStandardOutput game-stdout.log -RedirectStandardError game-stderr.log -PassThru
