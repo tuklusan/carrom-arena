@@ -142,8 +142,6 @@ jobs:
           - { runner: windows-2025,           seed: 108 }
           - { runner: windows-2025-vs2026,    seed: 109 }
           - { runner: windows-2022,           seed: 110 }
-          - { runner: windows-11-arm,         seed: 111 }
-          - { runner: windows-11-vs2026-arm,  seed: 112 }
           - { runner: macos-26,               seed: 113 }
           - { runner: macos-26-intel,         seed: 114 }
           - { runner: macos-15,               seed: 115 }
