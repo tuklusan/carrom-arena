@@ -29,6 +29,7 @@ struct Renderer {
     Layout current_layout;
     Team turn_team;
     int score_games[2], score_boards[2], score_pts[2];   /* red, blue: G (this match), B (this game), P (this game) */
+    bool score_seats_swapped;   /* true: red (N/S) currently plays black, blue (E/W) plays white - colour rotates board to board (ICF 43/49a-i) */
     bool radio_available, radio_playing;
     bool radio_clicked;
 };
@@ -160,9 +161,12 @@ static Rectangle radio_rect(int sw, int sh) {
 /* Every character gets the same cell width, so the numbers never shift the layout as the digits change */
 static int scoreboard_cell(void) { return MeasureText("W", SCOREBOARD_FONT) + 1; }
 
+#define SCOREBOARD_COIN_R 4.5f       /* matches the 9x9 red/blue identity square already in the scoreboard */
+#define SCOREBOARD_COIN_GAP 6        /* clear space between the last digit and the coin */
+
 static int scoreboard_width(const Renderer* r, int sw, int sh) {
     (void)r; (void)sw; (void)sh;
-    return 8 + 12 + SCOREBOARD_CHARS * scoreboard_cell() + 8;
+    return 8 + 12 + SCOREBOARD_CHARS * scoreboard_cell() + SCOREBOARD_COIN_GAP + (int)(SCOREBOARD_COIN_R * 2.0f) + 8;
 }
 
 static void draw_fixed_text(const char* text, int x, int y, Color col) {
@@ -177,12 +181,26 @@ static void draw_fixed_text(const char* text, int x, int y, Color col) {
 /* Points 000-999 and games 00-99; a value out of range is shown as 0 */
 static int sb_clamp(int v, int max) { return (v < 0 || v > max) ? 0 : v; }
 
+/* The coin a pair is CURRENTLY playing this board (ICF 43/49a-i: the breaker's pair plays white for that board
+ * only, then colour rotates) - same palette as the real coins on the board (board_view.c) so it reads as the
+ * same object, not a new symbol: an off-white disc with a thin dark rim, or a charcoal disc with a light rim. */
+static void draw_scoreboard_coin(int cx, int cy, bool white) {
+    Color fill = white ? (Color){ 240, 240, 240, 255 } : (Color){ 62, 64, 74, 255 };
+    Color rim  = white ? (Color){ 50, 50, 50, 230 } : (Color){ 200, 205, 215, 255 };
+    DrawCircle(cx, cy, SCOREBOARD_COIN_R, fill);
+    DrawCircleLines(cx, cy, SCOREBOARD_COIN_R, rim);
+}
+
 static void draw_scoreboard(const Renderer* r, int sw, int sh) {
     (void)sw; (void)sh;
+    int text_end_x = 20 + SCOREBOARD_CHARS * scoreboard_cell();
+    int coin_x = text_end_x + SCOREBOARD_COIN_GAP + (int)SCOREBOARD_COIN_R;
     DrawRectangle(8, SB_ROW1_Y + 1, 9, 9, THEME_RED);
     draw_fixed_text(TextFormat("G:%02d B:%02d P:%03d", sb_clamp(r->score_games[0], 99), sb_clamp(r->score_boards[0], 99), sb_clamp(r->score_pts[0], 999)), 20, SB_ROW1_Y, WHITE);
+    draw_scoreboard_coin(coin_x, SB_ROW1_Y + 1 + 4, !r->score_seats_swapped);   /* red = N/S: white unless swapped */
     DrawRectangle(8, SB_ROW2_Y + 1, 9, 9, THEME_BLUE);
     draw_fixed_text(TextFormat("G:%02d B:%02d P:%03d", sb_clamp(r->score_games[1], 99), sb_clamp(r->score_boards[1], 99), sb_clamp(r->score_pts[1], 999)), 20, SB_ROW2_Y, WHITE);
+    draw_scoreboard_coin(coin_x, SB_ROW2_Y + 1 + 4, r->score_seats_swapped);    /* blue = E/W: black unless swapped */
 }
 
 static void draw_radio_button(const Renderer* r, int sw, int sh) {
@@ -222,10 +240,11 @@ static void draw_radio_button(const Renderer* r, int sw, int sh) {
 }
 
 void renderer_set_scoreboard(Renderer* r, int red_games, int red_boards, int red_points,
-                             int blue_games, int blue_boards, int blue_points) {
+                             int blue_games, int blue_boards, int blue_points, bool seats_swapped) {
     r->score_games[0] = red_games;   r->score_games[1] = blue_games;
     r->score_boards[0] = red_boards; r->score_boards[1] = blue_boards;
     r->score_pts[0] = red_points;    r->score_pts[1] = blue_points;
+    r->score_seats_swapped = seats_swapped;
 }
 
 void renderer_set_radio(Renderer* r, bool available, bool playing) {

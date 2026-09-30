@@ -1012,7 +1012,8 @@ int app_run_simulation(AppContext* ctx) {
             renderer_set_radio(ctx->renderer, !ctx->config.no_radio && audio_ready(), radio_is_playing());   /* the button (and the radio itself) needs a real audio device: no device, no button */
             renderer_set_scoreboard(ctx->renderer,
                                      ctx->total_games[0], ctx->pair_boards_won[0], app_live_points(ctx, 0),
-                                     ctx->total_games[1], ctx->pair_boards_won[1], app_live_points(ctx, 1));
+                                     ctx->total_games[1], ctx->pair_boards_won[1], app_live_points(ctx, 1),
+                                     ctx->game.board.seats_swapped);
             renderer_set_turn_team(ctx->renderer, ctx->game.active_player.team);
             renderer_begin(ctx->renderer);
             renderer_begin_board(ctx->renderer);
