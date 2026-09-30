@@ -302,6 +302,7 @@ if(EMSCRIPTEN)
         "SHELL:-s EXIT_RUNTIME=1"
         "SHELL:-s ASYNCIFY_STACK_SIZE=131072"
         "SHELL:-s EXPORTED_RUNTIME_METHODS=[callMain]"
+        "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html"
         --emrun
     )
 endif()

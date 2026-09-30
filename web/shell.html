@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Carrom Arena</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #canvas {
+    width: min(100vw, 100vh);
+    height: min(100vw, 100vh);
+    display: block;
+    outline: none;
+  }
+  #status {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #ccc;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 14px;
+    pointer-events: none;
+  }
+  /* Tap-to-start only on phone-sized viewports (iPhone 15 Pro Max's 430px portrait width, or
+     smaller) - the browser's audio autoplay policy needs one real user gesture before sound can
+     play, and this fully autonomous game never otherwise asks for one. */
+  #startOverlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 20px;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    z-index: 10;
+  }
+  @media (max-width: 430px) {
+    #startOverlay.ready {
+      display: flex;
+    }
+  }
+</style>
+</head>
+<body>
+  <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+  <div id="status">Loading...</div>
+  <div id="startOverlay"><div>Tap to start</div></div>
+  <script>
+    var statusElement = document.getElementById('status');
+    var overlayElement = document.getElementById('startOverlay');
+    var Module = {
+      canvas: document.getElementById('canvas'),
+      arguments: ['--no-radio'],
+      setStatus: function (text) {
+        statusElement.textContent = text;
+        if (!text) {
+          statusElement.style.display = 'none';
+          overlayElement.classList.add('ready');
+        }
+      }
+    };
+    overlayElement.addEventListener('click', function () {
+      overlayElement.style.display = 'none';
+    });
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>
