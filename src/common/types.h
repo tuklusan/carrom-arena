@@ -192,6 +192,8 @@ typedef struct {
     uint8_t boards_won_white, boards_won_black;
     uint8_t games_won_white, games_won_black;
     uint8_t target_boards_per_game, target_games_per_match;
+    uint8_t break_offset;   /* which seat "board 0 of the rotation" maps to (0=N,1=E,2=S,3=W); 0 unless
+                             * match_randomize_first_breaker() has drawn a real coin toss for this match */
 } MatchState;
 
 typedef struct {
@@ -219,6 +221,9 @@ typedef struct { uint64_t state, inc; } PCG32;
 typedef struct {
     PCG32 streams[4];
     PCG32 global;
+    PCG32 match_coin;   /* dedicated stream for the arena-kickoff coin toss (which pair breaks first) - kept
+                         * separate from global/streams[] so drawing it never perturbs formation rotation or
+                         * AI shot planning, which existing tests pin to exact deterministic seed sequences */
     uint64_t master_seed;
 } RNGContext;
 

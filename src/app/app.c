@@ -103,6 +103,7 @@ static void app_cleanup_controllers(AppContext* ctx) {
 
 static void app_init_match(AppContext* ctx) {
     match_state_init(&ctx->match);
+    match_randomize_first_breaker(&ctx->match, &ctx->rng);   /* arena kickoff: a real coin toss for who breaks first */
     game_state_init(&ctx->game, ctx->rng.master_seed);
     ctx->game.turn_seat = SEAT_NORTH;
     ctx->frame_count = 0;
@@ -556,6 +557,7 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
         if (decision == TURN_MATCH_OVER) {
             ctx->match.games_won_white = 0;
             ctx->match.games_won_black = 0;
+            match_randomize_first_breaker(&ctx->match, &ctx->rng);   /* a new match: toss again for who breaks first */
         }
         ctx->game.scores.white = 0;
         ctx->game.scores.black = 0;

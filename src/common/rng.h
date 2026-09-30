@@ -86,6 +86,9 @@ static inline void rng_context_init(RNGContext* ctx, uint64_t master_seed) {
     pcg32_init(&ctx->streams[SEAT_EAST],  master_seed, 2);
     pcg32_init(&ctx->streams[SEAT_SOUTH], master_seed, 3);
     pcg32_init(&ctx->streams[SEAT_WEST],  master_seed, 4);
+
+    // Match-kickoff coin toss (seq 5): its own stream so drawing it never shifts global/per-seat sequences
+    pcg32_init(&ctx->match_coin, master_seed, 5);
 }
 
 /* Get mutable reference to seat's RNG stream */

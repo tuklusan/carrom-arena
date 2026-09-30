@@ -10,6 +10,14 @@ void match_state_init(MatchState* match) {
     match->games_won_black = 0;
     match->target_boards_per_game = 8;
     match->target_games_per_match = 2;   /* ICF 57: the best of three games, i.e. the first to win two */
+    match->break_offset = 0;
+}
+
+void match_randomize_first_breaker(MatchState* match, RNGContext* rng) {
+    /* Real carrom decides the first breaker with a toss; the four equally-likely outcomes 0..3 land on seats
+     * N,E,S,W in turn, which is an unbiased 50/50 pick of pair (N/S vs E/W) AND, within the winning pair,
+     * an unbiased pick of which of its two seats actually breaks. */
+    match->break_offset = (uint8_t)pcg32_random_bounded(&rng->match_coin, 4);
 }
 
 bool match_is_over(const MatchState* match) {
@@ -26,7 +34,7 @@ void match_start_board(MatchState* match, GameState* game, RNGContext* rng) {
     /* ICF 49: the break passes alternately between the pairs, and the second game starts with the pair that did not break first
      * in the first (games already played shift the rotation by one seat each) */
     int total_boards = match->boards_won_white + match->boards_won_black + match->games_won_white + match->games_won_black;
-    game->turn_seat = (Seat)(total_boards % 4);
+    game->turn_seat = (Seat)((total_boards + match->break_offset) % 4);
     /* The breaker plays white: when E or W breaks, the pairs swap coin colours for this board */
     game->board.seats_swapped = (game->turn_seat == SEAT_EAST || game->turn_seat == SEAT_WEST);
     game->active_player.seat = game->turn_seat;
