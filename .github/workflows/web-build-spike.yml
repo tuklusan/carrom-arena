@@ -69,6 +69,7 @@ jobs:
           cp build_web/carrom_arena.html site/index.html
           cp build_web/carrom_arena.js site/carrom_arena.js
           cp build_web/carrom_arena.wasm site/carrom_arena.wasm
+          touch site/.nojekyll   # without this the legacy Pages builder runs Jekyll over the site and never finishes
           ls -la site
 
       - name: Publish to gh-pages
