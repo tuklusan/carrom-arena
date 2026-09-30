@@ -164,6 +164,7 @@ jobs:
           cp build_web/carrom_arena.html site/index.html
           cp build_web/carrom_arena.js site/carrom_arena.js
           cp build_web/carrom_arena.wasm site/carrom_arena.wasm
+          cp web/og-image.png site/og-image.png   # social share preview (Open Graph / Twitter Card), see web/shell.html's <head>
           touch site/.nojekyll   # without this the legacy Pages builder runs Jekyll over the site and never finishes
           ls -la site
 
