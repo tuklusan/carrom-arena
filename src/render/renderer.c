@@ -118,7 +118,7 @@ static void draw_background(int sw, int sh, Team turn_team, double t) {
     }
     /* cross lines, receding with perspective and scrolling toward the viewer */
     const int rows = 12;
-    float scroll = (float)fmod(t * 0.12, 1.0);
+    float scroll = (float)fmod(t * 0.24, 1.0);   /* twice the original speed (operator, 2026-09-30) */
     for (int j = 0; j < rows; j++) {
         float u = ((float)j + scroll) / (float)rows;          /* 0 (far) .. 1 (near) */
         float depth = u * u;
