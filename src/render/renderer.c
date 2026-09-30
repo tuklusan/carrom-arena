@@ -113,35 +113,54 @@ static float bg_hash01(int i) {
     return x - floorf(x);
 }
 
-/* The starfield and, sparser, a few distant galaxies behind the grid - both orbit the vanishing point
- * at half the grid's own rotation angle (a slower, further-back layer, operator, 2026-09-30). Galaxies
- * are drawn as small tilted ellipses (rlgl's own transform stack, since DrawEllipse has no rotation
- * argument) sized by a per-galaxy "distance": smaller and dimmer reads as further away. */
-static void draw_starfield(int sw, int sh, float vx, float horizon, float rot_half) {
+/* The wormhole's own forward "travel" rate (how fast the tunnel rushes past) - the scrolling cross
+ * lines below use this directly, and the starfield's own per-object speed is capped as a fraction of
+ * it (operator, 2026-09-30: "wormhole travel speed does not change" - kept as one named constant so
+ * nothing here can silently drift out of sync with it again). */
+#define WORMHOLE_TRAVEL_RATE 0.48f
+
+/* The starfield and, sparser, a few distant galaxies behind the grid - each on its own outward
+ * "flight" from the vanishing point toward the viewer, like the existing cross-lines below, not
+ * orbiting it (operator, 2026-09-30: "cannot be static... travelling through space"). Every object's
+ * speed is a fixed fraction of WORMHOLE_TRAVEL_RATE, proportional to how close it currently is and
+ * capped at 50% of it for the very closest ones ("far objects move slower"); depth also drives size
+ * and brightness, so an object visibly grows and brightens as it approaches before wrapping back to
+ * the centre and starting over - one continuous stream, never static. Galaxies are drawn as small
+ * tilted ellipses (rlgl's own transform stack, since DrawEllipse has no rotation argument). */
+static void draw_starfield(int sw, int sh, float vx, float horizon, float t) {
     float max_r = 0.5f * sqrtf((float)sw * (float)sw + (float)sh * (float)sh);
 
     const int STAR_COUNT = 50;
     for (int i = 0; i < STAR_COUNT; i++) {
-        float angle = bg_hash01(i * 2 + 1) * 6.2831853f + rot_half;
-        float radius = (0.08f + bg_hash01(i * 2 + 2) * 0.92f) * max_r;
+        float angle = bg_hash01(i * 2 + 1) * 6.2831853f;
+        float lane01 = bg_hash01(i * 2 + 2);                       /* fixed per star: which "lane" it travels in */
+        float speed = WORMHOLE_TRAVEL_RATE * 0.5f * (1.0f - lane01);
+        float phase = bg_hash01(i * 2 + 6);
+        float u = fmodf(phase + t * speed, 1.0f);                  /* 0 = just spawned (far) .. 1 (about to pass) */
+        float depth = u * u;
+        float radius = depth * max_r;
         float x = vx + radius * cosf(angle);
         float y = horizon + radius * sinf(angle);
         if (x < -4.0f || x > (float)sw + 4.0f || y < -4.0f || y > (float)sh + 4.0f) continue;
-        unsigned char a = (unsigned char)((0.25f + bg_hash01(i * 2 + 3) * 0.75f) * 190.0f);
-        float size = 1.0f + bg_hash01(i * 3 + 7) * 1.2f;
+        unsigned char a = (unsigned char)((0.15f + 0.65f * depth) * (0.4f + bg_hash01(i * 2 + 3) * 0.6f) * 255.0f);
+        float size = (0.5f + depth * 1.3f) * (0.7f + bg_hash01(i * 3 + 7) * 0.6f);
         DrawCircleV((Vector2){ x, y }, size, (Color){ 235, 240, 255, a });
     }
 
     const int GALAXY_COUNT = 7;
     for (int i = 0; i < GALAXY_COUNT; i++) {
-        float angle = bg_hash01(i * 5 + 101) * 6.2831853f + rot_half;
-        float radius = (0.12f + bg_hash01(i * 5 + 102) * 0.88f) * max_r;
+        float angle = bg_hash01(i * 5 + 101) * 6.2831853f;
+        float lane01 = bg_hash01(i * 5 + 102);
+        float speed = WORMHOLE_TRAVEL_RATE * 0.5f * (1.0f - lane01);
+        float phase = bg_hash01(i * 5 + 107);
+        float u = fmodf(phase + t * speed, 1.0f);
+        float depth = u * u;
+        float radius = depth * max_r;
         float x = vx + radius * cosf(angle);
         float y = horizon + radius * sinf(angle);
         if (x < -20.0f || x > (float)sw + 20.0f || y < -20.0f || y > (float)sh + 20.0f) continue;
-        float distance01 = bg_hash01(i * 5 + 103);   /* 0 = nearby and large, 1 = far and small/dim */
-        float gsize = 2.5f + (1.0f - distance01) * 7.0f;
-        unsigned char a = (unsigned char)(30.0f + (1.0f - distance01) * 55.0f);
+        float gsize = 1.5f + depth * 8.0f;                          /* bigger as it approaches: "distance" is now live */
+        unsigned char a = (unsigned char)(15.0f + depth * 65.0f);
         float tilt_deg = bg_hash01(i * 5 + 104) * 180.0f;
         rlPushMatrix();
         rlTranslatef(x, y, 0.0f);
@@ -155,7 +174,9 @@ static void draw_starfield(int sw, int sh, float vx, float horizon, float rot_ha
  * of the team whose turn it is; the subdued lines use the other team's colour. Scrolling, and the radiating spokes
  * swing back and forth around the vanishing point, reversing direction often rather than settling into one steady
  * spin - a sum of a few incommensurate sine terms with no net drift, so both the rate and the direction of swing
- * wander continuously ("wormhole", operator, 2026-09-30; "frequently reverse direction", 2026-09-30). */
+ * wander continuously ("wormhole", operator, 2026-09-30; "frequently reverse direction", 2026-09-30). The swing's
+ * own time base runs at 25% of its original rate ("slow down wormhole rotation to 25%", 2026-09-30) - this is
+ * entirely separate from WORMHOLE_TRAVEL_RATE above, which this does NOT touch ("travel speed does not change"). */
 static void draw_background(int sw, int sh, Team turn_team, double t) {
     DrawRectangleGradientV(0, 0, sw, sh, (Color){ 36, 52, 84, 255 }, (Color){ 66, 92, 128, 255 });
     Color bright = (turn_team == TEAM_WHITE) ? (Color){ 110, 225, 255, 255 } : (Color){ 255, 160, 70, 255 };
@@ -163,10 +184,12 @@ static void draw_background(int sw, int sh, Team turn_team, double t) {
     float horizon = (float)sh * 0.5f;
     float vx = (float)sw * 0.5f;
 
-    float rot = 0.9f * sinf((float)t * 0.09f)
-        + 0.5f * sinf((float)t * 0.21f + 1.3f)
-        + 0.35f * sinf((float)t * 0.37f + 2.6f);
-    draw_starfield(sw, sh, vx, horizon, rot * 0.5f);
+    draw_starfield(sw, sh, vx, horizon, (float)t);
+
+    float rot_t = (float)t * 0.25f;
+    float rot = 0.9f * sinf(rot_t * 0.09f)
+        + 0.5f * sinf(rot_t * 0.21f + 1.3f)
+        + 0.35f * sinf(rot_t * 0.37f + 2.6f);
 
     /* lines running to the vanishing point (floor and ceiling), rigidly rotated about it by the angle above. */
     const int lanes = 14;
@@ -184,7 +207,7 @@ static void draw_background(int sw, int sh, Team turn_team, double t) {
     }
     /* cross lines, receding with perspective and scrolling toward the viewer */
     const int rows = 12;
-    float scroll = (float)fmod(t * 0.48, 1.0);   /* twice 0.24 (operator, 2026-09-30) */
+    float scroll = fmodf((float)t * WORMHOLE_TRAVEL_RATE, 1.0f);
     for (int j = 0; j < rows; j++) {
         float u = ((float)j + scroll) / (float)rows;          /* 0 (far) .. 1 (near) */
         float depth = u * u;
