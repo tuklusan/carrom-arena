@@ -1,11 +1,16 @@
 # Carrom Arena: RESUME playbook
 
-**Updated:** 2026-09-30 (UTC), commit `a9623ce` (one commit past `beta-0.0.16`). Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched. `~/.kimi-code` on the Linux box must be RETAINED (operator: "that's where kimi lives") even though everything else kimi-era has been cleaned up.
+**Updated:** 2026-09-30 (UTC), commit `c012aa1` (four commits past `beta-0.0.16`; tag `BEFORE-WEB-ADDITION` moved to this commit today on
+explicit operator request - see the dated section near the end of this file). Development is direct and hands-on: the kimi "software
+company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh`
+unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched. `~/.kimi-code` on the Linux box must be
+RETAINED (operator: "that's where kimi lives") even though everything else kimi-era has been cleaned up.
 
 ## Repo state
-- `main` head is `a9623ce` ("Fix boards-won-this-game display for a colour-swapped board", 2026-09-30), one commit past the README-rewrite
-  commit tagged `beta-0.0.16` (2026-09-29). Identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`)
-  and the Windows H: clone. Since `beta-0.0.14`:
+- `main` head is `c012aa1` ("Show which colour each pair currently holds on the scoreboard", 2026-09-30), four commits past the
+  README-rewrite commit tagged `beta-0.0.16` (2026-09-29): `a9623ce` (a display-bug fix), `a856230` (this doc, corrected), `ad6b792` (arena
+  kickoff coin toss), `c012aa1` (scoreboard colour-coin indicator) - all detailed in the dated section near the end of this file. Identical
+  on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. Since `beta-0.0.14`:
   a full temp/dead-code cleanup across all three locations (see the dated section near the end of this file); a new
   `.github/workflows/release.yml` (build+zip+publish+verify the six canonical runners, plus a much wider
   screenshot-only matrix for README proof); three real upstream raylib bugs found and fixed via a maintained fork
@@ -632,3 +637,49 @@ cross-platform proof this project has had. Screenshots live in `docs/screenshots
 language) replaced with a short one for players - what the game is, a direct link to the latest GitHub Release, the
 handful of spectator keys, and the sixteen-runner screenshot gallery, each image labelled with its OS and CPU
 architecture. Verified by loading the actual rendered page on GitHub, not just the markdown source.
+
+## A real arena-kickoff coin toss, a scoreboard colour indicator, and a moved tag (2026-09-30)
+Three small, separate operator requests after the games-counter fix above (`a9623ce`/`a856230`):
+
+**The first breaker is now a genuine coin toss** (`ad6b792`). Every match previously had north deterministically
+break (and hold white for) board 1 - no randomness at all, discovered while explaining the breaker-rotation formula
+to the operator. Real carrom decides this with a toss, and the codebase already had a documented "no toss" simplifying
+assumption elsewhere (the eight-board tie-break), so this was agreed as a genuine fix, not scope creep.
+`match_randomize_first_breaker()` draws one value 0..3 from a brand new, dedicated `RNGContext.match_coin` stream -
+kept entirely separate from `global`/the four per-seat streams so drawing it can never perturb formation rotation or
+AI shot planning - and stores it as `MatchState.break_offset`, which shifts the existing N-E-S-W rotation formula
+(`match_start_board`) by that many seats. It is strictly opt-in: `match_state_init()` alone still leaves
+`break_offset` at 0, so every pre-existing test kept passing unchanged with zero updates needed. Wired into
+`app_init_match` (covers interactive play AND the soak/selfplay batch loop) and the seamless next-match continuation
+path in `app_resolve_shot`. New test `test_arena_kickoff_coin_toss_can_pick_any_seat_to_break_first`
+(`test_colour_rotation.c`): draws 40 seeds, asserts all 4 seats get picked at least once, and asserts the toss never
+changes board 1's piece layout versus an un-tossed match with the same seed (proving the new stream truly is
+isolated from the formation-rotation draw).
+
+**The scoreboard now shows which colour each pair currently holds** (`c012aa1`). Directly prompted by the operator
+watching a board where "blue" (east/west) visibly cleared their own coins while the queen sat uncovered on the
+board - ICF Rule 107a then correctly credited the win to the OPPONENT (red/north-south) instead, which looked like a
+bug from the scoreboard alone (it wasn't - see below). Since colour rotates board to board (ICF 43/49a-i) with no
+on-screen indicator of who currently holds what, a small coin - same palette as the real board pieces, off-white
+with a dark rim or charcoal with a light rim - now sits right after each row's `P:000` points, white or black
+per `renderer_set_scoreboard`'s new `seats_swapped` argument. Verified visually: an Xvfb + `import -window root`
+screenshot of a fresh board 1 shows red's coin white and blue's coin black, correctly spaced clear of the title bar,
+matching the real coins' colours exactly. `renderer.h`'s stale comment claiming "red = the white team, blue = the
+black team" (a fixed colour mapping) is also corrected - red/blue are fixed to north-south/east-west seats, never to
+a colour.
+
+**Root-cause investigation for the operator's original bug report**, which prompted both features above: read
+`traces/trace.jsonl` (the ring buffer's own reconstruction logic, `write_offset`/`wrapped` header, matching
+`trace_read_last_records()` exactly) to find the actual board where "blue seemed to win but red's board count went
+up." Traced it precisely: west (blue) pocketed the queen alone, then missed their one chance to cover her, so she
+returned to the board's centre untouched by either side; east (blue) later cleared their own last remaining coin,
+but because the queen was sitting unclaimed at that exact moment, ICF Rule 107a awards the board to the OPPONENT
+pair - crediting red (north/south), not blue, exactly as the (already-correct, separately-tested) rules engine
+recorded. Not a bug; the new scoreboard coin above exists specifically so this kind of moment reads correctly to a
+viewer without needing to reconstruct a trace file to explain it.
+
+**Tag moved** (operator's explicit instruction - the standing rule is otherwise "never move existing tags"):
+`BEFORE-WEB-ADDITION` re-pointed from `692c902` (its original commit, the RESUME.md update through `beta-0.0.16`) to
+`c012aa1` (current head), force-pushed to GitHub, and re-fetched on the H: clone. `git tag -n99 BEFORE-WEB-ADDITION`
+confirms the same annotation message; `git log -1 --oneline BEFORE-WEB-ADDITION` confirms the new target on all
+three locations.
