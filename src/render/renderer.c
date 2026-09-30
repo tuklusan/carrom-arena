@@ -105,7 +105,9 @@ void layout_compute(int sw, int sh, Layout* out) {
 
 
 /* Tron-style backdrop: a perspective floor and ceiling grid converging on a horizon. The bright lines use the colour
- * of the team whose turn it is; the subdued lines use the other team's colour. Slowly scrolling. */
+ * of the team whose turn it is; the subdued lines use the other team's colour. Scrolling, and the radiating spokes
+ * slowly spin around the vanishing point - a steady drift plus a few slow, incommensurate sine terms so the rate
+ * and direction wander organically instead of looking like a fixed-speed turntable ("wormhole", operator, 2026-09-30). */
 static void draw_background(int sw, int sh, Team turn_team, double t) {
     DrawRectangleGradientV(0, 0, sw, sh, (Color){ 36, 52, 84, 255 }, (Color){ 66, 92, 128, 255 });
     Color bright = (turn_team == TEAM_WHITE) ? (Color){ 110, 225, 255, 255 } : (Color){ 255, 160, 70, 255 };
@@ -113,20 +115,27 @@ static void draw_background(int sw, int sh, Team turn_team, double t) {
     float horizon = (float)sh * 0.5f;
     float vx = (float)sw * 0.5f;
 
-    /* lines running to the vanishing point (floor and ceiling) */
+    /* lines running to the vanishing point (floor and ceiling), rigidly rotated about it by a gently
+     * wandering angle - never more than roughly 6 deg/s even where the wobble terms reinforce the drift. */
     const int lanes = 14;
     float spread = (float)sw / 5.0f;
+    float rot = 0.03f * (float)t
+        + 0.15f * sinf((float)t * 0.037f) + 0.22f * sinf((float)t * 0.081f + 1.7f)
+        + 0.15f * sinf((float)t * 0.151f + 0.6f);
+    float cr = cosf(rot), sr = sinf(rot);
     for (int k = -lanes; k <= lanes; k++) {
         bool major = (k % 4 == 0);
         Color c = major ? bright : subdued;
         c.a = (unsigned char)(major ? 70 : 34);
         float xb = vx + (float)k * spread;
-        DrawLineEx((Vector2){ vx, horizon }, (Vector2){ xb, (float)sh }, 1.0f, c);
-        DrawLineEx((Vector2){ vx, horizon }, (Vector2){ xb, 0.0f }, 1.0f, c);
+        float fdx = xb - vx, fdy = (float)sh - horizon;
+        float cdx = xb - vx, cdy = 0.0f - horizon;
+        DrawLineEx((Vector2){ vx, horizon }, (Vector2){ vx + fdx * cr - fdy * sr, horizon + fdx * sr + fdy * cr }, 1.0f, c);
+        DrawLineEx((Vector2){ vx, horizon }, (Vector2){ vx + cdx * cr - cdy * sr, horizon + cdx * sr + cdy * cr }, 1.0f, c);
     }
     /* cross lines, receding with perspective and scrolling toward the viewer */
     const int rows = 12;
-    float scroll = (float)fmod(t * 0.24, 1.0);   /* twice the original speed (operator, 2026-09-30) */
+    float scroll = (float)fmod(t * 0.48, 1.0);   /* twice 0.24 (operator, 2026-09-30) */
     for (int j = 0; j < rows; j++) {
         float u = ((float)j + scroll) / (float)rows;          /* 0 (far) .. 1 (near) */
         float depth = u * u;

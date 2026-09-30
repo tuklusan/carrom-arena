@@ -18,7 +18,7 @@ EM_JS(void, web_radio_create, (), {
     var urls = ['https://eu.ah.fm/live', 'https://us.ah.fm/live', 'https://fr.ah.fm/live', 'https://fr2.ah.fm/live'];
     var a = new Audio();
     a.preload = 'none';
-    a.volume = 0.35;
+    a.volume = 0.175;   /* dropped 50% from 0.35, matches the native build (operator, 2026-09-30) */
     a.__urlIndex = 0;
     a.addEventListener('error', function () {
         /* one mirror failed - try the next, but only if the player still wants it playing */

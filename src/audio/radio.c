@@ -7,7 +7,7 @@
 
 #define RADIO_FRAMES_PER_UPDATE 4096   /* raylib streams are fed one buffer at a time */
 #define RADIO_PREBUFFER_FRAMES  (RADIO_FRAMES_PER_UPDATE * 6)   /* about half a second before the first sound */
-#define RADIO_VOLUME 0.35f
+#define RADIO_VOLUME 0.175f   /* dropped 50% from 0.35 (operator, 2026-09-30) */
 
 static RadioStream* g_rs;
 static AudioStream g_stream;
