@@ -193,24 +193,64 @@ void test_ai_break_stroke_varies_with_seed(void) {
     TEST_ASSERT_TRUE_MESSAGE(distinct >= 5, "the break stroke must differ from seed to seed");
 }
 
+/* An uncovered queen must not be scored as a fraction of a plain coin pocket: pocketing anything
+ * (queen included) earns another shot (ICF 49), so "cover it next turn" is the normal, low-risk
+ * continuation of taking the queen now, not a separate harder plan a one-shot-ahead evaluator can't
+ * see. Regression test for a real reported symptom: the robots would leave an available queen on the
+ * board turn after turn (or cover an available cover piece before an equally available queen) because
+ * a myopic per-shot score was comparing the old reduced queen-alone value against a plain coin pocket
+ * and always preferring the coin. */
 void test_shot_evaluator_scoring(void) {
-    ShotCandidate candidate;
-    shot_result_init(&candidate.sim_result);
-    
-    // Mock a result with white piece pocketed
-    candidate.sim_result.pocketed_ids[0] = 0;
-    candidate.sim_result.pocketed_colors[0] = PIECE_WHITE;
-    candidate.sim_result.pocketed_count = 1;
-    candidate.sim_result.queen_pocketed = false;
-    candidate.sim_result.striker_pocketed = false;
-    candidate.sim_valid = true;
-    
-    StrategyProfile profile = STRATEGY_PROFILES[STRATEGY_BALANCED];
-    (void)profile;
-    
-    // Would need full board state for complete test
-    // This is a stub test
-    TEST_ASSERT_TRUE(true);
+    const StrategyProfile* profile = &STRATEGY_PROFILES[STRATEGY_BALANCED];
+
+    BoardState board;
+    board_state_init(&board);
+    board.white_had_pocketed = true;   // already has the right to the queen (ICF 92, 95a/b)
+    board.white_dues = 0;
+    board.queen_state = QUEEN_STATE_ON_BOARD;
+
+    // Queen pocketed alone (no own coin in the same shot): due, but must not be worth a fraction of
+    // weight_queen - only the separate cover bonus is conditional on covering, not the queen's own value.
+    ShotResult uncovered;
+    shot_result_init(&uncovered);
+    uncovered.pocketed_ids[0] = 0;
+    uncovered.pocketed_colors[0] = PIECE_QUEEN;
+    uncovered.pocketed_count = 1;
+    uncovered.queen_pocketed = true;
+    TEST_ASSERT_EQUAL_FLOAT(profile->weight_queen, score_queen_value(&uncovered, &board, TEAM_WHITE, profile));
+
+    // Queen pocketed AND covered in the same shot: still the best outcome, full queen value plus the
+    // cover bonus on top - strictly better than taking the queen alone, as it should be.
+    ShotResult covered;
+    shot_result_init(&covered);
+    covered.pocketed_ids[0] = 0;
+    covered.pocketed_colors[0] = PIECE_QUEEN;
+    covered.pocketed_ids[1] = 1;
+    covered.pocketed_colors[1] = PIECE_WHITE;
+    covered.pocketed_count = 2;
+    covered.queen_pocketed = true;
+    float covered_score = score_queen_value(&covered, &board, TEAM_WHITE, profile);
+    TEST_ASSERT_EQUAL_FLOAT(profile->weight_queen + profile->weight_cover, covered_score);
+    TEST_ASSERT_TRUE(covered_score > profile->weight_queen);
+
+    // No right to the queen yet (never pocketed an own coin) and none pocketed in this shot either:
+    // ICF 92/95a/b says it goes straight back and the turn is lost - must stay a hard penalty.
+    BoardState no_right = board;
+    no_right.white_had_pocketed = false;
+    TEST_ASSERT_EQUAL_FLOAT(-1.0f, score_queen_value(&uncovered, &no_right, TEAM_WHITE, profile));
+
+    // An uncovered queen-alone shot must never score below a plain single-coin pocket - that
+    // comparison is exactly what made the robots avoid an available queen.
+    ShotResult plain_coin;
+    shot_result_init(&plain_coin);
+    plain_coin.pocketed_ids[0] = 0;
+    plain_coin.pocketed_colors[0] = PIECE_WHITE;
+    plain_coin.pocketed_count = 1;
+    float queen_alone_total = score_pocket_value(&uncovered, TEAM_WHITE, profile)
+        + score_queen_value(&uncovered, &board, TEAM_WHITE, profile);
+    float plain_coin_total = score_pocket_value(&plain_coin, TEAM_WHITE, profile)
+        + score_queen_value(&plain_coin, &board, TEAM_WHITE, profile);
+    TEST_ASSERT_TRUE(queen_alone_total >= plain_coin_total);
 }
 
 void test_candidate_budget_limit(void) {

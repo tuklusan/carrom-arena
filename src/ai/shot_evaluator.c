@@ -134,8 +134,19 @@ float score_queen_value(const ShotResult* result, const BoardState* board, Team 
     if (covered) {
         return profile->weight_queen + profile->weight_cover;
     } else {
-        // Queen pocketed but not covered - risky, goes to due
-        return profile->weight_queen * 0.3f;  // Reduced value
+        /* Queen pocketed but not covered this same shot: due, but NOT worth only a fraction of the
+         * queen's value. Pocketing anything (including the queen alone) earns another shot (ICF 49),
+         * so "cover next turn" is the normal, low-risk continuation of taking the queen now - not a
+         * separate, harder plan the single-shot evaluator can't see. Operator-reported symptom this
+         * fixes: a myopic per-shot evaluator was comparing this shot's reduced value against a plain
+         * own-coin pocket (worth the full weight_pocket, typically >= this reduced queen value across
+         * every strategy profile) and always taking the coin, leaving an available queen on the board
+         * turn after turn, or covering an available cover piece before an equally available queen.
+         * The real risk of leaving the queen due (it can be lost outright per ICF 107a if the side
+         * runs out of coins before covering) is still real, but it is a risk on a LATER shot, not a
+         * reason to undervalue THIS one - and is exactly what score_cover_bonus below (and again next
+         * turn) already rewards covering for, on its own terms. */
+        return profile->weight_queen;
     }
 }
 
