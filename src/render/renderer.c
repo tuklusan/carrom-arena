@@ -106,10 +106,56 @@ void layout_compute(int sw, int sh, Layout* out) {
 }
 
 
+/* A cheap, stable per-index pseudo-random value in [0,1) - no RNG state needed for a handful of
+ * background decorations that only ever need to look the same every frame, keyed purely off an index. */
+static float bg_hash01(int i) {
+    float x = sinf((float)i * 12.9898f) * 43758.5453f;
+    return x - floorf(x);
+}
+
+/* The starfield and, sparser, a few distant galaxies behind the grid - both orbit the vanishing point
+ * at half the grid's own rotation angle (a slower, further-back layer, operator, 2026-09-30). Galaxies
+ * are drawn as small tilted ellipses (rlgl's own transform stack, since DrawEllipse has no rotation
+ * argument) sized by a per-galaxy "distance": smaller and dimmer reads as further away. */
+static void draw_starfield(int sw, int sh, float vx, float horizon, float rot_half) {
+    float max_r = 0.5f * sqrtf((float)sw * (float)sw + (float)sh * (float)sh);
+
+    const int STAR_COUNT = 50;
+    for (int i = 0; i < STAR_COUNT; i++) {
+        float angle = bg_hash01(i * 2 + 1) * 6.2831853f + rot_half;
+        float radius = (0.08f + bg_hash01(i * 2 + 2) * 0.92f) * max_r;
+        float x = vx + radius * cosf(angle);
+        float y = horizon + radius * sinf(angle);
+        if (x < -4.0f || x > (float)sw + 4.0f || y < -4.0f || y > (float)sh + 4.0f) continue;
+        unsigned char a = (unsigned char)((0.25f + bg_hash01(i * 2 + 3) * 0.75f) * 190.0f);
+        float size = 1.0f + bg_hash01(i * 3 + 7) * 1.2f;
+        DrawCircleV((Vector2){ x, y }, size, (Color){ 235, 240, 255, a });
+    }
+
+    const int GALAXY_COUNT = 7;
+    for (int i = 0; i < GALAXY_COUNT; i++) {
+        float angle = bg_hash01(i * 5 + 101) * 6.2831853f + rot_half;
+        float radius = (0.12f + bg_hash01(i * 5 + 102) * 0.88f) * max_r;
+        float x = vx + radius * cosf(angle);
+        float y = horizon + radius * sinf(angle);
+        if (x < -20.0f || x > (float)sw + 20.0f || y < -20.0f || y > (float)sh + 20.0f) continue;
+        float distance01 = bg_hash01(i * 5 + 103);   /* 0 = nearby and large, 1 = far and small/dim */
+        float gsize = 2.5f + (1.0f - distance01) * 7.0f;
+        unsigned char a = (unsigned char)(30.0f + (1.0f - distance01) * 55.0f);
+        float tilt_deg = bg_hash01(i * 5 + 104) * 180.0f;
+        rlPushMatrix();
+        rlTranslatef(x, y, 0.0f);
+        rlRotatef(tilt_deg, 0.0f, 0.0f, 1.0f);
+        DrawEllipse(0, 0, gsize, gsize * 0.4f, (Color){ 205, 215, 255, a });
+        rlPopMatrix();
+    }
+}
+
 /* Tron-style backdrop: a perspective floor and ceiling grid converging on a horizon. The bright lines use the colour
  * of the team whose turn it is; the subdued lines use the other team's colour. Scrolling, and the radiating spokes
- * slowly spin around the vanishing point - a steady drift plus a few slow, incommensurate sine terms so the rate
- * and direction wander organically instead of looking like a fixed-speed turntable ("wormhole", operator, 2026-09-30). */
+ * swing back and forth around the vanishing point, reversing direction often rather than settling into one steady
+ * spin - a sum of a few incommensurate sine terms with no net drift, so both the rate and the direction of swing
+ * wander continuously ("wormhole", operator, 2026-09-30; "frequently reverse direction", 2026-09-30). */
 static void draw_background(int sw, int sh, Team turn_team, double t) {
     DrawRectangleGradientV(0, 0, sw, sh, (Color){ 36, 52, 84, 255 }, (Color){ 66, 92, 128, 255 });
     Color bright = (turn_team == TEAM_WHITE) ? (Color){ 110, 225, 255, 255 } : (Color){ 255, 160, 70, 255 };
@@ -117,13 +163,14 @@ static void draw_background(int sw, int sh, Team turn_team, double t) {
     float horizon = (float)sh * 0.5f;
     float vx = (float)sw * 0.5f;
 
-    /* lines running to the vanishing point (floor and ceiling), rigidly rotated about it by a gently
-     * wandering angle - never more than roughly 6 deg/s even where the wobble terms reinforce the drift. */
+    float rot = 0.9f * sinf((float)t * 0.09f)
+        + 0.5f * sinf((float)t * 0.21f + 1.3f)
+        + 0.35f * sinf((float)t * 0.37f + 2.6f);
+    draw_starfield(sw, sh, vx, horizon, rot * 0.5f);
+
+    /* lines running to the vanishing point (floor and ceiling), rigidly rotated about it by the angle above. */
     const int lanes = 14;
     float spread = (float)sw / 5.0f;
-    float rot = 0.03f * (float)t
-        + 0.15f * sinf((float)t * 0.037f) + 0.22f * sinf((float)t * 0.081f + 1.7f)
-        + 0.15f * sinf((float)t * 0.151f + 0.6f);
     float cr = cosf(rot), sr = sinf(rot);
     for (int k = -lanes; k <= lanes; k++) {
         bool major = (k % 4 == 0);
