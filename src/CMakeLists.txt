@@ -301,12 +301,18 @@ set_target_properties(carrom_arena PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
-# Web build spike (TEMPORARY - see .github/workflows/web-build-spike.yml): -s ASYNCIFY=1 lets the
-# existing blocking `while (ctx->running)` loop in app_run_simulation (src/app/app.c) run unmodified
+# Web build (see .github/workflows/ci.yml's "web" job and release.yml's "web" job): -s ASYNCIFY=1 lets
+# the existing blocking `while (ctx->running)` loop in app_run_simulation (src/app/app.c) run unmodified
 # under Emscripten, at a real size/speed cost that would not be acceptable for a real port (that should
-# switch to a per-frame emscripten_set_main_loop callback instead). The workflow injects `--no-radio`
-# as Module.arguments in the published page, since live internet radio streaming has no obvious
-# browser-safe equivalent yet.
+# switch to a per-frame emscripten_set_main_loop callback instead). web/shell.html injects `--no-radio`
+# as Module.arguments, since live internet radio streaming has no obvious browser-safe equivalent yet,
+# and (on phone-sized viewports only) defers calling main() until a tap via Module.noInitialRun +
+# Module.callMain(), which EXPORTED_RUNTIME_METHODS below must list explicitly to expose. It must also
+# list HEAPF32: Emscripten only exposes Module.HEAPF32 (etc.) when asked to, and miniaudio's own
+# Emscripten Web Audio glue (deps/raylib/src/external/miniaudio.h) reads Module.HEAPF32.buffer directly
+# in its per-callback audio processing code - omitting it doesn't fail the build, it silently breaks
+# all audio: every audio callback throws "Cannot read properties of undefined (reading 'buffer')" in
+# the browser console and produces silence, on every platform, whether or not main() was gated.
 if(EMSCRIPTEN)
     set_target_properties(carrom_arena PROPERTIES SUFFIX ".html")
     # CMake collapses repeated bare "-s" list entries into one, silently dropping every value after
@@ -316,7 +322,7 @@ if(EMSCRIPTEN)
         "SHELL:-s ALLOW_MEMORY_GROWTH=1"
         "SHELL:-s EXIT_RUNTIME=1"
         "SHELL:-s ASYNCIFY_STACK_SIZE=131072"
-        "SHELL:-s EXPORTED_RUNTIME_METHODS=[callMain]"
+        "SHELL:-s EXPORTED_RUNTIME_METHODS=[callMain,HEAPF32]"
         "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html"
         --emrun
     )
