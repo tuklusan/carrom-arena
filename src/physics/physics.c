@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Supratim Sanyal of SANYALnet Labs.
+ * Licensed under the SANYALnet Labs Non-Commercial License; see LICENSE.
+ */
+
 #define __USE_MINGW_ANSI_STDIO 1
 #include <math.h>
 #include <stdlib.h>

@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Supratim Sanyal of SANYALnet Labs.
+ * Licensed under the SANYALnet Labs Non-Commercial License; see LICENSE.
+ */
+
 #define _POSIX_C_SOURCE 200809L
 #define _GNU_SOURCE
 #define _XOPEN_SOURCE 700

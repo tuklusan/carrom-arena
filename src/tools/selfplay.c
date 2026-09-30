@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Supratim Sanyal of SANYALnet Labs.
+ * Licensed under the SANYALnet Labs Non-Commercial License; see LICENSE.
+ */
+
 /* selfplay: headless AI-vs-AI board, no timers or window, to find stalls.
  *   selfplay [--seed N] [--seeds K] [--max-turns T] [--stale] [--verbose] [--expect-finish] [--boards B]
   * Plays B boards (default 1) per seed with the arena AI and reports turns used, coins pocketed and whether the board finished.

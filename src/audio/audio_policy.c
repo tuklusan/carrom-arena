@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Supratim Sanyal of SANYALnet Labs.
+ * Licensed under the SANYALnet Labs Non-Commercial License; see LICENSE.
+ */
+
 #include "audio_policy.h"
 #include "physics/physics.h"
 #include <math.h>

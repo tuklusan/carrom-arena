@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Supratim Sanyal of SANYALnet Labs.
+ * Licensed under the SANYALnet Labs Non-Commercial License; see LICENSE.
+ */
+
 /* The ICF Laws of Carrom (reference/ICF-Carrom-Official-Rules.pdf), rule by rule. North breaks and plays the white coins
  * (ids 0-8); the black coins are 9-17; the queen is 18. Every stroke is proper. Scores are per PAIR: .white = north/south. */
 #include "unity.h"

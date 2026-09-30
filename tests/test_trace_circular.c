@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Supratim Sanyal of SANYALnet Labs.
+ * Licensed under the SANYALnet Labs Non-Commercial License; see LICENSE.
+ */
+
 /* -----------------------------------------------------------------------------
  * Circular Trace Buffer Unit Tests
  * Tests: file never exceeds 8 MiB, last N records intact/parsable

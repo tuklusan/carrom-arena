@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Supratim Sanyal of SANYALnet Labs.
+ * Licensed under the SANYALnet Labs Non-Commercial License; see LICENSE.
+ */
+
 #ifndef CARROM_ICON_ASSET_H
 #define CARROM_ICON_ASSET_H
 

@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Supratim Sanyal of SANYALnet Labs.
+ * Licensed under the SANYALnet Labs Non-Commercial License; see LICENSE.
+ */
+
 /* Regression tests for the defects found in the adversarial code review. */
 #include "unity.h"
 #include "common/types.h"

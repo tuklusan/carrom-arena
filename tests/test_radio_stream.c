@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Supratim Sanyal of SANYALnet Labs.
+ * Licensed under the SANYALnet Labs Non-Commercial License; see LICENSE.
+ */
+
 /* The radio's reconnect behaviour, against a fake network source (no sockets, no audio device). */
 #include "unity.h"
 #include "audio/radio_stream.h"

@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Supratim Sanyal of SANYALnet Labs.
+ * Licensed under the SANYALnet Labs Non-Commercial License; see LICENSE.
+ */
+
 /* radio_probe: connect to the AH.FM stream for a few seconds, decode it, and report what arrived (network + MP3 check).
  *   radio_probe [seconds] */
 #include "audio/radio_stream.h"
