@@ -66,6 +66,7 @@ void renderer_set_scoreboard(Renderer* renderer, int red_games, int red_boards, 
                              int blue_games, int blue_boards, int blue_points, bool seats_swapped);
 void renderer_set_radio(Renderer* renderer, bool available, bool playing);
 bool renderer_radio_clicked(Renderer* renderer);   /* true once per click on the radio button */
+bool renderer_restart_requested(Renderer* renderer);   /* true once after R is pressed */
 
 void renderer_begin(Renderer* renderer);
 void renderer_begin_board(Renderer* renderer);

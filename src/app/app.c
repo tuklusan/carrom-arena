@@ -132,6 +132,25 @@ static void app_init_match(AppContext* ctx) {
     ctx->thinking_min_wall = 0.0;
 }
 
+/* R: restart with a new seed - the same reset sequence app_run_soak already does between its own
+ * seeds (rng_context_init, then re-create controllers and match state), minus the parts (physics,
+ * renderer, trace) that must survive a restart rather than being torn down and rebuilt. Always a
+ * fresh time-based seed, even if the process was launched with an explicit --seed: the point of
+ * pressing R is a different match, not a replay of the same one. */
+static void app_restart_with_new_seed(AppContext* ctx) {
+    rng_context_init(&ctx->rng, platform_time_us());
+    app_cleanup_controllers(ctx);   /* app_init_controllers below unconditionally overwrites ctx->controllers[i] */
+    app_init_controllers(ctx);
+    /* score_base/pair_boards_won/total_games are AppContext-level accumulators app_init_match never
+     * touches (by design: it resets per-board/per-game state, these persist across boards and games
+     * within a run) - only ever zeroed by app_create's calloc at true process start, so a mid-session
+     * restart has to zero them explicitly or the scoreboard opens the new match mid-tally. */
+    ctx->score_base[0] = ctx->score_base[1] = 0;
+    ctx->pair_boards_won[0] = ctx->pair_boards_won[1] = 0;
+    ctx->total_games[0] = ctx->total_games[1] = 0;
+    app_init_match(ctx);
+}
+
 /* App-level event kinds (2026-09-28): what used to be the separate binary flight recorder's own APP_EV_* enum,
  * now written as APP_EVENT JSONL records into the shared trace file instead (trace_write_app_event()). Kept as the
  * same small integers for continuity; app_ev_kind_name() below is what makes each record self-describing. */
@@ -1009,6 +1028,7 @@ int app_run_simulation(AppContext* ctx) {
         // Render (mode-specific)
         if (ctx->renderer) {
             if (renderer_radio_clicked(ctx->renderer)) radio_toggle();
+            if (renderer_restart_requested(ctx->renderer)) app_restart_with_new_seed(ctx);
             renderer_set_radio(ctx->renderer, !ctx->config.no_radio && audio_ready(), radio_is_playing());   /* the button (and the radio itself) needs a real audio device: no device, no button */
             renderer_set_scoreboard(ctx->renderer,
                                      ctx->total_games[0], ctx->pair_boards_won[0], app_live_points(ctx, 0),

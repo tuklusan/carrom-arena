@@ -12,6 +12,7 @@
 
 static bool g_available = false;
 static bool g_user_paused = false;
+static bool g_applied_muted = false;   /* last muted state actually applied to the <audio> element */
 
 EM_JS(void, web_radio_create, (), {
     if (window.__carromRadio) return;
@@ -45,6 +46,11 @@ EM_JS(int, web_radio_is_playing, (), {
     return (a && !a.paused && a.readyState >= 3) ? 1 : 0;
 });
 
+EM_JS(void, web_radio_set_muted, (int muted), {
+    var a = window.__carromRadio;
+    if (a) a.muted = !!muted;
+});
+
 void radio_init(void) {
     if (g_available || !audio_ready()) return;
     web_radio_create();
@@ -60,7 +66,16 @@ void radio_shutdown(void) {
 }
 
 void radio_update(void) {
-    /* nothing to pump: the browser's own <audio> element handles buffering, decode and playback */
+    /* Nothing to pump - the browser's own <audio> element handles buffering, decode and playback.
+     * But unlike the native build, this <audio> element lives entirely outside raylib/miniaudio's
+     * own audio graph, so audio_toggle_mute()'s SetMasterVolume() call (audio.c) never reaches it on
+     * its own; mirror the mute flag onto the element here instead, once per change. */
+    if (!g_available) return;
+    bool muted = audio_is_muted();
+    if (muted != g_applied_muted) {
+        web_radio_set_muted(muted);
+        g_applied_muted = muted;
+    }
 }
 
 void radio_toggle(void) {

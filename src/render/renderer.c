@@ -40,6 +40,8 @@ struct Renderer {
     bool score_seats_swapped;   /* true: red (N/S) currently plays black, blue (E/W) plays white - colour rotates board to board (ICF 43/49a-i) */
     bool radio_available, radio_playing;
     bool radio_clicked;
+    bool restart_requested;
+    bool quit_requested;
 };
 
 #define GAME_BACKGROUND (Color){ 84, 112, 140, 255 }   /* steel blue: dark pieces and figures stand out */
@@ -276,6 +278,12 @@ bool renderer_radio_clicked(Renderer* r) {
     return c;
 }
 
+bool renderer_restart_requested(Renderer* r) {
+    bool req = r->restart_requested;
+    r->restart_requested = false;
+    return req;
+}
+
 /* A bold, poster-style line, letter-spaced ("tracking" extra px between characters) to spread it across the available
  * width rather than leaving it small and cramped in the middle: an outline in every direction plus a doubled-up fill
  * per character, punchier than a plain DrawText. */
@@ -437,10 +445,18 @@ void renderer_poll_events(Renderer* r) {
         r->playback_speed *= 0.5f;
         if (r->playback_speed < 0.05f) r->playback_speed = 0.05f;
     }
+    if (IsKeyPressed(KEY_R)) {
+        r->restart_requested = true;
+    }
+    /* raylib's own default exit key is Escape (never overridden via SetExitKey here, so it still
+     * works on its own via WindowShouldClose()); Q is ours to add on top of that, not instead of it. */
+    if (IsKeyPressed(KEY_Q)) {
+        r->quit_requested = true;
+    }
 }
 
 bool renderer_should_close(Renderer* r) {
-    return WindowShouldClose();
+    return WindowShouldClose() || r->quit_requested;
 }
 
 bool renderer_is_paused(Renderer* r) {
