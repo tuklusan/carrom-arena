@@ -1,10 +1,11 @@
 # Carrom Arena: RESUME playbook
 
-**Updated:** 2026-09-29 (UTC), tagged `beta-0.0.16`. Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched. `~/.kimi-code` on the Linux box must be RETAINED (operator: "that's where kimi lives") even though everything else kimi-era has been cleaned up.
+**Updated:** 2026-09-30 (UTC), commit `a9623ce` (one commit past `beta-0.0.16`). Development is direct and hands-on: the kimi "software company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh` unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched. `~/.kimi-code` on the Linux box must be RETAINED (operator: "that's where kimi lives") even though everything else kimi-era has been cleaned up.
 
 ## Repo state
-- `main` head is the README rewrite commit, tagged `beta-0.0.16` (2026-09-29). Identical on the Linux box
-  (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. Since `beta-0.0.14`:
+- `main` head is `a9623ce` ("Fix boards-won-this-game display for a colour-swapped board", 2026-09-30), one commit past the README-rewrite
+  commit tagged `beta-0.0.16` (2026-09-29). Identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`)
+  and the Windows H: clone. Since `beta-0.0.14`:
   a full temp/dead-code cleanup across all three locations (see the dated section near the end of this file); a new
   `.github/workflows/release.yml` (build+zip+publish+verify the six canonical runners, plus a much wider
   screenshot-only matrix for README proof); three real upstream raylib bugs found and fixed via a maintained fork
@@ -116,22 +117,19 @@ Tool: `selfplay` (src/tools/selfplay.c) plays headless AI-vs-AI boards and dumps
 - Scoreboard (2026-09-27, reworked): each side shows `G:00 B:00 P:000` (fixed font, every character the same cell width; out of range wraps to 0).
   G = games won this MATCH (`total_games`, unchanged from before). B = boards won THIS GAME. P = points THIS GAME (the coin tally: coins of
   the pair's colour pocketed, +3 for a covered queen; moves the instant a coin drops or returns). B and P both reset to 0 when a new game starts.
-- IMPORTANT for B (and P): ICF 43 gives the BREAKER's pair the white coins for THAT BOARD ONLY, and ICF 49a(i) has the break (and so the
-  colour) rotate to the other pair every board within a game (confirmed by `test_colour_rotation.c`). A board win or a coin is therefore
-  recorded by the rules engine under `boards_won_white`/`black` or `PIECE_WHITE`/`BLACK`, colours that can belong to EITHER physical pair
-  from one board to the next. B is computed by resolving each board's own `seats_swapped` at the moment it is decided
-  (`app_resolve_shot`'s `old_seats_swapped`, captured before the rules engine runs) and adding that board's win to the correct physical
-  pair (`ctx->pair_boards_won[0/1]`); P already did this per board (`scoring_live_board_points`). Verified: in an instrumented run where the
-  same PAIR won four boards in a row while the winning COLOUR bucket alternated white,black,white,black, B correctly read 4 for that pair
-  and 0 for the other; a naive direct `boards_won_white -> red` mapping would have shown 2 and 2 - wrong.
-- OPEN ICF-COMPLIANCE QUESTION (found while doing the above, not fixed): `GameState.scores.white/black`, which decides who wins a GAME
-  (25 points or ahead after 8 boards, ICF 56a) and increments `match.games_won_white/black`, is accumulated by COLOUR across the whole game,
-  the SAME colour bucket B was just found to misattribute. Since colour genuinely belongs to a different physical pair board to board
-  (same ICF 43/49a-i basis as above), and ICF 52-56 speak of "the player"'s/pair's points, not a colour's, `game.scores.white` most likely
-  MIXES the two physical pairs' points across a game's boards, so the GAME winner (and hence G) could be wrong whenever the breaker rotation
-  matters, i.e. essentially always once a game runs more than one board. This is a pre-existing property of the rules engine (not introduced
-  today) and fixing it is a rules-engine change (touches `finish_board`, `match.games_won_*`, and the tests that assert on them), which is
-  bigger than a display change: NOT done without the operator's decision, given "ICF compliance is non-negotiable".
+- G/B/GAME-SCORE FIX (2026-09-30, corrects the two entries this replaces): ICF 43 gives the BREAKER's pair the white coins for THAT BOARD
+  ONLY, and ICF 49a(i) has the break (and so the colour) rotate to the other pair every board within a game (confirmed by
+  `test_colour_rotation.c`) - that part of the original analysis was right. But `rules.c`'s `winner_pair` (feeding `boards_won_white/black`,
+  `scores.white/black` and `games_won_white/black` alike) was never colour-keyed to begin with: `board_result()` always sets it from
+  `pair_of_seat(seat)`, which depends only on which SEAT is on the move, never on `seats_swapped` - so all three fields were already
+  correctly keyed by PHYSICAL pair (0 = north/south, 1 = east/west) across a colour-rotating game, and the ICF GAME/MATCH winner (G) was
+  never actually wrong. The real bug ran the other way: `app_resolve_shot`'s B-counter took that already-correct `boards_won_white/black`
+  delta and wrongly re-flipped it with a `seats_swapped` translation, corrupting B (not G) from the second board of every game onward - the
+  "verified four-boards-in-a-row" run originally cited for that translation must have been misread or mis-set-up, since a seat's physical
+  pair cannot change with a colour swap. Fixed by deleting the translation entirely (`app.c`: `pair_boards_won[0] += dwhite; pair_boards_won[1]
+  += dblack;`, no `old_seats_swapped` involved) and adding `test_game_score_survives_a_colour_swap_mid_game` (`test_rules.c`) to lock in that
+  a pair's running score/board-count survives a colour swap mid-game. Gated 100% (24/24). No rules-engine change was needed or made;
+  `GameState.scores`/`MatchState.games_won_*` are unchanged.
 
   The points are LIVE: `scoring_live_board_points` = coins of the pair's colour in a pocket on the current board (a coin put back stops counting at once)
   plus 3 for a covered queen, on top of the finished boards' points (`score_base`, banked at each new board). This is a coin tally, not the rules' game
@@ -543,26 +541,8 @@ otherwise look identical), confirming the fast spin is real motion, not a stuck 
 the slower per-seat idle sway throughout. This also closes out the still-unreproduced arm-position report from
 just before it: there is no longer any position or rotation logic left for that report to have been about.
 
-## Open items (regenerated 2026-09-26, after the arrange/rotation/lock work)
-Decisions for the operator:
-- Should the ICF GAME score (which decides G) be reattributed by physical pair the same way B and P now are (see the compliance
-  question above)? This can change who wins games/matches once a game runs more than one board.
-- Confirm on real hardware that the Release exe (`-release`, the first optimised build ever shipped) plays like the old Debug ones; then decide whether Release is the only exe to hand out.
-Known gaps (nothing decided needed):
-- Aim preview holds 3 s per turn (the aim line grows over 85% of it).
-- The scoreboard shows the live coin tally, not the ICF game score that ends a game at 25 points: confirm that is what is wanted.
-- Dues: a due with no own coin on the stash to return stays counted only (never enforced later).
-- `-Wno-unused-function` hides dead statics (for example `distance_to_board_boundary` in `board_view.c`); `Layout.figure_halo_base_r` is now unused (the halo is gone).
-- Windows on ARM and macOS are verified only by CI builds and tests, not on real hardware.
-- CI notices: Node 20 actions run on Node 24, and the `ubuntu-latest` and `windows-11-arm` labels change later in 2026 (`admit` and `verdict` use ubuntu-latest).
-- The queue tickets are git refs under `refs/ci-lock/`; a job killed without releasing leaves one until the next request finds its run finished and takes it over.
-- The operator said earlier there are "many issues": collect more from hands-on testing of the latest exe.
-- `windows-11-arm` and `windows-11-vs2026-arm` screenshots (`release.yml`'s screenshot matrix) are blocked on a
-  GitHub-side runner-image bug (`actions/runner-images#14677`, reported 2026-09-03, already closed upstream but
-  evidently still rolling out): the job's own session reports zero attached displays, not merely an unreachable one.
-  Dropped from the screenshot matrix (2026-09-29); they remain in the six-runner set that builds real release
-  artifacts, since `ctest` never needs a display. Revisit by re-adding the two entries and re-running once GitHub's
-  fix has fully propagated - no code change needed here if/when it has.
+## Open items (regenerated 2026-09-26; cleared 2026-09-30 - the ICF GAME-score question resolved, see above; nothing else carried forward)
+Nothing currently open.
 
 ## Locked
 The window is locked at 560x560 and NOT resizable (operator, 2026-09-26; no FLAG_WINDOW_RESIZABLE, --width/--height ignored in rendered mode).
