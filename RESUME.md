@@ -1,7 +1,11 @@
 # Carrom Arena: RESUME playbook
 
-**Updated:** 2026-09-30 (UTC), commit `8ac691a` (one commit past `c012aa1`, a README touchup; tagged `beta-0.0.17` and released - see
-the dated section near the end of this file). Development is direct and hands-on: the kimi "software
+**Updated:** 2026-09-30 (UTC), commit `e16260e` (the release workflow's own screenshot-refresh bot commit, one past
+`1.0.0` itself - see the dated sections near the end of this file). The project shipped its first stable
+release, `1.0.0`, the same day: a full WebAssembly/browser port, two unrelated audio bugs found and fixed,
+an AI scoring bug fixed, four rounds of visual polish on the Tron background, a README overhaul (video,
+SEO badges, a Carrom Engine design section, two dedicated SEO passes), a license header added to all 92
+project-owned source files, and the release itself. Development is direct and hands-on: the kimi "software
 company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh`
 unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched. `~/.kimi-code` on the Linux box must be
 RETAINED (operator: "that's where kimi lives") even though everything else kimi-era has been cleaned up.
@@ -556,14 +560,12 @@ otherwise look identical), confirming the fast spin is real motion, not a stuck 
 the slower per-seat idle sway throughout. This also closes out the still-unreproduced arm-position report from
 just before it: there is no longer any position or rotation logic left for that report to have been about.
 
-## Open items (regenerated 2026-09-26; cleared 2026-09-30 - the ICF GAME-score question resolved, see above; nothing else carried forward)
-- **Queued (operator, 2026-09-30): rename `.github/workflows/ci.yml`'s `name:` field from `CI` to
-  `carrom arena verification`, once the web-build-spike publication work is completed and tested** - not
-  before. Prompted by a question about adding a "carrom arena sdk verification passing" README badge;
-  the recommended near-term fix (a Shields.io badge with a custom label, no workflow change needed) was
-  offered first, but the operator separately wants the workflow's own display name changed too. Do this
-  only after the web build spike (`.github/workflows/web-build-spike.yml`) is either merged into
-  `release.yml` for real or discarded - renaming `ci.yml` mid-spike is unrelated churn best kept separate.
+## Open items (regenerated 2026-09-30; the ICF GAME-score item above is long resolved)
+- **Still queued (operator, 2026-09-30; prerequisite now satisfied): rename `.github/workflows/ci.yml`'s
+  `name:` field from `CI` to `carrom arena verification`.** The blocking condition - the web build spike
+  either merged into `release.yml` for real or discarded - is now done (`856ac6e`: folded into `ci.yml`'s
+  own verify-only "web" job and `release.yml`'s build+publish "web" job; `web-build-spike.yml` deleted).
+  Nobody has asked for the rename itself yet; do it whenever asked, not before.
 
 ## Locked
 The window is locked at 560x560 and NOT resizable (operator, 2026-09-26; no FLAG_WINDOW_RESIZABLE, --width/--height ignored in rendered mode).
@@ -722,3 +724,168 @@ are already merged upstream (raysan5/raylib PR #4803 and #4804, March 2025); the
 CI test code. Nothing to upstream currently. Also clarified that GitHub's "Sync fork" only fast-forwards the fork's
 default branch (`master`), never `carrom-arena-fixes`, and the build pins by commit SHA regardless - so syncing the
 fork is always safe.
+
+## Web build: from a discardable spike to a first-class release deliverable (2026-09-30)
+A temporary `.github/workflows/web-build-spike.yml` (`f9e2e7d`) proved the existing C17/raylib/Box2D codebase
+would actually run under Emscripten before committing to it for real: five small CMake accommodations (GNU C
+extensions for raylib's miniaudio EM_ASM glue, an empty `PLATFORM_LIBS` branch for Emscripten, a genuine
+upstream Box2D v3.1.0 CMake bug patched via `string(REPLACE ...)`, `.html`-output plus ASYNCIFY/
+ALLOW_MEMORY_GROWTH/EXIT_RUNTIME link flags so the existing blocking game loop runs unmodified, and CMake's
+`"SHELL:"` prefix to stop repeated bare `-s` flags silently collapsing into one). Once proven, folded for real
+(`856ac6e`) into `ci.yml` (a verify-only "web" job, every push, never touching `gh-pages`) and `release.yml`
+(a build-and-publish "web" job, a first-class deliverable alongside the six native zips - a broken web build
+now fails the release the same as a broken native one); the spike workflow deleted, nothing it did lost.
+`build(ci): publish .nojekyll alongside the web build` (`269c614`) fixed GitHub Pages' legacy Jekyll builder
+choking on Emscripten's own generated JS.
+
+## Two audio bugs, one after the other, both on the web build (2026-09-30)
+First symptom (operator): the deployed page needed a click before any sound, and the phone build specifically
+stayed silent even after tapping "Tap to start." Root cause: `main()` - and `InitAudioDevice()` inside it - ran
+the instant the wasm module loaded, before any tap; the tap was cosmetic. Fixed with `Module.noInitialRun` plus
+a deferred `Module.callMain()` inside the tap handler, so the game only starts inside a genuine user gesture
+(`EXPORTED_RUNTIME_METHODS=[callMain]` needed to expose `callMain` to JS at all). Tagged `ALL-GOOD-EXCEPT-
+BROWSER-AUDIO` at this point - accurate at the time, superseded below.
+
+Second, deeper bug (`72ac1a7`): the operator reported it was STILL silent, on desktop too, where the gesture-
+gating never even applied. Found by reading the browser console instead of guessing again: every audio callback
+threw `Cannot read properties of undefined (reading 'buffer')` inside miniaudio's own Emscripten glue, which
+reads `Module.HEAPF32.buffer` directly. `EXPORTED_RUNTIME_METHODS` is an allowlist, not additive to
+Emscripten's own defaults - adding `callMain` for the click-to-play fix had silently dropped `HEAPF32` along
+with everything else normally exposed. Fixed: `EXPORTED_RUNTIME_METHODS=[callMain,HEAPF32]`. Confirmed
+properly this time via `window.miniaudio.devices[0].webaudio.state` reading "running" with `currentTime`
+visibly advancing, not just "no more console errors."
+
+## Real AH.FM radio in the browser, and click-to-play goes universal (2026-09-30)
+Initially shipped with `--no-radio` on web, on the assumption the native pipeline (a raw HTTP socket feeding a
+hand-rolled minimp3 decoder) has no browser equivalent - true, but the operator asked for it to work "exactly
+like the desktop user experiences." Solved differently (`f1a5276`): a plain HTML5 `<audio>` element pointed at
+the same AH.FM mirror URLs streams and decodes a live MP3 itself, confirmed to need no CORS headers for plain
+playback. New `audio/radio_web.c` (compiled in place of `radio.c` on Emscripten only; `radio_stream.c`/
+`radio_mp3.c` excluded from that build entirely), implementing the existing `radio.h` contract via `EM_JS`-
+defined JS helpers, backed by a hidden `<audio>` element with mirror fallback on error. Tagged `RADIO-STREAM-OK`.
+
+Separately (`f7378d2`), the original phone-only click-to-play gating (`max-width:430px` media query) turned out
+to be solving the wrong problem for the wrong platform - every browser enforces the same gesture requirement,
+not just phones. Simplified to one unconditional gate; overlay text now three centred lines matching the
+in-game title bar. Tagged `ALL-GOOD-BUT-NO-WEB-RADIO-STREAM` right before the radio fix above landed.
+
+## Font swap, and four rounds of background visual correction (2026-09-30)
+Sono Medium (SIL OFL 1.1) replaced raylib's default bitmap font across every `DrawText`/`MeasureText` call site
+in `renderer.c` (`4554773`), with a `text_spacing()` helper reproducing `DrawText`'s own spacing formula so the
+font swap didn't also change letter-spacing; the scoreboard's fixed-width cell math already derived its width
+from the font's own "W" advance, so digit alignment kept working with no extra changes.
+
+The Tron background went through several operator-driven rounds the same day (`62af570`, `cd41747`, `4daecd3`):
+doubled scroll speed and halved radio volume together; then reversing direction "frequently" (replaced a
+steady-drift-plus-wobble formula, which could dip negative but never really read as reversing, with a pure sum
+of three incommensurate sine terms and no net drift - checked numerically, not just eyeballed: a reversal every
+~8.6s on average over a 120s span); then stars and sparser distant galaxies added, first orbiting the vanishing
+point - which the operator correctly called out as not reading as motion ("cannot be static...like travelling
+through space") - redesigned to genuinely travel outward from the vanishing point at a per-object speed
+proportional to closeness (`u = fmod(phase + t*speed, 1.0)`, `depth = u*u`, `radius = depth*max_r`), wrapping
+via fmod; finally the spoke rotation's own time base slowed to 25% (`rot_t = t * 0.25f`) while the travel rate
+stayed exactly fixed, pulled into one named constant (`WORMHOLE_TRAVEL_RATE = 0.48f`) specifically so rotation
+and travel speed can't drift out of sync again after this many rounds of tuning.
+
+## README Controls-table validation surfaces two real bugs, neither about the table (2026-09-30)
+Asked to confirm Space/+/-/M/R/Q/Esc all actually worked (`15ec674`) - R ("Restart with a new seed") and Q
+("Quit") were pure fiction, zero code anywhere, confirmed by grep; Esc worked only via raylib's own default
+exit key. Implemented both: R reseeds the RNG and reruns the same controller/match init sequence
+`app_run_soak` already uses between seeds; Q sets a flag OR'd into the existing `WindowShouldClose()` check.
+A real Debug+ASan build caught an actual memory leak the first time R was pressed twice: `app_init_controllers()`
+unconditionally overwrote the controller pointers with no cleanup of the previous ones - fixed by calling the
+already-existing `app_cleanup_controllers()` first. A second, unrelated bug surfaced on inspection: M's mute
+calls raylib's `SetMasterVolume()`, which never reaches the web radio's independently-created `<audio>`
+element - fixed by having web-only `radio_update()` poll `audio_is_muted()` and mirror it onto `.muted`.
+
+## The AI was avoiding the queen, and the reason was in the scoring math (2026-09-30)
+Operator report: robots sometimes ignore an easily-pocketable queen in favour of an equally-easy cover piece,
+or take the cover first. Root cause (`cf3fdf4`, found by reading `shot_evaluator.c` rather than guessing): an
+uncovered queen pocket scored at only 0.3x `weight_queen`. Worked the actual numbers across all four strategy
+profiles (`strategy_profiles.h`: `AGGRESSIVE`/`BALANCED`/`DEFENSIVE`/`TRICKSTER`) - a plain coin pocket beat
+taking the queen alone in every single profile, by 2-3x, even AGGRESSIVE, whose own comment says it "favors...
+queen attempts." The evaluator only looks one shot ahead (a scratch physics rollout per candidate, see the
+Carrom Engine section added to README.md below), so "pocket the queen now, cover it next turn" - the normal,
+low-risk way this plays out under ICF Rule 49 (pocketing anything earns another shot) - was structurally
+invisible to it; it could only compare this shot's reduced queen value against this shot's full-value coin
+alternative, and always took the coin. Fix: an uncovered queen is worth the full `weight_queen` now, not a
+fraction of it; only the separate cover bonus stays conditional on covering in the same shot. Also fixed in
+passing: AGGRESSIVE and TRICKSTER (`weight_queen > weight_pocket` by design) now actually prefer the queen when
+available, which the old multiplier silently defeated for every profile including the two built to want it.
+`test_shot_evaluator_scoring` had been a literal stub (`TEST_ASSERT_TRUE(true)`) the whole time - replaced with
+real coverage proving the fix and guarding the exact regression.
+
+## Rich social-media link previews (2026-09-30)
+`16539c3` added Open Graph (read by Facebook, WhatsApp, LinkedIn, Discord, Slack, Telegram, iMessage in one
+pass) and Twitter/X Card meta tags to `web/shell.html`, prompted by a request for "the maximum number of
+social sharing sites." Crawlers don't execute JS/WASM, so the live canvas can't be screenshotted on the fly -
+built a real `web/og-image.png` (1200x630) by cropping the letterboxing out of a clean Xvfb capture (Linux
+screenshots are just the app; Windows captures the whole desktop, taskbar included, useless for this) and
+centering it on a fill matching the background's own gradient. Verified for real: fetched the live deployed
+page's raw HTML and the image's own HTTP headers directly, confirming the exact referenced URL serves a 200
+with the right content-type and byte count.
+
+## Release cadence and checkpoint tags, beta-0.0.18 through beta-1.0.0 (2026-09-30)
+`beta-0.0.18` (`856ac6e`, the integrated CI/release pipeline, proven on real GitHub infrastructure) through
+`beta-0.0.19` (`4554773`, font/click-to-play/HEAPF32), `beta-0.0.20` (`cf3fdf4`, wormhole round one, Q/R/leak/
+mute fixes, the AI queen fix), `beta-0.0.21` (`4daecd3`, wormhole rounds two through four), and `beta-1.0.0`
+(`16539c3`, social previews) - explicitly the last beta before a full `1.0.0`, per the operator. Each release
+ran the full six-native-platform-plus-web pipeline and the wider best-effort screenshot matrix; `docs: refresh
+runner screenshots` commits after each tag (`28fc692`, `69530b0`, `91e2f22`, `3d75736`) are the release
+workflow's own bot pushes, picked up by fast-forwarding both the Linux clone and the H: clone afterward every
+time, never authored directly.
+
+## README overhaul: video, SEO, a Carrom Engine design section, license headers (2026-09-30)
+Four separate operator requests, same session, same file mostly:
+- **A gameplay video embedded at the top** (`ef31903`), via a GitHub `user-attachments` asset URL (the operator
+  uploaded it manually after automation hit a real wall: GitHub's file-attach widget only creates its file
+  input after a real click, which pops a native OS file-chooser dialog no browser-automation tool can drive -
+  documented here so the next attempt doesn't retry the same approach). The original 105MB source clip was
+  re-encoded with ffmpeg (960x540, two-pass ~535kbps video, 64kbps audio) to 8.7MB to clear GitHub's upload
+  limit before the operator dropped it in.
+- **SEO badges, a keyword-forward opening paragraph, and Download moved right under it** (`ef31903`), plus a
+  new "Part of an Ongoing Series" section naming the blog and linking Part 7
+  (`supratim-sanyal.blogspot.com/2026/09/fire-ai-software-company-finish-carrom-arena-game.html`).
+- **A "Carrom Engine" design section** (`e4279b1`), written to cover high-intent search terms (carrom engine,
+  artificial intelligence, machine intelligence, machine learning) under an explicit house rule from this point
+  on: spell out "artificial intelligence"/"machine learning" in full, never as bare "AI"/"ML", in this project's
+  own prose (quoted external titles are exempt - the blog post title keeps its own real wording verbatim).
+  Content is grounded in the real pipeline: candidate generation (`shot_candidates.c`/`geometry_planner.c`,
+  ghost-ball aiming and cushion mirror images), a physics rollout per candidate against a scratch Box2D world
+  under a 250ms budget (`shot_evaluator.c`), then six-factor utility scoring - explicitly contrasted with
+  machine learning (no neural network, no training data, no learned weights, by design). Built via two
+  deliberate passes on a disk copy before ever touching the live file: pass one for keyword placement/hook/
+  fixing three pre-existing bare "AI" mentions elsewhere in the README for consistency; pass two for heading
+  structure, internal links to the three source files, and de-stuffing repeated exact phrases. Verified via a
+  scripted grep that zero bare "AI"/"ML" abbreviations survived except the one intentional verbatim quote.
+- **A license header added to all 92 project-owned `.c`/`.h` files** under `src/` and `tests/` (`1b52c92`):
+  a two-line `/* Copyright (c) 2026 Supratim Sanyal of SANYALnet Labs. Licensed under the SANYALnet Labs
+  Non-Commercial License; see LICENSE. */` block as the first lines of every file, before any include guard.
+  Deliberately excludes `deps/raylib`, `third_party/minimp3` (vendored code keeps its own upstream license)
+  and the three build-generated `.c` files written to the CMake binary dir (never tracked in git). Verified
+  with a full 100% (24/24) test pass with the headers already in place, before committing - pure comment
+  insertion, zero behavioural change. Tagged `BEFORE-HEADER-COMMENT-UPDATES` at `e4279b1`, the commit
+  immediately before this change, on the operator's explicit request.
+
+## The `1.0.0` release: a full fresh rebuild, tagged and shipped (2026-09-30)
+Tagged `1.0.0` at `1b52c92` (annotated, `git tag -a`, matching the project's existing tag style - no `v`
+prefix, consistent with every `beta-X.Y.Z` tag before it) and dispatched `release.yml` by hand
+(`gh workflow run release.yml -f tag=1.0.0`), same as every prior release: a genuinely fresh build on all six
+canonical runners (`ubuntu-24.04`/`-arm`, `windows-2022`/`windows-11-arm`, `macos-15`/`macos-15-intel`) plus
+the WebAssembly target, watched to completion (`gh run watch --exit-status`), all green.
+
+Release notes were written deliberately different from the README rather than restating it: the README
+answers "what is this," the release page answers "how do I get it running" - a one-line description, the
+zero-install web link first, then per-platform download-and-run steps including the real first-run friction
+(Windows SmartScreen, macOS Gatekeeper's right-click-Open dance, both accurate to the actual unsigned
+binaries - confirmed by grep: no codesign/signtool/notarization step exists anywhere in the build), a pointer
+to the blog for the full story, and a changelog diff link. Published via `gh release edit` after letting the
+workflow create the release normally with its default placeholder notes, rather than pre-empting it.
+
+Verified, not assumed: downloaded and played the live web build in-browser (board renders, robots, wormhole
+background, zero console errors); downloaded the Windows x64 zip, extracted it, launched the real exe, and
+confirmed it survived 10 seconds of runtime without crashing before closing it. Both `build_fresh` directories
+(the repo's own and the parent folder's) had the stale `beta-1.0.0` exe removed and the fresh `1.0.0` one
+copied in. The release workflow's own screenshot-refresh bot pushed a follow-up commit straight to `main`
+again afterward (`e16260e`, same pattern as every prior release) - picked up by fast-forwarding the Linux
+clone and the H: clone immediately after, same as always.
