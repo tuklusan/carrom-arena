@@ -1,10 +1,12 @@
 name: Release
 
 # Manual, on-demand: build zipped executables for every supported platform (build/build.py's canonical RUNNERS),
-# publish them to a GitHub Release on an existing tag, then run an extra screenshot-only matrix across a much wider
-# catalog of GitHub-hosted runner images (release builds only, never the normal push/PR CI) purely to capture
-# proof-of-life screenshots for the README. A screenshot runner failing (deprecated/preview/exotic image) does not
-# fail the release; the release artifacts come only from the 6 canonical runners.
+# publish them to a GitHub Release on an existing tag, build the Emscripten/WebAssembly target and publish it to
+# gh-pages, then run an extra screenshot-only matrix across a much wider catalog of GitHub-hosted runner images
+# (release builds only, never the normal push/PR CI) purely to capture proof-of-life screenshots for the README.
+# A screenshot runner failing (deprecated/preview/exotic image) does not fail the release; the release artifacts
+# come only from the 6 canonical runners, and the web build is treated as a first-class deliverable alongside them
+# (a broken web build fails the release), unlike the best-effort screenshot matrix.
 
 on:
   workflow_dispatch:
@@ -121,6 +123,64 @@ jobs:
             fi
           done
           test "$fail" -eq 0
+
+  web:
+    needs: admit
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Install Emscripten
+        run: |
+          set -eu
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 6.0.10
+          ./emsdk activate 6.0.10
+
+      - name: Pre-fetch pinned dependencies (raylib fork, Box2D, Unity)
+        run: $(command -v python3 || command -v python) build/build.py fetch
+
+      - name: Configure (Emscripten / PLATFORM=Web)
+        run: |
+          set -eu
+          source ~/emsdk/emsdk_env.sh
+          emcmake cmake -B build_web -DCMAKE_BUILD_TYPE=Release -DPLATFORM=Web
+
+      - name: Build carrom_arena
+        run: |
+          set -eu
+          source ~/emsdk/emsdk_env.sh
+          cmake --build build_web --target carrom_arena -j"$(nproc)"
+
+      - name: Assemble the published site
+        run: |
+          set -eu
+          rm -rf site && mkdir site
+          cp build_web/carrom_arena.html site/index.html
+          cp build_web/carrom_arena.js site/carrom_arena.js
+          cp build_web/carrom_arena.wasm site/carrom_arena.wasm
+          touch site/.nojekyll   # without this the legacy Pages builder runs Jekyll over the site and never finishes
+          ls -la site
+
+      - name: Publish to gh-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cd site
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Web build: ${{ inputs.tag }}"
+          git branch -M gh-pages
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git push -f origin gh-pages
 
   screenshots:
     name: screenshot (${{ matrix.runner }})

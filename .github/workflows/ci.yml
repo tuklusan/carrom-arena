@@ -4,6 +4,12 @@ name: CI
 # admit: the queue gate. It takes one of two tickets per runner kind (atomic git-ref creation, see build/build.py); no ticket
 # means the queue for that kind is full (one running, one waiting) and the run is rejected. At most one job per runner kind runs
 # (concurrency group below); the ticket is given back by the last step of the build job.
+#
+# web: builds the Emscripten/WebAssembly target on every push/PR too, verification only (uploaded as a plain CI
+# artifact, same as the six native builds) - it does not touch gh-pages. That publish step lives only in
+# release.yml, alongside a tagged release's native binaries; ci.yml's job here exists purely to catch a web build
+# breaking before a release does. Not part of build/build.py's per-runner-kind queue-ticket system (ubuntu-latest
+# is not one of the six scarce canonical runners), so it runs independently of admit/verdict.
 on:
   push:
     branches: [main]
@@ -64,6 +70,51 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+
+  web:
+    name: web (Emscripten)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: carrom-web-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0   # tags too, so the build id is the release tag when there is one
+
+      - name: Install Emscripten
+        run: |
+          set -eu
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 6.0.10
+          ./emsdk activate 6.0.10
+
+      - name: Pre-fetch pinned dependencies (raylib fork, Box2D, Unity)
+        run: $(command -v python3 || command -v python) build/build.py fetch
+
+      - name: Configure (Emscripten / PLATFORM=Web)
+        run: |
+          set -eu
+          source ~/emsdk/emsdk_env.sh
+          emcmake cmake -B build_web -DCMAKE_BUILD_TYPE=Release -DPLATFORM=Web
+
+      - name: Build carrom_arena
+        run: |
+          set -eu
+          source ~/emsdk/emsdk_env.sh
+          cmake --build build_web --target carrom_arena -j"$(nproc)"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: carrom-arena-web
+          path: |
+            build_web/carrom_arena.html
+            build_web/carrom_arena.js
+            build_web/carrom_arena.wasm
+          if-no-files-found: error
+          retention-days: 30
 
   verdict:
     needs: [admit, build]

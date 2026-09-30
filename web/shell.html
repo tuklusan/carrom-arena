@@ -36,7 +36,11 @@
   }
   /* Tap-to-start only on phone-sized viewports (iPhone 15 Pro Max's 430px portrait width, or
      smaller) - the browser's audio autoplay policy needs one real user gesture before sound can
-     play, and this fully autonomous game never otherwise asks for one. */
+     play, and this fully autonomous game never otherwise asks for one. On these viewports the
+     wasm module loads and fully initializes (Module.noInitialRun) but main() - and everything it
+     calls, including InitWindow/InitAudioDevice and the game loop itself - does not run until this
+     overlay is tapped, so the tap is a genuine synchronous user gesture the browser will honour for
+     audio, and nothing is visibly happening behind the overlay before that tap. */
   #startOverlay {
     display: none;
     position: fixed;
@@ -62,21 +66,24 @@
   <div id="status">Loading...</div>
   <div id="startOverlay"><div>Tap to start</div></div>
   <script>
+    var isPhone = window.matchMedia('(max-width: 430px)').matches;
     var statusElement = document.getElementById('status');
     var overlayElement = document.getElementById('startOverlay');
     var Module = {
       canvas: document.getElementById('canvas'),
       arguments: ['--no-radio'],
+      noInitialRun: isPhone,   /* phones: wait for a real tap before main() runs; desktop: unchanged auto-start */
       setStatus: function (text) {
         statusElement.textContent = text;
         if (!text) {
           statusElement.style.display = 'none';
-          overlayElement.classList.add('ready');
+          if (isPhone) overlayElement.classList.add('ready');
         }
       }
     };
     overlayElement.addEventListener('click', function () {
       overlayElement.style.display = 'none';
+      if (isPhone) Module.callMain(Module.arguments);
     });
   </script>
   {{{ SCRIPT }}}
