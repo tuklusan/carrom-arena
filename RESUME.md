@@ -557,7 +557,13 @@ the slower per-seat idle sway throughout. This also closes out the still-unrepro
 just before it: there is no longer any position or rotation logic left for that report to have been about.
 
 ## Open items (regenerated 2026-09-26; cleared 2026-09-30 - the ICF GAME-score question resolved, see above; nothing else carried forward)
-Nothing currently open.
+- **Queued (operator, 2026-09-30): rename `.github/workflows/ci.yml`'s `name:` field from `CI` to
+  `carrom arena verification`, once the web-build-spike publication work is completed and tested** - not
+  before. Prompted by a question about adding a "carrom arena sdk verification passing" README badge;
+  the recommended near-term fix (a Shields.io badge with a custom label, no workflow change needed) was
+  offered first, but the operator separately wants the workflow's own display name changed too. Do this
+  only after the web build spike (`.github/workflows/web-build-spike.yml`) is either merged into
+  `release.yml` for real or discarded - renaming `ci.yml` mid-spike is unrelated churn best kept separate.
 
 ## Locked
 The window is locked at 560x560 and NOT resizable (operator, 2026-09-26; no FLAG_WINDOW_RESIZABLE, --width/--height ignored in rendered mode).
