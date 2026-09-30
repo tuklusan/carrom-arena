@@ -1,7 +1,5 @@
 # Carrom Arena
 
-*Based on original work by Supratim Sanyal of SANYALnet Labs.*
-
 A graphical, cross-platform, four-robot autonomous Carrom simulation. Four AI players play complete matches under International Carrom Federation rules — no human gameplay input required. Watch, pause, change speed, restart.
 
 ## Download
