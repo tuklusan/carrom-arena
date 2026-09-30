@@ -48,7 +48,7 @@ target_link_libraries(carrom_core
     box2d
     ${PLATFORM_LIBS}
 )
-if(UNIX AND NOT APPLE)   # librt is Linux-only
+if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN)   # librt is Linux-only
     target_link_libraries(carrom_core rt)
 endif()
 
@@ -285,6 +285,26 @@ endif()
 set_target_properties(carrom_arena PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
 )
+
+# Web build spike (TEMPORARY - see .github/workflows/web-build-spike.yml): -s ASYNCIFY=1 lets the
+# existing blocking `while (ctx->running)` loop in app_run_simulation (src/app/app.c) run unmodified
+# under Emscripten, at a real size/speed cost that would not be acceptable for a real port (that should
+# switch to a per-frame emscripten_set_main_loop callback instead). The workflow injects `--no-radio`
+# as Module.arguments in the published page, since live internet radio streaming has no obvious
+# browser-safe equivalent yet.
+if(EMSCRIPTEN)
+    set_target_properties(carrom_arena PROPERTIES SUFFIX ".html")
+    # CMake collapses repeated bare "-s" list entries into one, silently dropping every value after
+    # the first (a known CMake footgun) - the "SHELL:" prefix keeps each "-s KEY=VALUE" pair intact.
+    target_link_options(carrom_arena PRIVATE
+        "SHELL:-s ASYNCIFY=1"
+        "SHELL:-s ALLOW_MEMORY_GROWTH=1"
+        "SHELL:-s EXIT_RUNTIME=1"
+        "SHELL:-s ASYNCIFY_STACK_SIZE=131072"
+        "SHELL:-s EXPORTED_RUNTIME_METHODS=[callMain]"
+        --emrun
+    )
+endif()
 
 # Disable -Werror=implicit-function-declaration for targets including Box2D headers
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")

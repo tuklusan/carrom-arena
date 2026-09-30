@@ -12,7 +12,13 @@ endif()
 # =============================================================================
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_C_EXTENSIONS OFF)
+# Emscripten's EM_ASM (used by raylib's miniaudio backend) needs GNU-mode statement expressions,
+# which strict -std=c17 forbids; -std=gnu17 is a strict superset so our own C17 code is unaffected.
+if(EMSCRIPTEN)
+    set(CMAKE_C_EXTENSIONS ON)
+else()
+    set(CMAKE_C_EXTENSIONS OFF)
+endif()
 
 # =============================================================================
 # Base Compiler Warnings (for all targets) - NONE for external deps
@@ -55,6 +61,20 @@ endforeach()
 # raylib's CompilerFlags.cmake adds -Werror=pointer-arith and -Werror=implicit-function-declaration
 # These cause build failures with our codebase, so we disable them
 set(RAYLIB_NO_WERROR ON CACHE BOOL "Disable -Werror in raylib" FORCE)
+
+# Box2D v3.1.0's own CMakeLists.txt has a genuine upstream bug on Emscripten: `if (BOX2D_DISABLE_SIMD OFF)`
+# is a malformed two-argument if() (almost certainly meant `if (NOT BOX2D_DISABLE_SIMD)`), which CMake
+# refuses to parse ("Unknown arguments specified"), so a Web/Emscripten configure can never get past
+# Box2D's own CMakeLists.txt without this. Patched in place on the pre-fetched deps/box2d checkout,
+# same technique already used below for its math_functions.h.
+if(EMSCRIPTEN AND EXISTS "${CARROM_DEPS_DIR}/box2d/src/CMakeLists.txt")
+    file(READ "${CARROM_DEPS_DIR}/box2d/src/CMakeLists.txt" BOX2D_CMAKE_TXT)
+    if(BOX2D_CMAKE_TXT MATCHES "BOX2D_DISABLE_SIMD OFF")
+        string(REPLACE "if (BOX2D_DISABLE_SIMD OFF)" "if (NOT BOX2D_DISABLE_SIMD)" BOX2D_CMAKE_TXT "${BOX2D_CMAKE_TXT}")
+        file(WRITE "${CARROM_DEPS_DIR}/box2d/src/CMakeLists.txt" "${BOX2D_CMAKE_TXT}")
+        message(STATUS "Patched Box2D src/CMakeLists.txt: malformed if(BOX2D_DISABLE_SIMD OFF) on Emscripten")
+    endif()
+endif()
 
 # Make all dependencies available
 FetchContent_MakeAvailable(raylib box2d unity)
@@ -123,6 +143,8 @@ elseif(APPLE)
     find_library(IOKIT IOKit)
     find_library(COREVIDEO CoreVideo)
     set(PLATFORM_LIBS ${PLATFORM_LIBS} ${COCOA} ${IOKIT} ${COREVIDEO} "-framework OpenGL")
+elseif(EMSCRIPTEN)
+    set(PLATFORM_LIBS ${PLATFORM_LIBS})
 elseif(UNIX)
     find_package(Threads REQUIRED)
     find_library(RT rt)

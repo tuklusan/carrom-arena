@@ -1,0 +1,95 @@
+name: Web build spike (TEMPORARY)
+
+# Throwaway proof-of-concept: does Carrom Arena compile to WebAssembly via Emscripten and run in a
+# browser at all? Manually triggered only; publishes straight to the `gh-pages` branch so it can be
+# opened and looked at. Not part of ci.yml or release.yml, and not meant to stick around:
+#   - if the web build proves worthwhile, its real home is a new job in release.yml (built from a
+#     tagged release alongside the six native platforms), at which point the ASYNCIFY crutch below
+#     should be replaced with a proper per-frame emscripten_set_main_loop callback in app_run_simulation
+#     (src/app/app.c) instead of leaving the existing blocking `while` loop as-is
+#   - either way, delete this file once that decision is made
+#
+# Depends on five small CMake accommodations added alongside this file (all guarded by `if(EMSCRIPTEN)`
+# / `elseif(EMSCRIPTEN)`, so native builds are untouched): CMakeLists.txt turns on GNU C extensions for
+# Emscripten (raylib's miniaudio backend needs EM_ASM, which requires -std=gnu* not -std=c*), adds an
+# empty PLATFORM_LIBS branch (no X11/threads/librt - not needed on this platform), and patches a genuine
+# upstream Box2D v3.1.0 CMake bug (`if (BOX2D_DISABLE_SIMD OFF)` is a malformed two-argument if());
+# src/CMakeLists.txt gets a librt guard and, on the carrom_arena target only, a ".html" output suffix
+# plus the ASYNCIFY/memory-growth link flags this spike needs to run at all.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # to push the built site to gh-pages
+
+concurrency:
+  group: web-build-spike
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0   # BUILD_ID's `git describe` wants tags
+
+      - name: Install Emscripten (pinned to the version this spike was proven against locally)
+        run: |
+          set -eu
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 6.0.10
+          ./emsdk activate 6.0.10
+
+      - name: Pre-fetch pinned dependencies (raylib fork, Box2D, Unity)
+        run: $(command -v python3 || command -v python) build/build.py fetch
+
+      - name: Configure (Emscripten / PLATFORM=Web)
+        run: |
+          set -eu
+          source ~/emsdk/emsdk_env.sh
+          emcmake cmake -B build_web -DCMAKE_BUILD_TYPE=Release -DPLATFORM=Web
+
+      - name: Build carrom_arena
+        run: |
+          set -eu
+          source ~/emsdk/emsdk_env.sh
+          cmake --build build_web --target carrom_arena -j"$(nproc)"
+
+      - name: Assemble the published site
+        run: |
+          set -eu
+          rm -rf site && mkdir site
+          cp build_web/carrom_arena.html site/index.html
+          cp build_web/carrom_arena.js site/carrom_arena.js
+          cp build_web/carrom_arena.wasm site/carrom_arena.wasm
+          # Bake in --no-radio: live internet radio streaming has no obvious browser-safe equivalent yet.
+          python3 - <<'PY'
+          path = "site/index.html"
+          with open(path, "r", encoding="utf-8") as f:
+              html = f.read()
+          marker = "<script async src=carrom_arena.js></script>"
+          assert marker in html, "expected script tag not found - emcc's shell output changed"
+          html = html.replace(marker, '<script>Module.arguments=["--no-radio"];</script>' + marker)
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(html)
+          PY
+          ls -la site
+
+      - name: Publish to gh-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cd site
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Web build spike: ${GITHUB_SHA}"
+          git branch -M gh-pages
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push -f origin gh-pages
