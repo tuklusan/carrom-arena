@@ -34,13 +34,13 @@
     font-size: 14px;
     pointer-events: none;
   }
-  /* Tap-to-start only on phone-sized viewports (iPhone 15 Pro Max's 430px portrait width, or
-     smaller) - the browser's audio autoplay policy needs one real user gesture before sound can
-     play, and this fully autonomous game never otherwise asks for one. On these viewports the
-     wasm module loads and fully initializes (Module.noInitialRun) but main() - and everything it
-     calls, including InitWindow/InitAudioDevice and the game loop itself - does not run until this
-     overlay is tapped, so the tap is a genuine synchronous user gesture the browser will honour for
-     audio, and nothing is visibly happening behind the overlay before that tap. */
+  /* Click/tap-to-start on every browser, desktop and phone alike - the browser's audio autoplay
+     policy needs one real user gesture before sound can play, and this fully autonomous game
+     never otherwise asks for one. The wasm module loads and fully initializes (Module.noInitialRun)
+     but main() - and everything it calls, including InitWindow/InitAudioDevice and the game loop
+     itself - does not run until this overlay is clicked, so the click is a genuine synchronous user
+     gesture the browser will honour for audio, and nothing is visibly happening behind the overlay
+     before that click. */
   #startOverlay {
     display: none;
     position: fixed;
@@ -52,6 +52,9 @@
     justify-content: center;
     text-align: center;
     z-index: 10;
+  }
+  #startOverlay.ready {
+    display: flex;
   }
   #startOverlay .line1, #startOverlay .line2 {
     font-size: 18px;
@@ -66,11 +69,6 @@
     font-weight: 700;
     letter-spacing: 1px;
   }
-  @media (max-width: 430px) {
-    #startOverlay.ready {
-      display: flex;
-    }
-  }
 </style>
 </head>
 <body>
@@ -80,22 +78,21 @@
     <div>
       <div class="line1">SANYALnet Labs</div>
       <div class="line2">Carrom Arena</div>
-      <div class="tap">TAP TO START</div>
+      <div class="tap">CLICK TO PLAY</div>
     </div>
   </div>
   <script>
-    var isPhone = window.matchMedia('(max-width: 430px)').matches;
     var statusElement = document.getElementById('status');
     var overlayElement = document.getElementById('startOverlay');
     var Module = {
       canvas: document.getElementById('canvas'),
       arguments: ['--no-radio'],
-      noInitialRun: isPhone,   /* phones: wait for a real tap before main() runs; desktop: unchanged auto-start */
+      noInitialRun: true,   /* wait for a real click before main() runs, on every browser */
       setStatus: function (text) {
         statusElement.textContent = text;
         if (!text) {
           statusElement.style.display = 'none';
-          if (isPhone) overlayElement.classList.add('ready');
+          overlayElement.classList.add('ready');
         }
       }
     };
@@ -103,7 +100,7 @@
        Audio to actually be exercised - not just some code invoked - synchronously within the
        gesture, beyond the general "was there a user gesture" check. A throwaway silent buffer
        played here, before main() ever touches audio, primes that regardless of what miniaudio
-       does internally afterward. */
+       does internally afterward. Harmless on desktop too. */
     function unlockAudio() {
       try {
         var AC = window.AudioContext || window.webkitAudioContext;
@@ -119,10 +116,8 @@
     }
     overlayElement.addEventListener('click', function () {
       overlayElement.style.display = 'none';
-      if (isPhone) {
-        unlockAudio();
-        Module.callMain(Module.arguments);
-      }
+      unlockAudio();
+      Module.callMain(Module.arguments);
     });
   </script>
   {{{ SCRIPT }}}

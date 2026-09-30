@@ -2,11 +2,11 @@
 
 A graphical, cross-platform, four-robot autonomous Carrom simulation. Four AI players play complete matches under International Carrom Federation rules — no human gameplay input required. Watch, pause, change speed, restart.
 
-## Download
+## Download or Play Online
 
-**[Latest release ⬇](https://github.com/tuklusan/carrom-arena/releases/latest)**
+**[Latest release ⬇](https://github.com/tuklusan/carrom-arena/releases/latest)** for Windows, Linux and macOS — grab the zip for your platform, unzip, and run. Everything (assets, sound effects) is embedded in the single executable. No installation, no dependencies.
 
-Grab the zip for your platform, unzip, and run — everything (assets, sound effects) is embedded in the single executable. No installation, no dependencies.
+**[Play online ▶](https://tuklusan.github.io/carrom-arena/)** — the same simulation, running right in your browser via WebAssembly. Click once on the page to start (browsers require a click before audio can play).
 
 ## Controls
 
