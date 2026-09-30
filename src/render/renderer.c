@@ -14,11 +14,19 @@
 #include <math.h>
 #include "audio/audio.h"
 #include "render/icon_asset.h"
+#include "render/font_asset.h"
 
 
 static const char* TITLE_LINE1 = "SANYALnet Labs";
 static const char* TITLE_LINE2 = "Carrom Arena";
 static const char* BLOG_LINK = "https://supratim-sanyal.blogspot.com/";
+
+/* Sono (SIL OFL 1.1): a rounded, modern monospace, easier to read at small sizes than raylib's default
+ * bitmap font - loaded once in renderer_create, used by every DrawText/MeasureText call below via the
+ * DrawTextEx/MeasureTextEx + this spacing helper, which reproduces DrawText's own built-in spacing
+ * formula (fontSize/10) so switching fonts does not also change the existing letter-spacing. */
+static Font g_game_font;
+static float text_spacing(int font_size) { return (float)(font_size / 10); }
 
 struct Renderer {
     bool paused;
@@ -159,7 +167,7 @@ static Rectangle radio_rect(int sw, int sh) {
 #define SB_ROW2_Y 28
 #define SCOREBOARD_CHARS 15                  /* "G:00 B:00 P:000" */
 /* Every character gets the same cell width, so the numbers never shift the layout as the digits change */
-static int scoreboard_cell(void) { return MeasureText("W", SCOREBOARD_FONT) + 1; }
+static int scoreboard_cell(void) { return (int)MeasureTextEx(g_game_font, "W", (float)SCOREBOARD_FONT, text_spacing(SCOREBOARD_FONT)).x + 1; }
 
 #define SCOREBOARD_COIN_R 4.5f       /* matches the 9x9 red/blue identity square already in the scoreboard */
 #define SCOREBOARD_COIN_GAP 6        /* clear space between the last digit and the coin */
@@ -171,10 +179,11 @@ static int scoreboard_width(const Renderer* r, int sw, int sh) {
 
 static void draw_fixed_text(const char* text, int x, int y, Color col) {
     int cell = scoreboard_cell();
+    float spacing = text_spacing(SCOREBOARD_FONT);
     for (int i = 0; text[i]; i++) {
         char one[2] = { text[i], 0 };
-        int w = MeasureText(one, SCOREBOARD_FONT);
-        DrawText(one, x + i * cell + (cell - w) / 2, y, SCOREBOARD_FONT, col);
+        int w = (int)MeasureTextEx(g_game_font, one, (float)SCOREBOARD_FONT, spacing).x;
+        DrawTextEx(g_game_font, one, (Vector2){ (float)(x + i * cell + (cell - w) / 2), (float)y }, (float)SCOREBOARD_FONT, spacing, col);
     }
 }
 
@@ -263,20 +272,21 @@ bool renderer_radio_clicked(Renderer* r) {
  * per character, punchier than a plain DrawText. */
 static void draw_punchy_text(const char* text, int center_x, int y, int fs, int tracking, Color fill) {
     int n = (int)strlen(text);
-    int total_w = MeasureText(text, fs) + tracking * (n > 0 ? n - 1 : 0);
+    float spacing = text_spacing(fs);
+    int total_w = (int)MeasureTextEx(g_game_font, text, (float)fs, spacing).x + tracking * (n > 0 ? n - 1 : 0);
     int x = center_x - total_w / 2;
     Color outline = (Color){ 16, 18, 26, 255 };
     for (int i = 0; text[i]; i++) {
         char one[2] = { text[i], 0 };
-        int cw = MeasureText(one, fs);
+        int cw = (int)MeasureTextEx(g_game_font, one, (float)fs, spacing).x;
         for (int dx = -1; dx <= 1; dx++) {
             for (int dy = -1; dy <= 1; dy++) {
                 if (dx == 0 && dy == 0) continue;
-                DrawText(one, x + dx, y + dy, fs, outline);
+                DrawTextEx(g_game_font, one, (Vector2){ (float)(x + dx), (float)(y + dy) }, (float)fs, spacing, outline);
             }
         }
-        DrawText(one, x, y, fs, fill);
-        DrawText(one, x + 1, y, fs, fill);   /* a touch heavier, without a second font */
+        DrawTextEx(g_game_font, one, (Vector2){ (float)x, (float)y }, (float)fs, spacing, fill);
+        DrawTextEx(g_game_font, one, (Vector2){ (float)(x + 1), (float)y }, (float)fs, spacing, fill);   /* a touch heavier, without a second font */
         x += cw + tracking;
     }
 }
@@ -286,7 +296,7 @@ static void draw_punchy_text(const char* text, int center_x, int y, int fs, int 
 static int fit_tracking(const char* text, int fs, int avail_w, float frac) {
     int n = (int)strlen(text);
     if (n < 2) return 0;
-    int base_w = MeasureText(text, fs);
+    int base_w = (int)MeasureTextEx(g_game_font, text, (float)fs, text_spacing(fs)).x;
     int target_w = (int)((float)avail_w * frac);
     int tracking = (target_w - base_w) / (n - 1);
     if (tracking < 0) tracking = 0;
@@ -332,10 +342,11 @@ static void draw_footer_band(Renderer* r, const Layout* L) {
     DrawLineEx((Vector2){ 10, (float)rule_y }, (Vector2){ (float)(L->sw - 10), (float)rule_y }, 2, LIGHTGRAY);
     DrawLineEx((Vector2){ 10, (float)(rule_y + 1) }, (Vector2){ (float)(L->sw - 10), (float)(rule_y + 1) }, 1, LIGHTGRAY);
     
-    int blog_link_width = MeasureText(BLOG_LINK, L->font_size_footer_link);
+    float link_spacing = text_spacing(L->font_size_footer_link);
+    int blog_link_width = (int)MeasureTextEx(g_game_font, BLOG_LINK, (float)L->font_size_footer_link, link_spacing).x;
     int link_x = (L->sw - blog_link_width) / 2;
     int link_y = rule_y + 5;
-    DrawText(BLOG_LINK, link_x, link_y, L->font_size_footer_link, LIGHTGRAY);
+    DrawTextEx(g_game_font, BLOG_LINK, (Vector2){ (float)link_x, (float)link_y }, (float)L->font_size_footer_link, link_spacing, LIGHTGRAY);
     
 }
 
@@ -382,12 +393,16 @@ Renderer* renderer_create(int width, int height, const char* title, bool debug_p
         UnloadImage(icon);
     }
 
+    g_game_font = LoadFontFromMemory(".ttf", game_font_ttf, game_font_ttf_len, 32, NULL, 0);
+    SetTextureFilter(g_game_font.texture, TEXTURE_FILTER_BILINEAR);
+
     return r;
 }
 
 void renderer_destroy(Renderer* r) {
     if (!r) return;
 
+    UnloadFont(g_game_font);
     CloseWindow();
     free(r);
 }

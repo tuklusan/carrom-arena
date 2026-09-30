@@ -66,6 +66,20 @@ string(LENGTH "${_icon_hex}" _icon_hl)
 math(EXPR _icon_len "${_icon_hl} / 2")
 file(WRITE ${CARROM_ICON_C} "#include \"render/icon_asset.h\"\nconst unsigned char app_icon_png[] = {${_icon_bytes}};\nconst int app_icon_png_len = ${_icon_len};\n")
 
+# Embed the game font (assets/fonts/Sono-Medium.ttf, SIL OFL 1.1 - see assets/fonts/Sono-OFL.txt) as a C array,
+# same technique as the icon and audio, so the game ships as one file.
+set(CARROM_FONT_TTF ${CMAKE_SOURCE_DIR}/assets/fonts/Sono-Medium.ttf)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CARROM_FONT_TTF})
+set(CARROM_FONT_C "${CMAKE_CURRENT_BINARY_DIR}/font_asset.c")
+file(READ ${CARROM_FONT_TTF} _font_hex HEX)
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _font_bytes "${_font_hex}")
+string(LENGTH "${_font_hex}" _font_hl)
+math(EXPR _font_len "${_font_hl} / 2")
+file(WRITE ${CARROM_FONT_C} "#include \"render/font_asset.h\"
+const unsigned char game_font_ttf[] = {${_font_bytes}};
+const int game_font_ttf_len = ${_font_len};
+")
+
 file(GLOB CARROM_AUDIO_FILES ${CMAKE_SOURCE_DIR}/assets/audio/*.ogg)
 list(SORT CARROM_AUDIO_FILES)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CARROM_AUDIO_FILES})
@@ -94,6 +108,7 @@ add_library(carrom_render
     audio/radio.c
     ${CARROM_AUDIO_C}
     ${CARROM_ICON_C}
+    ${CARROM_FONT_C}
 )
 
 target_include_directories(carrom_render PUBLIC

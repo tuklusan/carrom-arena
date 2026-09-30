@@ -48,11 +48,23 @@
     background: rgba(0, 0, 0, 0.75);
     color: #fff;
     font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-    font-size: 20px;
     align-items: center;
     justify-content: center;
     text-align: center;
     z-index: 10;
+  }
+  #startOverlay .line1, #startOverlay .line2 {
+    font-size: 18px;
+    font-weight: 400;
+    color: #ddd;
+  }
+  #startOverlay .line2 {
+    margin-bottom: 18px;
+  }
+  #startOverlay .tap {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 1px;
   }
   @media (max-width: 430px) {
     #startOverlay.ready {
@@ -64,7 +76,13 @@
 <body>
   <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
   <div id="status">Loading...</div>
-  <div id="startOverlay"><div>Tap to start</div></div>
+  <div id="startOverlay">
+    <div>
+      <div class="line1">SANYALnet Labs</div>
+      <div class="line2">Carrom Arena</div>
+      <div class="tap">TAP TO START</div>
+    </div>
+  </div>
   <script>
     var isPhone = window.matchMedia('(max-width: 430px)').matches;
     var statusElement = document.getElementById('status');
@@ -81,9 +99,30 @@
         }
       }
     };
+    /* Best-effort mobile Web Audio unlock: some mobile browsers (notably iOS Safari) require Web
+       Audio to actually be exercised - not just some code invoked - synchronously within the
+       gesture, beyond the general "was there a user gesture" check. A throwaway silent buffer
+       played here, before main() ever touches audio, primes that regardless of what miniaudio
+       does internally afterward. */
+    function unlockAudio() {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        var ctx = new AC();
+        var buffer = ctx.createBuffer(1, 1, 22050);
+        var source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.start(0);
+        if (ctx.resume) ctx.resume();
+      } catch (e) {}
+    }
     overlayElement.addEventListener('click', function () {
       overlayElement.style.display = 'none';
-      if (isPhone) Module.callMain(Module.arguments);
+      if (isPhone) {
+        unlockAudio();
+        Module.callMain(Module.arguments);
+      }
     });
   </script>
   {{{ SCRIPT }}}
