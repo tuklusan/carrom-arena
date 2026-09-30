@@ -86,7 +86,6 @@
     var overlayElement = document.getElementById('startOverlay');
     var Module = {
       canvas: document.getElementById('canvas'),
-      arguments: ['--no-radio'],
       noInitialRun: true,   /* wait for a real click before main() runs, on every browser */
       setStatus: function (text) {
         statusElement.textContent = text;
@@ -117,7 +116,7 @@
     overlayElement.addEventListener('click', function () {
       overlayElement.style.display = 'none';
       unlockAudio();
-      Module.callMain(Module.arguments);
+      Module.callMain();
     });
   </script>
   {{{ SCRIPT }}}

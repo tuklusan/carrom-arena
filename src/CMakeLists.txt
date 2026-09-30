@@ -1,6 +1,14 @@
 # Carrom Arena - Source CMakeLists.txt
 
 # Core library (headless-testable, no raylib)
+# radio_stream.c/radio_mp3.c decode AH.FM from a raw socket (WinHTTP on Windows, curl elsewhere) -
+# neither exists in a browser sandbox, and audio/radio_web.c (carrom_render, below) does not call
+# into them at all, so they are excluded entirely on Emscripten rather than shipped as dead weight.
+if(EMSCRIPTEN)
+    set(CARROM_RADIO_CORE_SOURCES "")
+else()
+    set(CARROM_RADIO_CORE_SOURCES audio/radio_stream.c audio/radio_mp3.c)
+endif()
 add_library(carrom_core
     game/rules.c
     game/match.c
@@ -16,8 +24,7 @@ add_library(carrom_core
     ai/shot_candidates.c
     ai/geometry_planner.c
     audio/audio_policy.c
-    audio/radio_stream.c
-    audio/radio_mp3.c
+    ${CARROM_RADIO_CORE_SOURCES}
     ai/shot_evaluator.c
     telemetry/trace.c
     platform/platform.c
@@ -100,12 +107,17 @@ endforeach()
 string(APPEND _audio_body "const AudioAsset audio_assets[] = {\n${_audio_table}    { 0, 0, 0 }\n};\nconst int audio_asset_count = ${_audio_count};\n")
 file(WRITE ${CARROM_AUDIO_C} "${_audio_body}")
 
+if(EMSCRIPTEN)
+    set(CARROM_RADIO_RENDER_SOURCE audio/radio_web.c)
+else()
+    set(CARROM_RADIO_RENDER_SOURCE audio/radio.c)
+endif()
 add_library(carrom_render
     render/renderer.c
     render/board_view.c
     render/effects.c
     audio/audio.c
-    audio/radio.c
+    ${CARROM_RADIO_RENDER_SOURCE}
     ${CARROM_AUDIO_C}
     ${CARROM_ICON_C}
     ${CARROM_FONT_C}
@@ -304,10 +316,9 @@ set_target_properties(carrom_arena PROPERTIES
 # Web build (see .github/workflows/ci.yml's "web" job and release.yml's "web" job): -s ASYNCIFY=1 lets
 # the existing blocking `while (ctx->running)` loop in app_run_simulation (src/app/app.c) run unmodified
 # under Emscripten, at a real size/speed cost that would not be acceptable for a real port (that should
-# switch to a per-frame emscripten_set_main_loop callback instead). web/shell.html injects `--no-radio`
-# as Module.arguments, since live internet radio streaming has no obvious browser-safe equivalent yet,
-# and (on phone-sized viewports only) defers calling main() until a tap via Module.noInitialRun +
-# Module.callMain(), which EXPORTED_RUNTIME_METHODS below must list explicitly to expose. It must also
+# switch to a per-frame emscripten_set_main_loop callback instead). web/shell.html defers calling main()
+# until a click, on every browser, via Module.noInitialRun + Module.callMain(), which
+# EXPORTED_RUNTIME_METHODS below must list explicitly to expose. It must also
 # list HEAPF32: Emscripten only exposes Module.HEAPF32 (etc.) when asked to, and miniaudio's own
 # Emscripten Web Audio glue (deps/raylib/src/external/miniaudio.h) reads Module.HEAPF32.buffer directly
 # in its per-callback audio processing code - omitting it doesn't fail the build, it silently breaks
