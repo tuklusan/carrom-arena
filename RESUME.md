@@ -1,24 +1,34 @@
 # Carrom Arena: RESUME playbook
 
-**Updated:** 2026-09-30 (UTC), commit `c012aa1` (four commits past `beta-0.0.16`; tag `BEFORE-WEB-ADDITION` moved to this commit today on
-explicit operator request - see the dated section near the end of this file). Development is direct and hands-on: the kimi "software
+**Updated:** 2026-09-30 (UTC), commit `8ac691a` (one commit past `c012aa1`, a README touchup; tagged `beta-0.0.17` and released - see
+the dated section near the end of this file). Development is direct and hands-on: the kimi "software
 company" was fired on 2026-09-24. Nothing is running for carrom. Do not relaunch kimi or use `~/bin/relaunch.sh` / `~/bin/watchdog.sh`
 unless the operator asks. The unrelated ZX-UX project on the same Linux box must not be touched. `~/.kimi-code` on the Linux box must be
 RETAINED (operator: "that's where kimi lives") even though everything else kimi-era has been cleaned up.
 
 ## Repo state
-- `main` head is `c012aa1` ("Show which colour each pair currently holds on the scoreboard", 2026-09-30), four commits past the
-  README-rewrite commit tagged `beta-0.0.16` (2026-09-29): `a9623ce` (a display-bug fix), `a856230` (this doc, corrected), `ad6b792` (arena
-  kickoff coin toss), `c012aa1` (scoreboard colour-coin indicator) - all detailed in the dated section near the end of this file. Identical
-  on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub (`tuklusan/carrom-arena`) and the Windows H: clone. Since `beta-0.0.14`:
+- `main` head is `8ac691a` ("docs: drop duplicate attribution line from top of README", 2026-09-30), one commit past `c012aa1`
+  ("Show which colour each pair currently holds on the scoreboard", 2026-09-30), which was four commits past the README-rewrite
+  commit tagged `beta-0.0.16` (2026-09-29): `a9623ce` (a display-bug fix), `a856230` (this doc, corrected), `ad6b792` (arena
+  kickoff coin toss), `c012aa1` (scoreboard colour-coin indicator), `8ac691a` (README touchup) - all detailed in the dated
+  sections near the end of this file. Identical on the Linux box (`~/SOFTWARE-DEVELOPMENT/carrom`), GitHub
+  (`tuklusan/carrom-arena`) and the Windows H: clone. Since `beta-0.0.14`:
   a full temp/dead-code cleanup across all three locations (see the dated section near the end of this file); a new
   `.github/workflows/release.yml` (build+zip+publish+verify the six canonical runners, plus a much wider
   screenshot-only matrix for README proof); three real upstream raylib bugs found and fixed via a maintained fork
   (`tuklusan/raylib`, branch `carrom-arena-fixes`, pinned in `build/pins.txt` in place of stock raysan5/raylib);
-  `beta-0.0.15` then `beta-0.0.16` tagged and released; and `README.md` rewritten as a short player-facing document
-  with a screenshot gallery. CI still only triggers on branch pushes, not tag pushes (see `.github/workflows/ci.yml`),
-  so a fresh tag needs a manual `workflow_dispatch` right after if a cleanly-versioned exe matters. The next tag is
-  `beta-0.0.17` (only when the operator asks; never move existing tags).
+  `beta-0.0.15`, `beta-0.0.16`, then `beta-0.0.17` tagged and released; and `README.md` rewritten as a short player-facing
+  document with a screenshot gallery. CI still only triggers on branch pushes, not tag pushes (see `.github/workflows/ci.yml`),
+  so a fresh tag needs a manual `workflow_dispatch` right after if a cleanly-versioned exe matters. The next tag will be
+  `beta-0.0.18` (only when the operator asks; never move existing tags).
+- **Of the raylib fork's 3 commits ahead of the pinned 5.5 tag, checked today whether any belonged upstream as a PR:** two
+  (`InitPlatform()`/`InitWindow()` null-check fixes) are cherry-picks of upstream raysan5/raylib PR #4803 and #4804, both
+  already merged upstream back in March 2025 - nothing left to contribute there. The third (`NSOpenGLPFAAccelerated` bypass)
+  is explicitly a local-only CI test commit, never meant for upstream. So there is currently no outstanding PR to open against
+  `raysan5/raylib`; the fork exists purely to keep this project pinned to 5.5 while carrying fixes upstream already has past
+  that point, plus the one local-only tweak. GitHub's fork "Sync" button only fast-forwards the fork's default branch
+  (`master`) from upstream - it never touches `carrom-arena-fixes` (a separate branch), and the build pins by exact commit
+  SHA in `build/pins.txt` regardless, so syncing `master` is always safe and changes nothing about the build.
 - **raylib is no longer stock upstream.** `build/pins.txt`'s `raylib` line points at `https://github.com/tuklusan/raylib`
   (fork), branch/commit `carrom-arena-fixes`, not `raysan5/raylib`. Three commits ahead of the pinned stock 5.5 release:
   (1) `InitPlatform()` in `rcore_desktop_glfw.c` didn't check `glfwCreateWindow()`'s return before immediately using it
@@ -683,3 +693,26 @@ viewer without needing to reconstruct a trace file to explain it.
 `c012aa1` (current head), force-pushed to GitHub, and re-fetched on the H: clone. `git tag -n99 BEFORE-WEB-ADDITION`
 confirms the same annotation message; `git log -1 --oneline BEFORE-WEB-ADDITION` confirms the new target on all
 three locations.
+
+## A README touchup and the `beta-0.0.17` release (2026-09-30, later)
+Two small operator-requested items, handled back to back.
+
+**README duplicate attribution line removed** (`8ac691a`). The line `*Based on original work by Supratim Sanyal of
+SANYALnet Labs.*` appeared twice - once right under the `# Carrom Arena` title, once again (correctly) in the License
+section near the bottom, as part of the attribution clause itself. The top-of-file copy was redundant and is gone;
+the License-section copy is untouched.
+
+**`beta-0.0.17` cut and released.** Tagged on `8ac691a` (the README fix above being the only change since
+`beta-0.0.16`'s four-commit run), pushed, then `.github/workflows/release.yml` dispatched by hand via
+`gh workflow run release.yml -f tag=beta-0.0.17` (tag pushes still don't auto-trigger it). All six canonical-runner
+builds and the `publish` job succeeded; `gh release view beta-0.0.17` confirms all six zips attached
+(`ubuntu-24.04`, `ubuntu-24.04-arm`, `windows-2022`, `windows-11-arm`, `macos-15`, `macos-15-intel`), published,
+not a draft. The wider screenshot-only matrix and final `verify` sanity job are non-gating and run independently of
+whether the release itself is good.
+
+**Raylib-fork PR question, answered without any code change:** the operator asked why no "open a pull request"
+option shows up for the `tuklusan/raylib` fork's corrections. Answer (recorded in Repo state above): both real fixes
+are already merged upstream (raysan5/raylib PR #4803 and #4804, March 2025); the third commit is explicitly local-only
+CI test code. Nothing to upstream currently. Also clarified that GitHub's "Sync fork" only fast-forwards the fork's
+default branch (`master`), never `carrom-arena-fixes`, and the build pins by commit SHA regardless - so syncing the
+fork is always safe.
