@@ -517,7 +517,6 @@ static void app_begin_arrange(AppContext* ctx, const Vec2 from[MAX_PIECES], floa
 static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     // Extract facts for rules engine
     ShotFacts facts;
-    bool old_seats_swapped = ctx->game.board.seats_swapped;   /* the colour/pair mapping of the board being resolved */
     match_extract_facts(&ctx->game, result, &facts);
     
     // The coins have moved: the game state (what the AI plans from, and where the rules place a coin paid back) must show
@@ -532,13 +531,14 @@ static void app_resolve_shot(AppContext* ctx, const ShotResult* result) {
     ctx->total_games[1] += (int)outcome.next_match_state.games_won_black - (int)ctx->match.games_won_black;
     for (int i = 0; i < 2; i++) if (ctx->total_games[i] > 99) ctx->total_games[i] = 0;   /* the board shows 00-99 games */
 
-    // Boards won this game, by PHYSICAL pair (not colour: ICF 43 gives the breaker white for that board only, and the
-    // breaker/colour rotates board to board within a game, so a colour-keyed count would swap identity mid-game)
+    // Boards won this game, by PHYSICAL pair. boards_won_white/black are already keyed by physical pair (0 = north/
+    // south, 1 = east/west) at the source in rules.c - winner_pair there comes from pair_of_seat(seat), which never
+    // changes with a colour swap - so no seats_swapped translation belongs here; that used to double-flip it.
     {
         int dwhite = (int)outcome.next_match_state.boards_won_white - (int)ctx->match.boards_won_white;
         int dblack = (int)outcome.next_match_state.boards_won_black - (int)ctx->match.boards_won_black;
-        ctx->pair_boards_won[0] += old_seats_swapped ? dblack : dwhite;   /* red = N/S */
-        ctx->pair_boards_won[1] += old_seats_swapped ? dwhite : dblack;   /* blue = E/W */
+        ctx->pair_boards_won[0] += dwhite;   /* red = N/S */
+        ctx->pair_boards_won[1] += dblack;   /* blue = E/W */
     }
 
     // Apply outcome to match and game states

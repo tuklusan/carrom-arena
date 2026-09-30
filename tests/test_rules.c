@@ -415,6 +415,44 @@ void test_icf_57_best_of_three_games(void) {
     TEST_ASSERT_EQUAL_INT(TURN_MATCH_OVER, o.turn_decision);
 }
 
+/* ICF 43/49a(i): the breaker's pair plays white FOR THAT BOARD ONLY, and the break (so the colour) rotates to the
+   other pair every board within a game. scores.white/black and games_won_white/black are keyed by PHYSICAL pair
+   (winner_pair in rules.c comes from pair_of_seat(seat), which depends only on the seat, never on the colour swap)
+   - not by which colour a pair happens to hold on a given board. This locks in that a pair's running game score
+   survives a colour swap mid-game, so the GAME winner is decided correctly across a multi-board game. */
+void test_game_score_survives_a_colour_swap_mid_game(void) {
+    MatchState m; GameState g; fresh(&m, &g);
+    TEST_ASSERT_EQUAL_INT(SEAT_NORTH, g.turn_seat);
+    TEST_ASSERT_FALSE(g.board.seats_swapped);              /* board 1: north/south = white */
+
+    /* Board 1: white (north/south) wins the board; the same recipe used by test_icf_56 scores exactly 7 points */
+    leave(&g, 1, 4);
+    queen_covered_by(&g, 1);
+    RulesOutcome o = stroke(&m, &g, 1, 0, false, false);
+    TEST_ASSERT_EQUAL_INT(TURN_BOARD_OVER, o.turn_decision);
+    TEST_ASSERT_EQUAL_INT(7, g.scores.white);
+    TEST_ASSERT_EQUAL_INT(0, g.scores.black);
+
+    /* Board 2: the break rotates - east/west breaks and plays white this time, so north/south is now BLACK */
+    RNGContext rng;
+    rng_context_init(&rng, 3);
+    match_start_board(&m, &g, &rng);
+    g.board.break_made = true;
+    TEST_ASSERT_EQUAL_INT(SEAT_EAST, g.turn_seat);
+    TEST_ASSERT_TRUE(g.board.seats_swapped);               /* board 2: east/west = white, north/south = black */
+
+    /* north/south (now black) wins this board too - same physical pair, opposite colour from board 1 */
+    g.turn_seat = SEAT_NORTH;
+    leave(&g, 4, 1);
+    queen_covered_by(&g, 2);                                /* queen covered by black this time */
+    o = stroke(&m, &g, 1, 0, false, false);                 /* n_own=1: north's own colour is black on this board */
+    TEST_ASSERT_EQUAL_INT(TURN_BOARD_OVER, o.turn_decision);
+    /* If this ever regresses to .white == 7 and .black == 7, winner_pair has been made colour-dependent instead of
+       seat/pair-dependent - that split is exactly the bug this test guards against. */
+    TEST_ASSERT_EQUAL_INT(14, g.scores.white);              /* 7 (board 1, as white) + 7 (board 2, as black) */
+    TEST_ASSERT_EQUAL_INT(0, g.scores.black);               /* east/west never scored */
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_icf_45_break_chances);
@@ -448,5 +486,6 @@ int main(void) {
     RUN_TEST(test_icf_108_to_112_striker_with_the_last_coins);
     RUN_TEST(test_icf_56_game_is_25_points_or_eight_boards);
     RUN_TEST(test_icf_57_best_of_three_games);
+    RUN_TEST(test_game_score_survives_a_colour_swap_mid_game);
     return UNITY_END();
 }
